@@ -1,0 +1,123 @@
+{
+  "schema": "stageplot-item@3",
+  "id": "drumkit",
+  "label": "Drum Kit",
+  "groupId": null,
+  "dimensions": {
+    "widthMeters": 2.4,
+    "depthMeters": 2
+  },
+  "shapes": [
+    {
+      "type": "circle",
+      "x": 0.8160000000000001,
+      "y": 0.8,
+      "width": 0.768,
+      "height": 0.64,
+      "fill": "#fff0c6",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "id": "1",
+      "name": "Kick drum"
+    },
+    {
+      "type": "circle",
+      "x": 0.72,
+      "y": 0.52,
+      "width": 0.576,
+      "height": 0.48,
+      "fill": "#fff0c6",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "id": "2",
+      "name": "Rack tom"
+    },
+    {
+      "type": "circle",
+      "x": 1.296,
+      "y": 0.6,
+      "width": 0.6,
+      "height": 0.5,
+      "fill": "#fff0c6",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "id": "3",
+      "name": "Floor tom"
+    }
+  ],
+  "collisionShapes": [
+    {
+      "type": "ellipse",
+      "x": 0.8160000000000001,
+      "y": 0.8,
+      "width": 0.768,
+      "height": 0.64,
+      "rotation": 0
+    },
+    {
+      "type": "ellipse",
+      "x": 0.72,
+      "y": 0.52,
+      "width": 0.576,
+      "height": 0.48,
+      "rotation": 0
+    },
+    {
+      "type": "ellipse",
+      "x": 1.296,
+      "y": 0.6,
+      "width": 0.6,
+      "height": 0.5,
+      "rotation": 0
+    }
+  ],
+  "editor": {
+    "layers": [
+      {
+        "type": "circle",
+        "x": 0.8160000000000001,
+        "y": 0.8,
+        "width": 0.768,
+        "height": 0.64,
+        "fill": "#fff0c6",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "id": 1,
+        "name": "Kick drum",
+        "collision": true
+      },
+      {
+        "type": "circle",
+        "x": 0.72,
+        "y": 0.52,
+        "width": 0.576,
+        "height": 0.48,
+        "fill": "#fff0c6",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "id": 2,
+        "name": "Rack tom",
+        "collision": true
+      },
+      {
+        "type": "circle",
+        "x": 1.296,
+        "y": 0.6,
+        "width": 0.6,
+        "height": 0.5,
+        "fill": "#fff0c6",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "id": 3,
+        "name": "Floor tom",
+        "collision": true
+      }
+    ]
+  }
+}

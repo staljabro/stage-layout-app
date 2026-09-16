@@ -1,0 +1,107 @@
+{
+  "schema": "stageplot-stage@1",
+  "id": "untitled-stage",
+  "label": "Test Stage",
+  "dimensions": {
+    "widthMeters": 10,
+    "depthMeters": 5
+  },
+  "boundary": {
+    "closed": true,
+    "nodes": [
+      {
+        "x": 1.9000000000000001,
+        "y": 3.9000000000000004,
+        "curveMode": "line"
+      },
+      {
+        "x": 6,
+        "y": 2,
+        "curveMode": "line"
+      },
+      {
+        "x": 10,
+        "y": 5,
+        "curveMode": "line"
+      },
+      {
+        "x": 0,
+        "y": 5,
+        "curveMode": "line"
+      }
+    ]
+  },
+  "collisionBoundary": [
+    {
+      "x": 1.9000000000000001,
+      "y": 3.9000000000000004
+    },
+    {
+      "x": 6,
+      "y": 2
+    },
+    {
+      "x": 10,
+      "y": 5
+    },
+    {
+      "x": 0,
+      "y": 5
+    }
+  ],
+  "zones": [
+    {
+      "id": "zone-1789541781841",
+      "name": "Zone 1",
+      "solid": false,
+      "label": true,
+      "locked": false,
+      "fill": "#8eb6d8",
+      "fillOpacity": 0.25,
+      "stroke": "#447799",
+      "strokeWidth": 2,
+      "strokeOpacity": 1,
+      "zOrder": 0,
+      "nodes": [
+        {
+          "x": 3.6000000000000005,
+          "y": 4.35,
+          "curveMode": "line"
+        },
+        {
+          "x": 6.6000000000000005,
+          "y": 4.35,
+          "curveMode": "line"
+        },
+        {
+          "x": 6.6000000000000005,
+          "y": 5.85,
+          "curveMode": "line"
+        },
+        {
+          "x": 3.6000000000000005,
+          "y": 5.85,
+          "curveMode": "line"
+        }
+      ]
+    }
+  ],
+  "textItems": [
+    {
+      "id": "text-1789541769954",
+      "name": "Text 1",
+      "text": "Stage label",
+      "x": 5.1,
+      "y": 5.5,
+      "fontSize": 0.3,
+      "color": "#25261f",
+      "opacity": 1,
+      "locked": false,
+      "zOrder": 0
+    }
+  ],
+  "details": [],
+  "editor": {
+    "referenceImages": []
+  }
+}
