@@ -6,7 +6,14 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { isPublishedItem } from './library-membership.mjs'
+import { isPublishedItem, isEquipmentItem } from './library-membership.mjs'
+
+test('building blocks are excluded from equipment regardless of publication', () => {
+  assert.equal(isEquipmentItem({stageplotPublished:true,editor:{advancedShapeRole:'custom'}}),false)
+  assert.equal(isEquipmentItem({editor:{advancedShapeRole:'standingPerson'}}),false)
+  assert.equal(isEquipmentItem({stageplotPublished:false,editor:{layers:[]}}),true)
+  assert.equal(isEquipmentItem({stageplotPublished:true}),true)
+})
 
 test('only explicitly checked equipment is published', () => {
   assert.equal(isPublishedItem({ editor: { layers: [] } }), false)
@@ -76,6 +83,19 @@ test('API separates custom artwork, publishing, and removing Stageplot entries',
     assert.equal(deleted.status, 200)
     assert.deepEqual(await list('?scope=all'), [])
     await assert.rejects(readFile(join(directory, 'equipment-library', 'custom-person.stageplot-item.json')), { code: 'ENOENT' })
+    const stagesUrl = base.replace('/api/items', '/api/stages')
+    const stage = { schema: 'stageplot-stage@1', id: 'stage-immutable', label: 'Pit', dimensions: { widthMeters: 10, depthMeters: 5 }, boundary: { nodes: [{x:0,y:0},{x:10,y:0},{x:0,y:5}] }, collisionBoundary: [] }
+    const putStage = data => fetch(`${stagesUrl}/${stage.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+    assert.equal((await putStage(stage)).status, 200)
+    assert.equal((await putStage({...stage,label:'Orchestra pit'})).status, 200)
+    const loadedStage = await (await fetch(`${stagesUrl}/${stage.id}`)).json()
+    assert.equal(loadedStage.id, stage.id)
+    assert.equal(loadedStage.label, 'Orchestra pit')
+    assert.deepEqual(loadedStage.boundary, stage.boundary)
+    assert.equal((await fetch(`${stagesUrl}/${stage.id}`, {method:'DELETE'})).status, 200)
+    assert.equal((await fetch(`${stagesUrl}/${stage.id}`)).status, 404)
+    assert.deepEqual(await (await fetch(stagesUrl)).json(), [])
+    await assert.rejects(readFile(join(directory, 'stage-library', `${stage.id}.stageplot-stage.json`)), {code:'ENOENT'})
   } finally {
     const exited = child.exitCode === null ? once(child, 'exit') : null
     child.kill()

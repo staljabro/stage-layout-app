@@ -1,7 +1,7 @@
 {
   "schema": "stageplot-stage@1",
   "id": "test-stage-1",
-  "label": "Test Stage 1",
+  "label": "Help me",
   "dimensions": {
     "widthMeters": 10,
     "depthMeters": 5

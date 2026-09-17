@@ -75,6 +75,24 @@ select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #
 .rotation-stem { position: absolute; left: 50%; top: 100%; width: 1px; height: 30px; background: #809622; transform: translateX(-50%); pointer-events: none; }
 .rotation-handle { position: absolute; left: 50%; bottom: -7px; width: 14px; height: 14px; border: 2px solid #71851d; border-radius: 50%; background: #d6ff46; box-shadow: 0 1px 3px #0003; transform: translateX(-50%); pointer-events: auto; cursor: grab; }
 .rotation-handle:active { cursor: grabbing; }
+.stage-viewport, .stage-viewport:active { cursor: default; }
+.placed-item { cursor: move; }
+.selection-marquee { position: absolute; border: 1px solid #71851f; background: #a7c62822; pointer-events: none; z-index: 100; }
+.session-warning { position: fixed; bottom: 12px; left: 12px; max-width: 480px; background: #fff0cc; color: #6a4100; padding: 12px; z-index: 1000; font-size: 12px; }
+.blank-stage-message { position: absolute; inset: 0; display: grid; place-items: center; color: #777970; pointer-events: none; font-size: 14px; }
+.stage-picker-backdrop { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; background: #14151099; padding: 24px; }
+.stage-picker { width: min(650px,90vw); max-height: 88vh; overflow-y: auto; padding: 26px; background: #f7f6ef; border-radius: 12px; box-shadow: 0 20px 70px #0005; }
+.stage-picker-heading { display: flex; align-items: center; justify-content: space-between; }
+.stage-picker h2 { margin: 0; font-size: 22px; }
+.stage-picker p { font-size: 13px; color: #73756a; line-height: 1.5; }
+.stage-picker-list { display: grid; gap: 10px; margin: 20px 0; }
+.stage-picker-list button { display: flex; align-items: center; gap: 16px; padding: 14px; border: 1px solid #c9ceba; border-radius: 7px; background: white; text-align: left; }
+.stage-picker-list button:hover { border-color: #71851f; background: #f6fbe6; }
+.stage-picker-list svg { width: 72px; height: 44px; }
+.stage-picker-list b, .stage-picker-list small { display: block; }
+.stage-picker-list small { margin-top: 6px; color: #84867b; }
+.stage-picker-custom { margin: 20px 0; padding-top: 12px; border-top: 1px solid #dadccf; }
+@media print { .stage-picker-backdrop, .session-warning { display: none; } }
 .placed-symbol { width: 100%; height: 100%; display: grid; place-items: center; border-radius: 4px; font: 700 28px 'Space Mono'; }
 .inspector { min-height: 0; padding: 26px 20px; overflow-y: auto; background: #f5f3ec; border-left: 1px solid #cecdc5; }
 .inspector-hint { margin: 0 0 22px; color: #85867e; font-size: 11px; line-height: 1.5; }

@@ -141,6 +141,10 @@ const server = createServer(async (request, response) => {
     const stageMatch = url.pathname.match(/^\/api\/stages\/([^/]+)$/)
     if (stageMatch && validId(stageMatch[1])) {
       const file = join(stageLibraryDir, `${stageMatch[1]}.stageplot-stage.json`)
+      if (request.method === 'DELETE') {
+        await unlink(file)
+        return send(response, 200, { id: stageMatch[1], deleted: true })
+      }
       if (request.method === 'GET') return send(response, 200, JSON.parse(await readFile(file, 'utf8')))
       if (request.method === 'PUT') {
         let raw = ''

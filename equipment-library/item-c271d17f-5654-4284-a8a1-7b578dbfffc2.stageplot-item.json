@@ -1,0 +1,61 @@
+{
+  "schema": "stageplot-item@3",
+  "stageplotPublished": true,
+  "id": "item-c271d17f-5654-4284-a8a1-7b578dbfffc2",
+  "label": "1x2 Stage Deck",
+  "groupId": "staging",
+  "dimensions": {
+    "widthMeters": 1,
+    "depthMeters": 2
+  },
+  "shapes": [
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 2,
+      "fill": "#454642",
+      "stroke": "#25261f",
+      "strokeWidth": 6,
+      "rotation": 0,
+      "leftInset": 0,
+      "rightInset": 0,
+      "slew": 0,
+      "id": "38",
+      "name": "Rectangle"
+    }
+  ],
+  "collisionShapes": [
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 2,
+      "rotation": 0
+    }
+  ],
+  "editor": {
+    "layers": [
+      {
+        "id": 38,
+        "type": "rect",
+        "name": "Rectangle",
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 2,
+        "fill": "#454642",
+        "stroke": "#25261f",
+        "strokeWidth": 6,
+        "rotation": 0,
+        "collision": true,
+        "leftInset": 0,
+        "rightInset": 0,
+        "slew": 0
+      }
+    ],
+    "referenceImages": []
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "schema": "stageplot-item@3",
+  "stageplotPublished": true,
+  "id": "foldback",
+  "label": "Keyboard Amp",
+  "groupId": "speakers-and-amps",
+  "dimensions": {
+    "widthMeters": 0.6,
+    "depthMeters": 0.4
+  },
+  "shapes": [
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 0.6,
+      "height": 0.4,
+      "fill": "#191919",
+      "stroke": "#191919",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "id": "20",
+      "name": "Rectangle"
+    },
+    {
+      "type": "text",
+      "x": 0.04,
+      "y": 0.05,
+      "width": 0.53359375,
+      "height": 0.328,
+      "text": "KEYS\nAMP",
+      "fontSize": 0.2,
+      "bold": false,
+      "italic": false,
+      "textAlign": "center",
+      "lineSpacing": 0.9,
+      "fill": "#ffffff",
+      "stroke": "none",
+      "strokeWidth": 0,
+      "rotation": 0,
+      "id": "21",
+      "name": "Text"
+    }
+  ],
+  "collisionShapes": [
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0,
+      "width": 0.6,
+      "height": 0.4,
+      "rotation": 0
+    }
+  ],
+  "editor": {
+    "layers": [
+      {
+        "id": 20,
+        "type": "rect",
+        "name": "Rectangle",
+        "x": 0,
+        "y": 0,
+        "width": 0.6,
+        "height": 0.4,
+        "fill": "#191919",
+        "stroke": "#191919",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "collision": true
+      },
+      {
+        "id": 21,
+        "type": "text",
+        "name": "Text",
+        "x": 0.04,
+        "y": 0.05,
+        "width": 0.53359375,
+        "height": 0.328,
+        "text": "KEYS\nAMP",
+        "fontSize": 0.2,
+        "bold": false,
+        "italic": false,
+        "textAlign": "center",
+        "lineSpacing": 0.9,
+        "fill": "#ffffff",
+        "stroke": "none",
+        "strokeWidth": 0,
+        "rotation": 0,
+        "collision": false
+      }
+    ],
+    "referenceImages": []
+  }
+}

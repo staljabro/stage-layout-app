@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { stagePath as zonePath } from './stage-geometry.js'
-import { isPublishedItem } from '../tools/library-membership.mjs'
+import { TextArtwork } from './text-shape.jsx'
+import { readSessionDraft, useSessionDraft } from './session-draft.js'
+import { selectionBox, enclosedItems } from './marquee.js'
+import { rotatedBounds } from '../tools/svg-shape-studio/src/rotation.js'
+import { isPublishedItem, isEquipmentItem } from '../tools/library-membership.mjs'
 import { footprintPoints, isItemInsideSpace, pointInPolygon, rectangleBoundary } from './geometry.js'
+import { projectFile, resolveProject, stageSpace } from './project-file.js'
 
-const PRESETS = {
-  theatre: { name: 'Main Theatre', width: 12, depth: 8 },
-  studio: { name: 'Studio', width: 8, depth: 6 },
-  custom: { name: 'Custom Space', width: 10, depth: 7 },
-}
-
-const LIBRARY_API = 'http://127.0.0.1:8787/api/items'
-const GROUPS_API = 'http://127.0.0.1:8787/api/groups'
-const STAGES_API = 'http://127.0.0.1:8787/api/stages'
+const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || 'http://127.0.0.1:8787/api').replace(/\/$/, '')
+const LIBRARY_API = `${API_BASE}/items`
+const GROUPS_API = `${API_BASE}/groups`
+const STAGES_API = `${API_BASE}/stages`
 
 const boundaryForSpace = (space) => space.collisionBoundary?.length >= 3 ? space.collisionBoundary : rectangleBoundary(space.width, space.depth)
 const stageClipPath = (space) => `polygon(${boundaryForSpace(space).map((point) => `${point.x / space.width * 100}% ${point.y / space.depth * 100}%`).join(',')})`
@@ -66,6 +66,7 @@ function VectorShape({ shape }) {
   const transform = `translate(${shape.x} ${shape.y}) rotate(${shape.rotation || 0} ${pivot.x} ${pivot.y})`
   let node
   if (shape.type === 'compound') node = <g transform={`scale(${shape.width / shape.artworkWidth} ${shape.height / shape.artworkHeight})`}>{shape.children.map((child,index)=><VectorShape key={index} shape={child}/>)}</g>
+  else if (shape.type === 'text') node = <TextArtwork item={shape} />
   else if (shape.type === 'path') node = <path d={shape.d} {...style} />
   else if (shape.type === 'circle' || shape.type === 'ellipse') node = <ellipse cx={shape.width / 2} cy={shape.height / 2} rx={shape.width / 2} ry={shape.height / 2} {...style} />
   else if (shape.type === 'triangle') node = <polygon points={`${shape.width / 2},0 ${shape.width},${shape.height} 0,${shape.height}`} {...style} />
@@ -98,11 +99,20 @@ const Icon = ({ name }) => {
 }
 
 function App() {
-  const [project, setProject] = useState('Friday Night Sessions')
-  const [space, setSpace] = useState(PRESETS.theatre)
-  const [preset, setPreset] = useState('theatre')
-  const [items, setItems] = useState([])
+  const [lockedStageId] = useState(()=>new URLSearchParams(window.location.search).get('stage'))
+  const draftKey=lockedStageId===null?'stageplot:draft':`stageplot:draft:stage:${lockedStageId}`
+  const [session] = useState(() => readSessionDraft(draftKey))
+  const [project, setProject] = useState(session.project ?? 'Untitled stageplot')
+  const [space, setSpace] = useState(lockedStageId!==null && session.space?.stageId!==lockedStageId ? null : session.space ?? null)
+  const [preset, setPreset] = useState(session.preset ?? '')
+  const [stagePickerOpen, setStagePickerOpen] = useState(false)
+  const [libraryLoading, setLibraryLoading] = useState(true)
+  const [customWidth,setCustomWidth]=useState(10)
+  const [customDepth,setCustomDepth]=useState(5)
+  const [items, setItems] = useState(session.items ?? [])
   const [selected, setSelected] = useState(null)
+  const [multiSelected, setMultiSelected] = useState([])
+  const [marquee, setMarquee] = useState(null)
   const [equipmentDrawerOpen, setEquipmentDrawerOpen] = useState(true)
   const [history, setHistory] = useState([])
   const [notice, setNotice] = useState('')
@@ -123,8 +133,8 @@ function App() {
   }).sort((a,b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id))
 
   const [libraryOnline, setLibraryOnline] = useState(true)
-  const [zoom, setZoom] = useState(1)
-  const [pan, setPan] = useState({ x: 56, y: 56 })
+  const [zoom, setZoom] = useState(session.zoom ?? 1)
+  const [pan, setPan] = useState(session.pan ?? { x: 56, y: 56 })
   const boardRef = useRef(null)
   const viewportRef = useRef(null)
   const fileRef = useRef(null)
@@ -132,8 +142,11 @@ function App() {
   const layerDragRef = useRef(null)
   const rotateRef = useRef(null)
   const panRef = useRef(null)
-  const nextIdRef = useRef(100)
+  const marqueeRef = useRef(null)
+  const bootedRef = useRef(false)
+  const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
+  const sessionError = useSessionDraft(draftKey, {project,space,preset,items,zoom,pan})
 
   useEffect(() => {
     if (!notice) return
@@ -148,47 +161,67 @@ function App() {
         const [itemsResponse, groupsResponse, stagesResponse] = await Promise.all([fetch(LIBRARY_API), fetch(GROUPS_API), fetch(STAGES_API)])
         if (!itemsResponse.ok || !groupsResponse.ok || !stagesResponse.ok) throw new Error()
         const [data, groupData, stageData] = await Promise.all([itemsResponse.json(), groupsResponse.json(), stagesResponse.json()])
-        if (active) { setLibrary(data.filter(isPublishedItem)); setGroups(groupData); setStages(stageData); setLibraryOnline(true) }
-      } catch { if (active) setLibraryOnline(false) }
+        if (active) {
+          const equipment=data.filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
+          setLibrary(equipment);setGroups(groupData);setStages(stageData);setLibraryOnline(true);setLibraryLoading(false)
+          if(!bootedRef.current) {
+            const saved=projectFile(session.project || 'Untitled stageplot',session.space || null,session.items || [],session.preset || '')
+            if(lockedStageId!==null)saved.stage={kind:'library',id:lockedStageId}
+            const restored=resolveProject(saved,equipment,stageData,lockedStageId)
+            setSpace(restored.space);setPreset(restored.preset);setItems(restored.items)
+            nextIdRef.current=Math.max(100,...restored.items.map(item=>item.id+1))
+            bootedRef.current=true
+            if(restored.dropped)setNotice(`${restored.dropped} unavailable equipment items removed`)
+          }
+        }
+      } catch { if (active) {setLibraryOnline(false);setLibraryLoading(false)} }
     }
     refresh()
     const timer = window.setInterval(refresh, 2000)
     window.addEventListener('focus', refresh)
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [])
+  }, [session,lockedStageId])
 
   const checkpoint = () => setHistory((h) => [...h.slice(-19), items])
 
   const viewportPointInStage = (clientX, clientY) => {
     const rect = viewportRef.current?.getBoundingClientRect()
-    if (!rect) return { x: space.width / 2, y: space.depth / 2 }
+    if (!rect) return { x: (space?.width || 0) / 2, y: (space?.depth || 0) / 2 }
     return { x: (clientX - rect.left - pan.x) / (100 * zoom), y: (clientY - rect.top - pan.y) / (100 * zoom) }
   }
 
   const addItem = (tool, position) => {
+    if(!space)return setStagePickerOpen(true)
     checkpoint()
     const widthMeters = tool.dimensions?.widthMeters || .8
     const depthMeters = tool.dimensions?.depthMeters || .6
     const viewport = viewportRef.current
     const centre = position || (viewport ? viewportPointInStage(viewport.getBoundingClientRect().left + viewport.clientWidth / 2, viewport.getBoundingClientRect().top + viewport.clientHeight / 2) : { x: space.width / 2, y: space.depth / 2 })
-    const item = { ...tool, id: nextIdRef.current++,
+    const item = { ...tool, id: nextIdRef.current++, assetId:tool.id,
       widthMeters, depthMeters, showLabel: false,
       shapes: tool.shapes, collisionShapes: tool.collisionShapes || [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
       xMeters: Math.max(widthMeters / 2, Math.min(space.width - widthMeters / 2, centre.x)),
       yMeters: Math.max(depthMeters / 2, Math.min(space.depth - depthMeters / 2, centre.y)), rotation: 0 }
     setItems((old) => [...old, item])
     setSelected(item.id)
+    setMultiSelected([])
   }
 
   const startDrag = (event, item) => {
     if (event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
     checkpoint()
+    if (multiSelected.includes(item.id)) {
+      dragRef.current = { members: items.filter(member=>multiSelected.includes(member.id)).map(member=>({...member})), startX: event.clientX, startY: event.clientY }
+      return
+    }
     dragRef.current = { id: item.id, startX: event.clientX, startY: event.clientY, xMeters: item.xMeters, yMeters: item.yMeters }
     setSelected(item.id)
+    setMultiSelected([])
   }
 
   const startRotation = (event, item) => {
+    if (event.button !== 0) return
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     checkpoint()
@@ -197,12 +230,22 @@ function App() {
     const cy = board.top + item.yMeters * 100 * zoom
     rotateRef.current = { id: item.id, cx, cy, offset: (item.rotation || 0) - Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI }
     setSelected(item.id)
+    setMultiSelected([])
   }
 
   const drag = (event) => {
     const current = dragRef.current
     const board = boardRef.current
     if (!current || !board) return
+    if (current.members) {
+      const dx = (event.clientX-current.startX)/(100*zoom), dy = (event.clientY-current.startY)/(100*zoom)
+      const candidates = current.members.map(item=>({...item,xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}))
+      if(candidates.every(item=>isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones))) {
+        const moved=new Map(candidates.map(item=>[item.id,item]))
+        setItems(old=>old.map(item=>moved.get(item.id)||item))
+      }
+      return
+    }
     const target = items.find((item) => item.id === current.id)
     if (!target) return
     const candidate = { ...target, xMeters: current.xMeters + (event.clientX - current.startX) / (100 * zoom), yMeters: current.yMeters + (event.clientY - current.startY) / (100 * zoom) }
@@ -210,13 +253,41 @@ function App() {
   }
 
   const startPan = (event) => {
-    if (event.button !== 0 || event.target.closest?.('.placed-item')) return
+    if (event.button === 0 && !event.target.closest?.('.placed-item')) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      const rect=viewportRef.current.getBoundingClientRect()
+      const start={x:event.clientX-rect.left,y:event.clientY-rect.top}
+      marqueeRef.current={start,worldStart:viewportPointInStage(event.clientX,event.clientY),additive:event.shiftKey?[...multiSelected,...(selected!==null?[selected]:[])]:[]}
+      setMarquee(selectionBox(start,start))
+      return
+    }
+    if (event.button !== 1) return
+    event.preventDefault()
+    event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     panRef.current = { x: event.clientX, y: event.clientY, pan }
-    setSelected(null)
+  }
+
+  const finishViewportDrag = event => {
+    if(marqueeRef.current) {
+      const drag=marqueeRef.current
+      const box=selectionBox(drag.worldStart,viewportPointInStage(event.clientX,event.clientY))
+      const ids=[...new Set([...drag.additive,...enclosedItems(items,box,item=>rotatedBounds([{x:item.xMeters-item.widthMeters/2,y:item.yMeters-item.depthMeters/2,width:item.widthMeters,height:item.depthMeters,rotation:item.rotation}]))])]
+      setSelected(ids.length===1?ids[0]:null)
+      setMultiSelected(ids.length>1?ids:[])
+      setMarquee(null)
+      marqueeRef.current=null
+    }
+    dragRef.current=null;rotateRef.current=null;panRef.current=null
   }
 
   const moveViewport = (event) => {
+    if(marqueeRef.current) {
+      const rect=viewportRef.current.getBoundingClientRect()
+      setMarquee(selectionBox(marqueeRef.current.start,{x:event.clientX-rect.left,y:event.clientY-rect.top}))
+      return
+    }
     if (rotateRef.current) {
       const current = rotateRef.current
       const rotation = Math.atan2(event.clientY - current.cy, event.clientX - current.cx) * 180 / Math.PI + current.offset
@@ -241,13 +312,14 @@ function App() {
     setZoom(next)
   }
 
-  const fitStage = () => {
+  const fitToSpace = (targetSpace) => {
     const viewport = viewportRef.current
-    if (!viewport) return
-    const next = Math.min((viewport.clientWidth - 80) / (space.width * 100), (viewport.clientHeight - 80) / (space.depth * 100), 2)
+    if (!viewport || !targetSpace) return
+    const next = Math.max(.05,Math.min((viewport.clientWidth - 80) / (targetSpace.width * 100), (viewport.clientHeight - 80) / (targetSpace.depth * 100), 2))
     setZoom(next)
-    setPan({ x: (viewport.clientWidth - space.width * 100 * next) / 2, y: (viewport.clientHeight - space.depth * 100 * next) / 2 })
+    setPan({ x: (viewport.clientWidth - targetSpace.width * 100 * next) / 2, y: (viewport.clientHeight - targetSpace.depth * 100 * next) / 2 })
   }
+  const fitStage = () => fitToSpace(space)
 
   const updateSelected = (changes) => setItems((old) => old.map((item) => item.id === selected ? { ...item, ...changes } : item))
 
@@ -258,7 +330,7 @@ function App() {
   }
 
   const save = () => {
-    const data = JSON.stringify({ version: 1, project, space, items }, null, 2)
+    const data = JSON.stringify(projectFile(project,space,items,preset), null, 2)
     const link = document.createElement('a')
     link.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }))
     link.download = `${project.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'stageplot'}.stageplot.json`
@@ -267,40 +339,44 @@ function App() {
     setNotice('Project saved')
   }
 
-  const load = (event) => {
+  const load = async (event) => {
     const file = event.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result)
-        if (!Array.isArray(data.items) || !data.space) throw new Error('Invalid file')
-        setProject(data.project || 'Untitled stageplot')
-        setSpace(data.space)
-        setItems(data.items.map((item) => ({
-          ...item,
-          widthMeters: item.widthMeters || item.dimensions?.widthMeters || .8,
-          depthMeters: item.depthMeters || item.dimensions?.depthMeters || .6,
-          xMeters: Number.isFinite(item.xMeters) ? item.xMeters : ((item.x || 50) / 100) * data.space.width,
-          yMeters: Number.isFinite(item.yMeters) ? item.yMeters : ((item.y || 50) / 100) * data.space.depth,
-          rotation: item.rotation || 0,
-          showLabel: item.showLabel === true,
-        })))
-        setPreset('custom')
-        setSelected(null)
-        setNotice('Project loaded')
-      } catch { setNotice('That file could not be opened') }
-    }
-    reader.readAsText(file)
     event.target.value = ''
+    if (!file) return
+    if((items.length || space) && !window.confirm('Open this file and replace the current project? Save first if you want to keep your current work.'))return
+    try {
+      const data=JSON.parse(await file.text())
+      const responses=await Promise.all([fetch(LIBRARY_API),fetch(STAGES_API)])
+      if(responses.some(response=>!response.ok))throw new Error('The library could not be loaded. Your current project was not changed.')
+      const [latestEquipment,latestStages]=await Promise.all(responses.map(response=>response.json()))
+      const equipment=latestEquipment.filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
+      const restored=resolveProject(data,equipment,latestStages,lockedStageId)
+      setProject(restored.project);setSpace(restored.space);setPreset(restored.preset);setItems(restored.items)
+      setLibrary(equipment);setStages(latestStages);setLibraryOnline(true)
+      setSelected(null);setMultiSelected([]);setHistory([]);setStagePickerOpen(!restored.space)
+      nextIdRef.current=Math.max(100,...restored.items.map(item=>item.id+1))
+      fitToSpace(restored.space)
+      setNotice(`Project loaded${restored.dropped ? `; ${restored.dropped} unavailable items dropped` : ''}${restored.missingStage ? '; stage no longer available' : ''}`)
+    } catch(error) {setNotice(error.message || 'That file could not be opened')}
   }
 
   const choosePreset = (value) => {
-    setPreset(value)
-    if (value.startsWith('stage:')) {
-      const stage = stages.find((candidate) => candidate.id === value.slice(6))
-      if (stage) setSpace({ name: stage.label, width: stage.dimensions.widthMeters, depth: stage.dimensions.depthMeters, collisionBoundary: stage.collisionBoundary, boundary: stage.boundary, zones: stage.zones || [], textItems: stage.textItems || [] })
-    } else setSpace(PRESETS[value])
+    const stage=stages.find(candidate=>candidate.id===value.slice(6))
+    if(!stage || (lockedStageId!==null && stage.id!==lockedStageId))return
+    const nextSpace=stageSpace(stage)
+    setPreset(value);setSpace(nextSpace);setStagePickerOpen(false);setHistory([]);fitToSpace(nextSpace)
+  }
+  const newProject = () => {
+    if(!window.confirm('Create a new project? This clears all placed equipment and the selected stage. Save first to keep a copy.'))return
+    setProject('Untitled stageplot');setSpace(null);setPreset('');setItems([]);setHistory([])
+    setSelected(null);setMultiSelected([]);setStagePickerOpen(true);setZoom(1);setPan({x:56,y:56})
+    dragRef.current=null;rotateRef.current=null;panRef.current=null;marqueeRef.current=null;setMarquee(null)
+  }
+  const copyStageLink = async () => {
+    if(!space?.stageId)return
+    const url=new URL(window.location.href);url.searchParams.set('stage',space.stageId)
+    try {await navigator.clipboard.writeText(url.href);setNotice('Stage-locked link copied')}
+    catch {window.prompt('Copy this stage-locked link:',url.href)}
   }
 
   const reorderLayer = (id, targetId) => {
@@ -317,10 +393,12 @@ function App() {
     if (target) reorderLayer(selected, target.id)
   }
   const removeSelected = () => {
-    if (!selected) return
+    const ids=multiSelected.length?multiSelected:selected!==null?[selected]:[]
+    if (!ids.length) return
     checkpoint()
-    setItems((old) => old.filter((item) => item.id !== selected))
+    setItems((old) => old.filter((item) => !ids.includes(item.id)))
     setSelected(null)
+    setMultiSelected([])
   }
 
   useEffect(() => {
@@ -328,21 +406,24 @@ function App() {
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
       if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
       if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select') || event.target.isContentEditable)) return
-      if (!items.some(item => item.id === selected)) return
+      const ids=multiSelected.length?multiSelected:[selected]
+      if (!items.some(item => ids.includes(item.id))) return
       event.preventDefault()
       setHistory(previous => [...previous.slice(-19), items])
-      setItems(previous => previous.filter(item => item.id !== selected))
+      setItems(previous => previous.filter(item => !ids.includes(item.id)))
       setSelected(null)
+      setMultiSelected([])
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [items, selected])
+  }, [items, selected, multiSelected])
 
   const undo = () => {
     if (!history.length) return
     setItems(history[history.length - 1])
     setHistory((h) => h.slice(0, -1))
     setSelected(null)
+    setMultiSelected([])
   }
 
   return (
@@ -351,9 +432,10 @@ function App() {
         <div className="brand"><span className="brand-mark">S</span><span>STAGEPLOT</span></div>
         <input className="project-name" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
         <div className="top-actions">
+          <button className="btn ghost" onClick={newProject}><Icon name="plus" /> New project</button>
           <button className="btn ghost" onClick={save}><Icon name="save" /> Save</button>
           <button className="btn ghost" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Open</button>
-          <button className="btn primary" onClick={() => window.print()}><Icon name="print" /> Export PDF</button>
+          <button className="btn primary" disabled={!space} onClick={() => window.print()}><Icon name="print" /> Export PDF</button>
           <input ref={fileRef} type="file" accept=".json,.stageplot" onChange={load} hidden />
         </div>
       </header>
@@ -362,7 +444,7 @@ function App() {
               <section className="sidebar stage-layer-panel" aria-label="Placed item layers">
                 <p className="eyebrow">LAYERS <small>{items.length}</small></p>
                 <p className="helper">Drag to reorder. Top row is in front.</p>
-                <div className="stage-layer-list">{[...items].reverse().map(item => <button key={item.id} className={item.id === selected ? 'stage-layer active' : 'stage-layer'} aria-pressed={item.id === selected} draggable onDragStart={event => { layerDragRef.current = item.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-stageplot-layer', String(item.id)) }} onDragEnd={() => { layerDragRef.current = null }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={event => { event.preventDefault(); event.stopPropagation(); if (layerDragRef.current !== null) reorderLayer(layerDragRef.current, item.id); layerDragRef.current = null }} onClick={() => setSelected(item.id)}><span aria-hidden="true">&#9776;</span><span>{item.label}</span><small>{item.showLabel ? 'label' : ''}</small></button>)}</div>
+                <div className="stage-layer-list">{[...items].reverse().map(item => <button key={item.id} className={(item.id === selected || multiSelected.includes(item.id)) ? 'stage-layer active' : 'stage-layer'} aria-pressed={(item.id === selected || multiSelected.includes(item.id))} draggable onDragStart={event => { layerDragRef.current = item.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-stageplot-layer', String(item.id)) }} onDragEnd={() => { layerDragRef.current = null }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={event => { event.preventDefault(); event.stopPropagation(); if (layerDragRef.current !== null) reorderLayer(layerDragRef.current, item.id); layerDragRef.current = null }} onClick={() => {setSelected(item.id);setMultiSelected([])}}><span aria-hidden="true">&#9776;</span><span>{item.label}</span><small>{item.showLabel ? 'label' : ''}</small></button>)}</div>
                 {!items.length && <p className="helper">Add equipment to see its layers here.</p>}
                 <div className="layer-order-actions"><button disabled={!selected || items[items.length - 1]?.id === selected} onClick={() => moveSelectedLayer(1)}>Bring forward</button><button disabled={!selected || items[0]?.id === selected} onClick={() => moveSelectedLayer(-1)}>Send back</button></div>
               </section>
@@ -374,12 +456,12 @@ function App() {
               <span>{Math.round(zoom * 100)}%</span>
               <button className="fit-button" onClick={fitStage}>FIT</button>
               <button title="Undo" onClick={undo} disabled={!history.length}><Icon name="undo" /></button>
-              <button title="Delete selected" onClick={removeSelected} disabled={!selected}><Icon name="trash" /></button>
+              <button title="Delete selected" onClick={removeSelected} disabled={selected===null && !multiSelected.length}><Icon name="trash" /></button>
             </div>
           </div>
 
-          <div className="stage-viewport" ref={viewportRef} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null }} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null }}>
-            <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+          <div className="stage-viewport" ref={viewportRef} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;setMarquee(null) }}>
+            {space ? <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
               <div className="stage-boundary-surface" style={{ clipPath: stageClipPath(space) }} />
               {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => !zone.solid && !zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} />)}</svg>}
               {((space.zones || []).some((zone) => zone.label) || space.textItems?.length > 0) && <svg className="stage-label-assets" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{(space.textItems || []).map((item) => <text key={item.id} x={item.x} y={item.y} fill={item.color} fillOpacity={item.opacity} stroke="none" fontSize={item.fontSize} textAnchor="middle" dominantBaseline="middle">{item.text}</text>)}</svg>}
@@ -387,7 +469,7 @@ function App() {
               {items.map((item) => (
                 <button
                   key={item.id}
-                  className={`placed-item ${selected === item.id ? 'selected' : ''}`}
+                  className={`placed-item ${selected === item.id || multiSelected.includes(item.id) ? 'selected' : ''}`}
                   style={{ left: `${(item.xMeters - item.widthMeters / 2) * 100}px`, top: `${(item.yMeters - item.depthMeters / 2) * 100}px`, width: `${item.widthMeters * 100}px`, height: `${item.depthMeters * 100}px`, transform: `rotate(${item.rotation || 0}deg)` }}
                   onPointerDown={(e) => startDrag(e, item)}
                   onDoubleClick={() => {
@@ -401,7 +483,8 @@ function App() {
                 </button>
               ))}
               {!space.collisionBoundary && <div className="stage-front">AUDIENCE</div>}
-            </div>
+            </div> : <div className="blank-stage-message">Choose a stage to start your plot.</div>}
+            {marquee && <div className="selection-marquee" style={{left:marquee.x,top:marquee.y,width:marquee.right-marquee.x,height:marquee.bottom-marquee.y}} />}
           </div>
           <div className="viewport-drawer">
             <button className="drawer-toggle" aria-expanded={equipmentDrawerOpen} aria-controls="equipment-drawer-content" onClick={() => setEquipmentDrawerOpen(open => !open)}><span>{equipmentDrawerOpen ? '\u25be' : '\u25b8'} Equipment library</span><small>Click or drag equipment onto the stage</small></button>
@@ -430,7 +513,7 @@ function App() {
           </section>
             </div>
           </div>
-          <footer className="canvas-footer"><span>{items.length} items placed</span><span>Drag items to position · Double-click to rename</span></footer>
+          <footer className="canvas-footer"><span>{items.length} items placed</span><span>Middle-drag to pan · Left-drag empty space to select</span></footer>
         </section>
 
         <aside className="inspector">
@@ -446,17 +529,32 @@ function App() {
             <label className="field">ROTATION<input type="number" step="1" value={selectedItem.rotation || 0} onChange={(e) => updateSelected({ rotation: +e.target.value })} /></label>
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.showLabel === true} onChange={event => { checkpoint(); updateSelected({ showLabel: event.target.checked }) }} /> Show label</label>
             <button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete item</button>
-          </> : <>
-            <p className="inspector-hint">No item selected. Stage dimensions do not scale placed items.</p>
-            <label className="field">SPACE<select value={preset} onChange={(e) => choosePreset(e.target.value)}><option value="theatre">Main Theatre</option><option value="studio">Studio</option>{stages.length > 0 && <optgroup label="Stage library">{stages.map((stage) => <option value={`stage:${stage.id}`} key={stage.id}>{stage.label}</option>)}</optgroup>}<option value="custom">Custom rectangular space</option></select></label>
-            <div className="inspector-grid">
-              <label className="field">WIDTH (m)<input type="number" min="1" step="0.1" value={space.width} onChange={(e) => { setPreset('custom'); setSpace({ name: 'Custom Space', width: +e.target.value, depth: space.depth }) }} /></label>
-              <label className="field">DEPTH (m)<input type="number" min="1" step="0.1" value={space.depth} onChange={(e) => { setPreset('custom'); setSpace({ name: 'Custom Space', width: space.width, depth: +e.target.value }) }} /></label>
-            </div>
-            <button className="fit-stage" onClick={fitStage}>Fit stage to viewport</button>
+          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Drag a selected item to move the selection.</p><button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
+            <p className="inspector-hint">{space ? space.name : 'No stage selected.'}{lockedStageId!==null && ' · Stage locked by this link'}</p>
+            {lockedStageId===null && <button className="fit-stage" onClick={()=>setStagePickerOpen(true)}>Choose stage</button>}
+            {space && <><div className="inspector-grid">
+              <label className="field">WIDTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.width} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,width:+e.target.value})}}} /></label>
+              <label className="field">DEPTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.depth} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,depth:+e.target.value})}}} /></label>
+            </div><button className="fit-stage" onClick={fitStage}>Fit stage to viewport</button>
+            {space.stageId && <button className="fit-stage" onClick={copyStageLink}>Copy stage-locked link</button>}</>}
           </>}</div>
         </aside>
       </main>
+      {(stagePickerOpen || !space) && <div className="stage-picker-backdrop" onMouseDown={event=>{if(space && event.target===event.currentTarget)setStagePickerOpen(false)}}>
+        <section className="stage-picker" role="dialog" aria-modal="true" aria-label="Choose a stage">
+          <div className="stage-picker-heading"><h2>{lockedStageId!==null ? 'Your designated stage' : 'Choose your stage'}</h2>{space && <button aria-label="Close" onClick={()=>setStagePickerOpen(false)}>&times;</button>}</div>
+          <p>{lockedStageId!==null ? 'This link is restricted to the stage below.' : 'Select the space you would like to build your stageplot in.'}</p>
+          {libraryLoading ? <p role="status">Loading stages…</p> : !libraryOnline ? <p role="alert">Stage library unavailable. Start the library server or try again when your connection is restored.</p> : <div className="stage-picker-list">{stages.filter(stage=>lockedStageId===null || stage.id===lockedStageId).map(stage=><button key={stage.id} onClick={()=>choosePreset('stage:'+stage.id)}>
+            <svg viewBox={`0 0 ${stage.dimensions.widthMeters} ${stage.dimensions.depthMeters}`} aria-hidden="true"><path d={zonePath(stage.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>
+            <span><b>{stage.label}</b><small>{stage.dimensions.widthMeters.toFixed(2)} × {stage.dimensions.depthMeters.toFixed(2)} m</small></span>
+          </button>)}{!stages.some(stage=>lockedStageId===null || stage.id===lockedStageId) && <p role="status">{lockedStageId!==null ? 'The stage in this link is unavailable. Please ask the theatre for an updated link.' : 'No stages saved yet. Create one in Shape Studio, or use a rectangular space below.'}</p>}</div>}
+          {lockedStageId===null && <form className="stage-picker-custom" onSubmit={event=>{event.preventDefault();if(customWidth>0 && customDepth>0){const next={name:'Custom Space',width:customWidth,depth:customDepth};setSpace(next);setPreset('custom');setStagePickerOpen(false);fitToSpace(next)}}}>
+            <h3>Custom rectangular space</h3><div className="inspector-grid"><label className="field">WIDTH (m)<input type="number" required min=".1" step=".01" value={customWidth} onChange={event=>setCustomWidth(+event.target.value)} /></label><label className="field">DEPTH (m)<input type="number" required min=".1" step=".01" value={customDepth} onChange={event=>setCustomDepth(+event.target.value)} /></label></div><button className="btn ghost" type="submit">Use rectangular space</button>
+          </form>}
+          <button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>
+        </section>
+      </div>}
+      {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {notice && <div className="toast">{notice}</div>}
     </div>
   )

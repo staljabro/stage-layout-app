@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { segmentMode, segmentMidpoint, smoothControl, arcOffset, pointOnArc, bezierGeometry, stageSegmentPath, stagePath, sampleStageBoundary } from "../../../src/stage-geometry.js";
-import { isPublishedItem } from "../../library-membership.mjs";
+import { isPublishedItem, isEquipmentItem } from "../../library-membership.mjs";
 import { objectPivot, normalizeRotation, rotateObjects, rotatedBounds } from "./rotation.js";
+import { TextArtwork } from "../../../src/text-shape.jsx";
+import { sizeText, textSvg } from "../../../src/text-layout.js";
+import { convertToVector, vectorPath } from "./vector-conversion.js";
+import { equipmentSaveChoice, newAssetId } from "./equipment-save.js";
+import { toCentimetres, fromCentimetres } from "./measurements.js";
+import { readSessionDraft, useSessionDraft } from "../../../src/session-draft.js";
+import { selectionBox, enclosedItems } from "../../../src/marquee.js";
+import { stageControlPoints, nearestControl } from "./stage-controls.js";
+import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
 
 const LIBRARY_API = "http://127.0.0.1:8787/api/items";
 const STAGES_API = "http://127.0.0.1:8787/api/stages";
 const GROUPS_API = "http://127.0.0.1:8787/api/groups";
+const MeasurementUnit = createContext("cm");
 
 const roundDimension = value => Number(value.toFixed(2));
 function useDimensionState(initialValue) {
@@ -14,6 +24,7 @@ function useDimensionState(initialValue) {
   const normalize = entry => {
     if (typeof entry === "number") return roundDimension(entry);
     const result = {...entry};
+    if (result.type === "text") return sizeText(result);
     for (const key of ["width", "height", "legRadius"]) {
       if (typeof result[key] === "number") result[key] = roundDimension(result[key]);
     }
@@ -27,7 +38,10 @@ function useDimensionState(initialValue) {
 }
 
 function CommittedNumberInput({ value, onChange, min, max, ...props }) {
-  const formattedValue = Number(value).toFixed(2);
+  const metres = useContext(MeasurementUnit) === "m";
+  const scale = metres ? 1 : 100;
+  const format = entry => metres ? Number(entry).toFixed(2) : String(toCentimetres(entry));
+  const formattedValue = format(value);
   const commit = (event) => {
     const input = event.currentTarget;
     const number = input.value.trim() === "" ? NaN : Number(input.value);
@@ -35,14 +49,34 @@ function CommittedNumberInput({ value, onChange, min, max, ...props }) {
       input.value = formattedValue;
       return;
     }
-    const bounded = roundDimension(Math.min(max === undefined ? Infinity : Number(max), Math.max(min === undefined ? -Infinity : Number(min), number)));
-    input.value = bounded.toFixed(2);
+    const boundedInput = Math.min(max === undefined ? Infinity : Number(max) * scale, Math.max(min === undefined ? -Infinity : Number(min) * scale, number));
+    const bounded = metres ? roundDimension(boundedInput) : fromCentimetres(boundedInput);
+    input.value = format(bounded);
     if (bounded !== Number(value)) onChange?.({ target: { value: String(bounded) } });
   };
-  return <input {...props} key={value} type="number" min={min} max={max} defaultValue={formattedValue} onBlur={commit} onKeyDown={event=>{
+  return <input {...props} key={`${metres}:${value}`} type="number" step={metres ? ".01" : "1"} min={min === undefined ? undefined : Number(min) * scale} max={max === undefined ? undefined : Number(max) * scale} defaultValue={formattedValue} onBlur={commit} onKeyDown={event=>{
     if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
     if (event.key === "Escape") { event.currentTarget.value = formattedValue; event.currentTarget.blur(); }
   }}/>;
+}
+
+function LiveNumberInput({ value, onChange, min, centimetres = false, ...props }) {
+  const scale = centimetres ? 100 : 1;
+  const displayValue = centimetres ? toCentimetres(value) : value;
+  const [draft, setDraft] = useState(String(displayValue));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(String(displayValue));
+  }, [displayValue]);
+  return <input {...props} type="number" step={centimetres ? 1 : props.step} min={min * scale} value={draft}
+    onFocus={() => { focused.current = true; }}
+    onChange={event => {
+      setDraft(event.target.value);
+      const number = centimetres ? fromCentimetres(event.target.value) : Number(event.target.value);
+      if (event.target.value.trim() !== "" && Number.isFinite(number) && number >= min) onChange(number);
+    }}
+    onBlur={() => { focused.current = false; setDraft(String(displayValue)); }}
+  />;
 }
 
 const PALETTE = [
@@ -52,18 +86,20 @@ const PALETTE = [
   { type: "ellipse", label: "Ellipse", glyph: "⬭" },
   { type: "triangle", label: "Triangle", glyph: "△" },
   { type: "line", label: "Line", glyph: "╱" },
+  { type: "text", label: "Text", glyph: "T" },
   { type: "tripod", label: "Tripod base", glyph: "Y" },
-  { type: "hexagon", label: "Hexagon", glyph: "⬡" },
 ];
 
 const ADVANCED_PALETTE = [
   { type: "arc", label: "Arc", glyph: "\u2312" },
   { type: "vector", label: "Vector", glyph: "\u25c7" },
+  { type: "drawVector", label: "Custom vector", glyph: "✎" },
   { type: "trapezoid", label: "Trapezoid", glyph: "▱" },
   { type: "polygon", label: "Polygon", glyph: "⬠" },
 ];
 
 const DEFAULTS = {
+  text: { width: .4, height: .2, text: "Text", fontSize: .2, bold: false, italic: false, textAlign: "left", lineSpacing: 1.2 },
   vector: { width: .6, height: .4 },
   rect: { width: 0.6, height: 0.4 },
   roundRect: { width: 0.6, height: 0.4 },
@@ -254,6 +290,7 @@ const defaultStageNodes = (width, depth) => [
 ];
 
 const resizeShape = (item, changes) => {
+  if (item.type === "text") return sizeText({ ...item, ...changes });
   const width = Math.max(.01, changes.width ?? item.width), height = Math.max(.01, changes.height ?? item.height);
   const sx = width/item.width, sy = height/item.height;
   const result = {...item,...changes,width,height};
@@ -286,11 +323,12 @@ const moveVectorHandle = (original,handle,dx,dy,snap) => {
 };
 function VectorEditor({item,index,onSelect,onDrag,onInsert,onCurve}) {
   return <g>{item.nodes.map((node,i)=>{
+    if (item.open && i === 0) return null;
     const previous=item.nodes[(i-1+item.nodes.length)%item.nodes.length],mode=segmentMode(node);
     return <path key={i} className="segment-hit" d={`M ${previous.x} ${previous.y} ${stageSegmentPath(previous,node)}`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();onSelect(i);if(event.shiftKey && mode === "line")onInsert(i);else if(event.ctrlKey)onCurve(i);}} />;
   })}{item.nodes.map((node,i)=>{
     const previous=item.nodes[(i-1+item.nodes.length)%item.nodes.length],mode=segmentMode(node);
-    const handles=mode==="pointArc"?[["pointArc",pointOnArc(previous,node)]]:mode==="smooth"?[["smooth",smoothControl(previous,node)]]:mode==="bezier"?Object.entries(bezierGeometry(previous,node)):[];
+    const handles=item.open && i===0 ? [] : mode==="pointArc"?[["pointArc",pointOnArc(previous,node)]]:mode==="smooth"?[["smooth",smoothControl(previous,node)]]:mode==="bezier"?Object.entries(bezierGeometry(previous,node)):[];
     return <g key={i}>
       <circle className={index===i?"boundary-node selected":"boundary-node"} cx={node.x} cy={node.y} r=".025" onPointerDown={event=>{onSelect(i);onDrag(event,`vector:${i}:node`);}} />
       {index===i && handles.map(([kind,point])=><circle key={kind} className={kind==="midpoint"||kind==="pointArc"||kind==="smooth"?"curve-control":"bezier-control"} cx={point.x} cy={point.y} r=".025" onPointerDown={event=>onDrag(event,`vector:${i}:${kind}`)} />)}
@@ -311,11 +349,12 @@ function ColourPicker({value,onChange}) {
   </div>;
 }
 function ReferenceInspector({referenceImage,setReferenceImage}) {
+  const unit = useContext(MeasurementUnit).toUpperCase();
   return (                <>
                   <p className="eyebrow advanced-title">REFERENCE IMAGE</p>
                   <div className="field-row">
                     <label className="field">
-                      X
+                      X ({unit})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -329,7 +368,7 @@ function ReferenceInspector({referenceImage,setReferenceImage}) {
                       />
                     </label>
                     <label className="field">
-                      Y
+                      Y ({unit})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -343,7 +382,7 @@ function ReferenceInspector({referenceImage,setReferenceImage}) {
                       />
                     </label>
                     <label className="field">
-                      WIDTH
+                      WIDTH ({unit})
                       <CommittedNumberInput
                         type="number"
                         min=".05"
@@ -366,7 +405,7 @@ function ReferenceInspector({referenceImage,setReferenceImage}) {
                       />
                     </label>
                     <label className="field">
-                      HEIGHT
+                      HEIGHT ({unit})
                       <CommittedNumberInput
                         type="number"
                         min=".05"
@@ -466,7 +505,8 @@ function Shape({
   let content;
   if (item.type === "compound") content = <g transform={`scale(${item.width / item.artworkWidth} ${item.height / item.artworkHeight})`}>{item.children.map((child,index)=><Shape key={index} item={child}/>)}</g>;
   else if (item.type === "path") content = <path d={item.d} {...common} />;
-  else if (item.type === "vector") content = <path d={stagePath(item.nodes)} {...common} />;
+  else if (item.type === "text") content = <TextArtwork item={item} />;
+  else if (item.type === "vector") content = <path d={vectorPath(item)} {...common} />;
   else if (item.type === "circle" || item.type === "ellipse")
     content = (
       <ellipse
@@ -578,13 +618,15 @@ function Shape({
     <g
       transform={`translate(${item.x} ${item.y}) rotate(${item.rotation} ${pivot.x} ${pivot.y})`}
       onPointerDown={onPointerDown}
+      data-shape-id={item.id}
       className={`shape-layer ${collisionGuide ? "collision-guide" : ""}`}
     >
-      {content}
+      <g className="shape-artwork">{content}</g>
+      {item.type === "text" && !collisionGuide && <rect width={item.width} height={item.height} fill="transparent" stroke="none" className="text-shape-hit" />}
       {selected && vectorEditor}
       {selected && onHandlePointerDown && <g className="rotation-handles"><line x1={pivot.x} y1="0" x2={pivot.x} y2="-.19"/><circle cx={pivot.x} cy="-.22" r=".03" onPointerDown={event=>onHandlePointerDown(event,"rotate")}><title>Rotate object (Shift: 15-degree steps)</title></circle></g>}
-      {selected && item.type !== "vector" && onHandlePointerDown && <g className="shape-handles">{(item.type === "circle" ? [[item.width,item.height/2,"radius"]] : [[0,0,"resize-nw"],[item.width,0,"resize-ne"],[0,item.height,"resize-sw"],[item.width,item.height,"resize-se"]]).map(([x,y,handle]) => <circle key={handle} cx={x} cy={y} r=".035" onPointerDown={(event) => onHandlePointerDown?.(event,handle)} />)}</g>}
-      {selected && (
+      {selected && !["vector","text","arc"].includes(item.type) && onHandlePointerDown && <g className="shape-handles">{(item.type === "circle" ? [[item.width,item.height/2,"radius"]] : [[0,0,"resize-nw"],[item.width,0,"resize-ne"],[0,item.height,"resize-sw"],[item.width,item.height,"resize-se"]]).map(([x,y,handle]) => <circle key={handle} cx={x} cy={y} r=".035" onPointerDown={(event) => onHandlePointerDown?.(event,handle)} />)}</g>}
+      {selected && item.type !== "arc" && (
         <rect
           className="selection"
           x="-.02"
@@ -618,9 +660,6 @@ function Shape({
       )}
       {selected && item.type === "arc" && (
         <g className="shape-handles arc-handles">
-          <path
-            d={`M ${item.startX} ${item.startY} L ${item.controlX} ${item.controlY} L ${item.endX} ${item.endY}`}
-          />
           <circle
             cx={item.startX}
             cy={item.startY}
@@ -635,8 +674,8 @@ function Shape({
           />
           <circle
             className="control-handle"
-            cx={item.controlX}
-            cy={item.controlY}
+            cx={(item.startX + 2 * item.controlX + item.endX) / 4}
+            cy={(item.startY + 2 * item.controlY + item.endY) / 4}
             r=".04"
             onPointerDown={(event) =>
               onHandlePointerDown?.(event, "arc-control")
@@ -658,7 +697,8 @@ function svgElement(item) {
   let node;
   if (item.type === "compound") node = `<g transform="scale(${item.width / item.artworkWidth} ${item.height / item.artworkHeight})">${item.children.map(svgElement).join("\n")}</g>`;
   else if (item.type === "path") node = `<path d="${item.d}" ${attrs} />`;
-  else if (item.type === "vector") node = `<path d="${stagePath(item.nodes)}" ${attrs} />`;
+  else if (item.type === "text") node = textSvg(item);
+  else if (item.type === "vector") node = `<path d="${vectorPath(item)}" ${attrs} />`;
   else if (item.type === "circle" || item.type === "ellipse")
     node = `<ellipse cx="${item.width / 2}" cy="${item.height / 2}" rx="${item.width / 2}" ry="${item.height / 2}" ${attrs} />`;
   else if (item.type === "triangle")
@@ -804,26 +844,30 @@ function CollisionGuide({ item }) {
 }
 
 function App() {
-  const [documentMode, setDocumentMode] = useState("item");
-  const [shapeName, setShapeName] = useState("Untitled Item");
-  const [realWidth, setRealWidth] = useDimensionState(1);
-  const [realDepth, setRealDepth] = useDimensionState(1);
-  const [groupId, setGroupId] = useState("");
-  const [items, setItems] = useDimensionState([]);
+  const [session] = useState(() => readSessionDraft("shape-studio:draft"));
+  const [documentMode, setDocumentMode] = useState(session.documentMode ?? "item");
+  const [shapeName, setShapeName] = useState(session.shapeName ?? "Untitled Item");
+  const [realWidth, setRealWidth] = useDimensionState(session.realWidth ?? 1);
+  const [realDepth, setRealDepth] = useDimensionState(session.realDepth ?? 1);
+  const [groupId, setGroupId] = useState(session.groupId ?? "");
+  const [items, setItems] = useDimensionState(session.items ?? []);
   const [selectedId, setSelectedId] = useState(null);
   const [vectorNodeIndex, setVectorNodeIndex] = useState(null);
+  const [vectorDrawing, setVectorDrawing] = useState(session.vectorDrawing ?? null);
+  const [vectorPreview, setVectorPreview] = useState(null);
   const [multiSelectedIds, setMultiSelectedIds] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState(null);
   const [history, setHistory] = useState([]);
-  const [snapMode, setSnapMode] = useState("standard");
-  const [grid, setGrid] = useState(true);
+  const [snapMode, setSnapMode] = useState(session.snapMode ?? "standard");
+  const [grid, setGrid] = useState(session.grid ?? true);
   const [toast, setToast] = useState("");
   const [library, setLibrary] = useState([]);
-  const [advancedShapeRole, setAdvancedShapeRole] = useState(null);
+  const [advancedShapeRole, setAdvancedShapeRole] = useState(session.advancedShapeRole ?? null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [presetSaving, setPresetSaving] = useState(false);
   const [shapeSaving, setShapeSaving] = useState(false);
+  const [saveChoice, setSaveChoice] = useState(null);
   const [manageCustomOpen, setManageCustomOpen] = useState(false);
   const [removingPresetId, setRemovingPresetId] = useState(null);
   const [manageStageplotOpen, setManageStageplotOpen] = useState(false);
@@ -833,36 +877,42 @@ function App() {
   const [groupsSaving, setGroupsSaving] = useState(false);
   const [editingItemNameId, setEditingItemNameId] = useState(null);
   const [itemNameDraft, setItemNameDraft] = useState("");
+  const [editingStageNameId, setEditingStageNameId] = useState(null);
+  const [stageNameDraft, setStageNameDraft] = useState("");
   const [editingEquipmentGroupId, setEditingEquipmentGroupId] = useState(null);
   const [equipmentGroupDraft, setEquipmentGroupDraft] = useState("");
-  const savedProject = useRef(null);
+  const savedProject = useRef(session.savedProject ?? null);
   const resetProjectBaseline = useRef(false);
   const [removingStageplotId, setRemovingStageplotId] = useState(null);
   const [stageLibrary, setStageLibrary] = useState([]);
-  const [stageNodes, setStageNodes] = useState(() => defaultStageNodes(1, 1));
+  const [stageNodes, setStageNodes] = useState(session.stageNodes ?? defaultStageNodes(1, 1));
   const [selectedStageNode, setSelectedStageNode] = useState(null);
-  const [referenceImages, setReferenceImages] = useDimensionState([]);
+  const [referenceImages, setReferenceImages] = useDimensionState(session.referenceImages ?? []);
   const [selectedReferenceId, setSelectedReferenceId] = useState(null);
-  const [zones, setZones] = useState([]);
-  const [textItems, setTextItems] = useState([]);
+  const [zones, setZones] = useState(session.zones ?? []);
+  const [textItems, setTextItems] = useState(session.textItems ?? []);
   const [selectedTextId, setSelectedTextId] = useState(null);
-  const [canvasResizeEnabled, setCanvasResizeEnabled] = useState(false);
+  const [canvasResizeEnabled, setCanvasResizeEnabled] = useState(session.canvasResizeEnabled ?? false);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [groups, setGroups] = useState([]);
-  const [activeLibraryId, setActiveLibraryId] = useState(null);
+  const [activeLibraryId, setActiveLibraryId] = useState(session.activeLibraryId ?? null);
+  const [draftAssetId, setDraftAssetId] = useState(() => session.draftAssetId ?? newAssetId(session.documentMode === "stage" ? "stage" : "item"));
   const [libraryError, setLibraryError] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [canvasResizeView, setCanvasResizeView] = useState(null);
-  const nextId = useRef(20);
-  const nextGroupId = useRef(1);
+  const [newItemOpen, setNewItemOpen] = useState(false);
+  const [zoom, setZoom] = useState(session.zoom ?? 1);
+  const [pan, setPan] = useState(session.pan ?? { x: 0, y: 0 });
+  const [canvasResizeView, setCanvasResizeView] = useState(session.canvasResizeView ?? null);
+  const nextId = useRef(Math.max(session.nextId || 20, ...(session.items || []).map(item=>(Number(item.id)||0)+1)));
+  const nextGroupId = useRef(session.nextGroupId || 1);
   const canvasRef = useRef(null);
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
   const handleRef = useRef(null);
   const rotationDragRef = useRef(null);
   const panRef = useRef(null);
+  const marqueeRef = useRef(null);
+  const [marquee, setMarquee] = useState(null);
   const stageDragRef = useRef(null);
   const imageFileRef = useRef(null);
   const assetDragRef = useRef(null);
@@ -875,8 +925,16 @@ function App() {
       resetProjectBaseline.current = false;
     }
   });
-  const publishedItems = library.filter(isPublishedItem);
-  const matchingManagedItems = library.filter(item => {
+  const sessionError = useSessionDraft("shape-studio:draft", {
+    documentMode, shapeName, realWidth, realDepth, groupId, items, referenceImages,
+    advancedShapeRole, stageNodes, zones, textItems, activeLibraryId, draftAssetId, snapMode, grid,
+    zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
+    savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
+  });
+  const equipmentItems = library.filter(isEquipmentItem);
+  const publishedItems = equipmentItems.filter(isPublishedItem);
+  const matchingManagedStages = stageLibrary.filter(stage => stage.label.toLowerCase().includes(managedItemSearch.trim().toLowerCase())).sort((a,b)=>a.label.localeCompare(b.label));
+  const matchingManagedItems = equipmentItems.filter(item => {
     const groupName = groups.find(group=>group.id===item.groupId)?.label || "Uncategorised";
     return (item.label + " " + groupName).toLowerCase().includes(managedItemSearch.trim().toLowerCase());
   }).sort((a,b)=>a.label.localeCompare(b.label,undefined,{sensitivity:"base"}));
@@ -885,6 +943,7 @@ function App() {
   const activePublished = Boolean(activeLibraryId && publishedItems.some(item => item.id === activeLibraryId));
   const advancedPresets = library.filter(item => item.editor?.advancedShapeRole && item.editor?.layers?.length);
   const selected = items.find((item) => item.id === selectedId);
+  const drawnVector = items.find(item=>item.id===vectorDrawing?.id);
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId);
   const selectedText = textItems.find((item) => item.id === selectedTextId);
   const referenceImage = referenceImages.find(
@@ -923,6 +982,7 @@ function App() {
     selectedStageNode === null
       ? null
       : (selectedZone?.nodes || stageNodes)[selectedStageNode];
+  const activeStageControls = documentMode === "stage" && !selectedZone?.locked ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
   const selectedGroupItems = selectedGroupId
     ? items.filter((item) => item.editorGroupId === selectedGroupId)
     : [];
@@ -937,7 +997,7 @@ function App() {
     () =>
       items.map(function toVectorShape({ id, name, collision, ...shape }) { return ({
         ...shape,
-        ...(shape.type === "vector" ? {type:"path",d:stagePath(shape.nodes)} : {}),
+        ...(shape.type === "vector" ? {type:"path",d:vectorPath(shape)} : {}),
         ...(shape.type === "compound" ? {children:shape.children.map(toVectorShape)} : {}),
         id: String(id),
         name,
@@ -952,16 +1012,16 @@ function App() {
     () => ({
       schema: "stageplot-item@3",
       stageplotPublished: activePublished,
-      id: activeLibraryId || libraryId(shapeName),
+      id: activeLibraryId || draftAssetId,
       label: shapeName.trim() || "Untitled Item",
-      groupId: groupId || null,
+      groupId: advancedShapeRole ? null : groupId || null,
       dimensions: { widthMeters: realWidth, depthMeters: realDepth },
       shapes: vectorShapes,
       collisionShapes,
       editor: { layers: items, referenceImages, ...(advancedShapeRole ? {advancedShapeRole} : {}), ...(library.find(item=>item.id===activeLibraryId)?.editor?.placementMode ? {placementMode:library.find(item=>item.id===activeLibraryId).editor.placementMode} : {}) },
     }),
     [
-      activeLibraryId,
+      activeLibraryId, draftAssetId,
       activePublished,
       library,
       shapeName,
@@ -982,7 +1042,7 @@ function App() {
   const stageData = useMemo(
     () => ({
       schema: "stageplot-stage@1",
-      id: activeLibraryId || libraryId(shapeName),
+      id: activeLibraryId || draftAssetId,
       label: shapeName.trim() || "Untitled Stage",
       dimensions: { widthMeters: realWidth, depthMeters: realDepth },
       boundary: { closed: true, nodes: stageNodes },
@@ -998,7 +1058,7 @@ function App() {
       editor: { referenceImages },
     }),
     [
-      activeLibraryId,
+      activeLibraryId, draftAssetId,
       shapeName,
       realWidth,
       realDepth,
@@ -1084,6 +1144,7 @@ function App() {
     window.setTimeout(() => setToast(""), 1800);
   };
   const addAdvancedPreset = (preset) => {
+    if (vectorDrawing) finishVectorDrawing(false);
     try {
       let groupId;
       do { groupId = `preset-group-${nextGroupId.current++}`; } while (items.some(item => item.editorGroupId === groupId));
@@ -1103,7 +1164,7 @@ function App() {
     try {
       const id = advancedShapeRole && activeLibraryId ? activeLibraryId : advancedPresetId("custom", libraryId(presetName));
       const existing = library.find(item => item.id === id);
-      const data = {...itemData,id,stageplotPublished:existing ? isPublishedItem(existing) : false,label:presetName.trim(),editor:{...itemData.editor,advancedShapeRole:"custom",placementMode:existing?.editor?.placementMode || "layers"}};
+      const data = {...itemData,id,groupId:null,stageplotPublished:existing ? isPublishedItem(existing) : false,label:presetName.trim(),editor:{...itemData.editor,advancedShapeRole:"custom",placementMode:existing?.editor?.placementMode || "layers"}};
       const response = await fetch(`${LIBRARY_API}/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not save custom shape");
@@ -1115,6 +1176,15 @@ function App() {
     finally { setPresetSaving(false); }
   };
   const add = (type) => {
+    if (vectorDrawing) finishVectorDrawing(false);
+    if (type === "drawVector") {
+      setVectorDrawing({id:null});
+      setVectorPreview(null);
+      setSelectedId(null);setMultiSelectedIds([]);setSelectedGroupId(null);setSelectedReferenceId(null);
+      flash("Click points to draw. Click the last point to finish, the first to close, or press Esc.");
+      return;
+    }
+    setVectorDrawing(null);
     setSelectedReferenceId(null);
     checkpoint();
     const size = DEFAULTS[type];
@@ -1133,17 +1203,23 @@ function App() {
       stroke: "#25261f",
       strokeWidth: 2,
       rotation: 0,
-      collision: type !== "line" && type !== "arc",
+      collision: type !== "line" && type !== "arc" && type !== "text",
     };
-    setItems((old) => [...old, item]);
+    setItems((old) => [...old, type === "text" ? sizeText({...item, fill:"#25261f", stroke:"none", strokeWidth:0}) : item]);
     setSelectedId(item.id);
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
   };
   const pointerDown = (event, item) => {
+    if (event.button !== 0) return;
+    if (item.type === "text") event.preventDefault();
     setSelectedReferenceId(null);
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    if (!event.shiftKey && multiSelectedIds.length > 1 && multiSelectedIds.includes(item.id)) {
+      dragRef.current = { groupId: "selection", px: event.clientX, py: event.clientY, members: items.filter(member=>multiSelectedIds.includes(member.id)).map(member=>({id:member.id,x:member.x,y:member.y})) };
+      return;
+    }
     if (item.editorGroupId) {
       const members = items.filter(
         (candidate) => candidate.editorGroupId === item.editorGroupId,
@@ -1260,8 +1336,8 @@ function App() {
           if (handle === "arc-control")
             return {
               ...item,
-              controlX: snapValue(original.controlX + deltaX),
-              controlY: snapValue(original.controlY + deltaY),
+              controlX: 2 * snapValue((original.startX + 2 * original.controlX + original.endX) / 4 + deltaX) - (original.startX + original.endX) / 2,
+              controlY: 2 * snapValue((original.startY + 2 * original.controlY + original.endY) / 4 + deltaY) - (original.startY + original.endY) / 2,
             };
           if (handle === "left")
             return {
@@ -1317,6 +1393,7 @@ function App() {
     );
   };
   const startHandleDrag = (event, handle) => {
+    if (event.button !== 0) return;
     if (handle === "rotate") { startRotationDrag(event, selected); return; }
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1341,6 +1418,7 @@ function App() {
     };
   };
   const startRotationDrag = (event, item = null) => {
+    if (event.button !== 0) return;
     const originals=item?[item]:selectedGroupItems;
     if (!originals.length) return;
     event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);checkpoint();
@@ -1388,12 +1466,21 @@ function App() {
     finally {setRemovingPresetId(null);}
   };
   const startStageNodeDrag = (event, index, handle = "node", zoneId = null) => {
+    if (event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     stageDragRef.current = { index, handle, zoneId };
     setSelectedStageNode(index);
     setSelectedZoneId(zoneId);
     setReferenceSelected(false);
+  };
+  const captureStageControl = (event) => {
+    if (event.button !== 0 || !activeStageControls.length || event.shiftKey || event.ctrlKey) return;
+    const matrix = canvasRef.current.getScreenCTM();
+    if (!matrix) return;
+    const radius = Math.hypot(realWidth,realDepth) / Math.SQRT2 * .007 * Math.hypot(matrix.a,matrix.b) + 9;
+    const kind = nearestControl(activeStageControls,{x:event.clientX,y:event.clientY},point=>({x:matrix.a*point.x+matrix.c*point.y+matrix.e,y:matrix.b*point.x+matrix.d*point.y+matrix.f}),radius);
+    if (kind) startStageNodeDrag(event,selectedStageNode,kind,selectedZoneId);
   };
   const stagePointer = (event, clamp = true) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -1454,6 +1541,37 @@ function App() {
     } else setSelectedStageNode(index);
     setSelectedZoneId(zoneId);
     setReferenceSelected(false);
+  };
+  const finishVectorDrawing = (closed = false) => {
+    const draft = items.find(item=>item.id===vectorDrawing?.id);
+    if (draft) {
+      checkpoint();
+      setItems(old=>old.map(item=>item.id===draft.id ? finishDrawnVector(item,closed) : item));
+      setSelectedId(draft.id);
+      setVectorNodeIndex(null);
+    }
+    setVectorDrawing(null);
+    setVectorPreview(null);
+  };
+  const drawVectorPoint = (event) => {
+    if (event.button !== 0 || !vectorDrawing) return;
+    event.preventDefault();event.stopPropagation();
+    const point = stagePointer(event,false);
+    const draft = items.find(item=>item.id===vectorDrawing.id);
+    if (!draft) {
+      checkpoint();
+      const id = nextId.current++;
+      setItems(old=>[...old,{id,type:"vector",name:"Custom vector",x:point.x,y:point.y,width:.01,height:.01,nodes:[{x:0,y:0,curveMode:"line"}],open:true,collision:false,fill:"none",stroke:"#25261f",strokeWidth:2,rotation:0}]);
+      setVectorDrawing({id});setSelectedId(id);
+      return;
+    }
+    const matrix = canvasRef.current.getScreenCTM();
+    const endpoint = matrix && drawingEndpoint(draft,{x:event.clientX,y:event.clientY},node=>({x:matrix.a*node.x+matrix.c*node.y+matrix.e,y:matrix.b*node.x+matrix.d*node.y+matrix.f}));
+    if (endpoint) {finishVectorDrawing(endpoint==="closed");return;}
+    const node={x:point.x-draft.x,y:point.y-draft.y,curveMode:"line"};
+    if(Math.hypot(node.x-draft.nodes.at(-1).x,node.y-draft.nodes.at(-1).y)<1e-8)return;
+    checkpoint();
+    setItems(old=>old.map(item=>item.id===draft.id ? finishDrawnVector({...item,nodes:[...item.nodes,node]},false) : item));
   };
   const moveStageNode = (event) => {
     if (!stageDragRef.current || !canvasRef.current) return;
@@ -1600,6 +1718,7 @@ function App() {
     event.target.value = "";
   };
   const startReferenceDrag = (event, handle, imageOverride = referenceImage) => {
+    if (event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     checkpoint();
@@ -1619,6 +1738,7 @@ function App() {
     startReferenceDrag(event, `image-crop-${edge}`);
   };
   const startCanvasResize = (event, dimension) => {
+    if (event.button !== 0) return;
     if (!canvasResizeEnabled || !event.ctrlKey) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1628,6 +1748,7 @@ function App() {
     stageDragRef.current = { handle: dimension === "width" ? "canvas-width" : "canvas-depth", client: dimension === "width" ? event.clientX : event.clientY, original: dimension === "width" ? realWidth : realDepth, pixelsPerMeter: dimension === "width" ? rect.width / realWidth : rect.height / realDepth };
   };
   const startAssetMove = (event, asset, assetType) => {
+    if (event.button !== 0) return;
     if (asset.locked || event.ctrlKey || event.shiftKey) return;
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId);
     stageDragRef.current = { handle: "asset-move", assetType, id: asset.id, start: stagePointer(event, false), original: assetType === "zone" ? structuredClone(asset.nodes) : { x: asset.x, y: asset.y } };
@@ -1751,6 +1872,7 @@ function App() {
   const saveToLibrary = async () => {
     if (shapeSaving) return;
     if (documentMode === "stage") {
+      setShapeSaving(true);
       try {
         const response = await fetch(
           `${STAGES_API}/${encodeURIComponent(stageData.id)}`,
@@ -1768,26 +1890,37 @@ function App() {
         flash(activeLibraryId ? "Stage updated" : "Stage added to Stageplot");
       } catch (error) {
         flash(error.message || "Could not save stage");
+      } finally {
+        setShapeSaving(false);
       }
       return;
     }
     if (!items.length) return flash("Add artwork before saving");
     if (!shapeName.trim()) return flash("Give the shape a name before saving");
-    if (!activeLibraryId && library.some(item=>item.id===itemData.id)) return flash("An item with this name already exists. Edit it in Equipment library or choose another name.");
+    const choice = equipmentSaveChoice(library, activeLibraryId, shapeName);
+    if (choice) {
+      setSaveChoice({ ...choice, data: itemData, snapshot: projectSnapshot, newId: newAssetId() });
+      return;
+    }
+    await persistEquipment(itemData, projectSnapshot);
+  };
+  const persistEquipment = async (data, snapshot) => {
+    if (shapeSaving) return;
     setShapeSaving(true);
     try {
       const response = await fetch(
-        `${LIBRARY_API}/${encodeURIComponent(itemData.id)}`,
+        `${LIBRARY_API}/${encodeURIComponent(data.id)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(itemData),
+          body: JSON.stringify(data),
         },
       );
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      savedProject.current = projectSnapshot;
+      savedProject.current = snapshot;
       setActiveLibraryId(result.id);
+      setSaveChoice(null);
       await refreshLibrary();
       flash("Shape saved to equipment library");
     } catch (error) {
@@ -1795,6 +1928,7 @@ function App() {
     } finally { setShapeSaving(false); }
   };
   const editLibraryItem = (item) => {
+    setVectorDrawing(null);setVectorPreview(null);
     setCanvasResizeView(null);
     resetProjectBaseline.current = true;
     setDocumentMode("item");
@@ -1819,6 +1953,7 @@ function App() {
     flash(`Editing ${item.label}`);
   };
   const editLibraryStage = (stage) => {
+    setVectorDrawing(null);setVectorPreview(null);
     setCanvasResizeView(null);
     resetProjectBaseline.current = true;
     const source = stage.boundary.nodes;
@@ -1858,14 +1993,19 @@ function App() {
     setLibraryOpen(false);
     setHistory([]);
   };
-  const newItem = () => {
+  const newItem = (mode) => {
+    if (projectSnapshot !== savedProject.current && !window.confirm("This project has unsaved changes. Discard them and create a new " + (mode === "stage" ? "stage" : "equipment item") + "?")) return;
+    setDocumentMode(mode);
+    setDraftAssetId(newAssetId(mode === "stage" ? "stage" : "item"));
+    setVectorDrawing(null);setVectorPreview(null);
+    setNewItemOpen(false);
     setCanvasResizeView(null);
     resetProjectBaseline.current = true;
     setAdvancedShapeRole(null);
-    const width = documentMode === "stage" ? 10 : 1;
-    const depth = documentMode === "stage" ? 5 : 1;
+    const width = mode === "stage" ? 10 : 1;
+    const depth = mode === "stage" ? 5 : 1;
     setActiveLibraryId(null);
-    setShapeName(documentMode === "stage" ? "Untitled Stage" : "Untitled Item");
+    setShapeName(mode === "stage" ? "Untitled Stage" : "Untitled Item");
     setGroupId("");
     setItems([]);
     setSelectedId(null);
@@ -1959,11 +2099,19 @@ function App() {
     setZoom((value) => Math.max(0.25, Math.min(6, value * factor)));
   };
   const startPan = (event) => {
-    if (
-      event.button !== 0 ||
-      event.target.closest?.(".shape-layer, .stage-boundary-editor")
-    )
+    if (vectorDrawing && event.button===0) {drawVectorPoint(event);return;}
+    if (event.button === 0 && documentMode === "item" && !event.target.closest?.(".shape-layer, .reference-image, .ordered-reference")) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const rect = viewportRef.current.getBoundingClientRect();
+      const start = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      marqueeRef.current = { start, worldStart: canvasWorldPoint(event), additive: event.shiftKey ? [...multiSelectedIds, ...(selectedId ? [selectedId] : []), ...selectedGroupItems.map(item=>item.id)] : [] };
+      setMarquee(selectionBox(start,start));
       return;
+    }
+    if (event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     panRef.current = {
       px: event.clientX,
@@ -1971,16 +2119,74 @@ function App() {
       x: pan.x,
       y: pan.y,
     };
-    setSelectedId(null);
-    setMultiSelectedIds([]);
-    setSelectedGroupId(null);
+  };
+  const manageStage = async (stage, label) => {
+    const deleting = label === undefined;
+    if (deleting && !window.confirm(`Permanently delete ${stage.label}? Its stage-locked links will no longer work, and saved projects will no longer be able to load this stage.`)) return;
+    setRemovingStageplotId(stage.id);
+    try {
+      const response = await fetch(`${STAGES_API}/${encodeURIComponent(stage.id)}`, deleting
+        ? { method: "DELETE" }
+        : { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...stage, label: label.trim() }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not update stage");
+      setStageLibrary(old => deleting ? old.filter(candidate => candidate.id !== stage.id) : old.map(candidate => candidate.id === stage.id ? result : candidate));
+      const editingCurrent = activeLibraryId === stage.id && documentMode === "stage";
+      if (editingCurrent) {
+        if (deleting) {
+          setActiveLibraryId(null);
+          setDraftAssetId(newAssetId("stage"));
+          savedProject.current = "{}";
+        } else {
+          setShapeName(result.label);
+          const baseline = JSON.parse(savedProject.current);
+          if (baseline.documentMode === "stage") {
+            baseline.shapeName = result.label;
+            savedProject.current = JSON.stringify(baseline);
+          }
+        }
+      }
+      setEditingStageNameId(null);
+      flash(deleting ? editingCurrent ? "Stage deleted; canvas retained as an unsaved copy" : "Stage deleted" : "Stage renamed; its link is unchanged");
+    } catch (error) { flash(error.message); }
+    finally { setRemovingStageplotId(null); }
+  };
+  const canvasWorldPoint = (event) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) / rect.width * realWidth, y: (event.clientY - rect.top) / rect.height * realDepth };
   };
   const movePan = (event) => {
+    if (marqueeRef.current) {
+      const rect = viewportRef.current.getBoundingClientRect();
+      setMarquee(selectionBox(marqueeRef.current.start, {x:event.clientX-rect.left,y:event.clientY-rect.top}));
+      return;
+    }
     if (!panRef.current) return;
     setPan({
       x: panRef.current.x + event.clientX - panRef.current.px,
       y: panRef.current.y + event.clientY - panRef.current.py,
     });
+  };
+  const finishViewportDrag = (event) => {
+    if (marqueeRef.current) {
+      const drag = marqueeRef.current;
+      const ids = [...new Set([...drag.additive, ...enclosedItems(items,selectionBox(drag.worldStart,canvasWorldPoint(event)),item=>{
+        const layer = [...canvasRef.current.querySelectorAll(".shape-layer")].find(element=>element.dataset.shapeId===String(item.id));
+        const bounds = layer?.firstElementChild?.getBoundingClientRect();
+        const canvas = canvasRef.current.getBoundingClientRect();
+        return bounds ? {x:(bounds.left-canvas.left)/canvas.width*realWidth,y:(bounds.top-canvas.top)/canvas.height*realDepth,right:(bounds.right-canvas.left)/canvas.width*realWidth,bottom:(bounds.bottom-canvas.top)/canvas.height*realDepth} : rotatedBounds([item]);
+      })])];
+      const members = items.filter(item=>ids.includes(item.id));
+      const group = members[0]?.editorGroupId;
+      const oneGroup = group && members.every(item=>item.editorGroupId===group);
+      setSelectedGroupId(oneGroup ? group : null);
+      setSelectedId(!oneGroup && ids.length===1 ? ids[0] : null);
+      setMultiSelectedIds(!oneGroup && ids.length>1 ? ids : []);
+      setSelectedReferenceId(null);
+      marqueeRef.current = null;
+      setMarquee(null);
+    }
+    panRef.current = null;
   };
   const resetView = () => {
     setCanvasResizeView(null);
@@ -1989,6 +2195,9 @@ function App() {
   };
   useEffect(() => {
     const keyDown = (event) => {
+      if (event.key === "Escape" && vectorDrawing) {
+        event.preventDefault();finishVectorDrawing(false);return;
+      }
       if (
         event.target instanceof HTMLElement &&
         ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)
@@ -1996,6 +2205,7 @@ function App() {
         return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
+        setVectorDrawing(null);setVectorPreview(null);
         undo();
         return;
       }
@@ -2009,6 +2219,7 @@ function App() {
   });
 
   return (
+    <MeasurementUnit.Provider value={documentMode === "stage" ? "m" : "cm"}>
     <div className="app">
       <header>
         <div className="brand">
@@ -2024,41 +2235,14 @@ function App() {
           aria-label="Shape name"
         />
         <div className="actions">
-          <select
-            value={documentMode}
-            onChange={(e) => {
-              const stageMode = e.target.value === "stage";
-              setDocumentMode(e.target.value);
-              setAdvancedShapeRole(null);
-              setActiveLibraryId(null);
-              setCanvasResizeView(null);
-              setShapeName(stageMode ? "Untitled Stage" : "Untitled Item");
-              setRealWidth(stageMode ? 10 : 1);
-              setRealDepth(stageMode ? 5 : 1);
-              setStageNodes(
-                defaultStageNodes(stageMode ? 10 : 1, stageMode ? 5 : 1),
-              );
-              setZones([]);
-              setTextItems([]);
-              setSelectedTextId(null);
-              setReferenceImages([]);
-              setSelectedReferenceId(null);
-              setSelectedZoneId(null);
-              setSelectedStageNode(null);
-            }}
-          >
-            <option value="item">Equipment item</option>
-            <option value="stage">Stage</option>
-          </select>
-          <button onClick={newItem}>New {documentMode}</button>
+          <button onClick={() => setNewItemOpen(true)}>New item</button>
           <button
             onClick={() => {
               refreshLibrary();
-              if (documentMode === "item") setManageStageplotOpen(true);
-              else setLibraryOpen(true);
+              setManageStageplotOpen(true);
             }}
           >
-            {documentMode === "item" ? "Equipment library" : "Load existing"}
+            Library
           </button>
           {documentMode === "item" && (
             <>
@@ -2302,30 +2486,33 @@ function App() {
             className="viewport"
             ref={viewportRef}
             onWheel={zoomViewport}
+            onPointerDownCapture={event=>{if(event.button===1)startPan(event);}}
             onPointerDown={startPan}
             onPointerMove={movePan}
-            onPointerUp={() => {
-              panRef.current = null;
-            }}
+            onPointerUp={finishViewportDrag}
             onPointerCancel={() => {
               panRef.current = null;
+              marqueeRef.current = null;
+              setMarquee(null);
             }}
           >
             <div
               className="canvas-shell"
               style={{
                 aspectRatio: `${realWidth} / ${realDepth}`,
-                width: canvasResizeView ? `${realWidth * canvasResizeView.pixelsPerMeter}px` : `min(76%, ${(68 * realWidth) / realDepth}vh)`,
-                height: canvasResizeView ? `${realDepth * canvasResizeView.pixelsPerMeter}px` : undefined,
-                transform: `translate(${pan.x + (canvasResizeView ? (realWidth - canvasResizeView.width) * canvasResizeView.pixelsPerMeter * zoom / 2 : 0)}px, ${pan.y + (canvasResizeView ? (realDepth - canvasResizeView.depth) * canvasResizeView.pixelsPerMeter * zoom / 2 : 0)}px) scale(${zoom})`,
+                width: canvasResizeView ? `${realWidth * canvasResizeView.pixelsPerMeter * (documentMode === "stage" ? zoom : 1)}px` : `min(${76 * (documentMode === "stage" ? zoom : 1)}%, ${(68 * realWidth) / realDepth * (documentMode === "stage" ? zoom : 1)}vh)`,
+                height: canvasResizeView ? `${realDepth * canvasResizeView.pixelsPerMeter * (documentMode === "stage" ? zoom : 1)}px` : undefined,
+                willChange: documentMode === "stage" ? "auto" : "transform",
+                transform: `translate(${pan.x + (canvasResizeView ? (realWidth - canvasResizeView.width) * canvasResizeView.pixelsPerMeter * zoom / 2 : 0)}px, ${pan.y + (canvasResizeView ? (realDepth - canvasResizeView.depth) * canvasResizeView.pixelsPerMeter * zoom / 2 : 0)}px) scale(${documentMode === "stage" ? 1 : zoom})`,
               }}
             >
               <svg
                 ref={canvasRef}
                 className={`canvas ${grid ? "show-grid" : ""}`}
                 viewBox={`0 0 ${realWidth} ${realDepth}`}
+                onPointerDownCapture={event=>{if(vectorDrawing)drawVectorPoint(event);else captureStageControl(event);}}
                 onPointerMove={
-                  (event) => { if (stageDragRef.current || documentMode === "stage") moveStageNode(event); else pointerMove(event); }
+                  (event) => { if(vectorDrawing){setVectorPreview(stagePointer(event,false));return;} if (stageDragRef.current || documentMode === "stage") moveStageNode(event); else pointerMove(event); }
                 }
                 onPointerUp={() => {
                   dragRef.current = null;
@@ -2339,7 +2526,8 @@ function App() {
                   rotationDragRef.current = null;
                   stageDragRef.current = null;
                 }}
-                onPointerDown={() => {
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
                   setSelectedId(null);
                   setSelectedReferenceId(null);
                   if (documentMode === "stage") {
@@ -2710,8 +2898,8 @@ function App() {
                         key={item.id}
                         item={item}
                         selected={
-                          item.id === selectedId ||
-                          multiSelectedIds.includes(item.id)
+                          !vectorDrawing && (item.id === selectedId ||
+                          multiSelectedIds.includes(item.id))
                         }
                         onPointerDown={(e) => pointerDown(e, item)}
                         onHandlePointerDown={item.id === selectedId ? startHandleDrag : undefined}
@@ -2739,6 +2927,7 @@ function App() {
                 )}
                 {documentMode === "stage" &&
                   stageNode &&
+                  !selectedZone?.locked &&
                   segmentMode(stageNode) === "pointArc" &&
                   (() => {
                     const nodes = selectedZone?.nodes || stageNodes;
@@ -2767,13 +2956,23 @@ function App() {
                     );
                     })()}
                 {canvasResizeEnabled && <><line className="canvas-resize-edge width" x1={realWidth} y1="0" x2={realWidth} y2={realDepth} onPointerDown={(event) => startCanvasResize(event, "width")} /><line className="canvas-resize-edge depth" x1="0" y1={realDepth} x2={realWidth} y2={realDepth} onPointerDown={(event) => startCanvasResize(event, "depth")} /></>}
+                <g className="stage-control-overlay">{activeStageControls.map(([kind,point])=><g key={kind}>
+                  <circle className="stage-control-hit" cx={point.x} cy={point.y} r=".7%" onPointerDown={event=>startStageNodeDrag(event,selectedStageNode,kind,selectedZoneId)} />
+                  <circle className={['smooth','pointArc','midpoint'].includes(kind)?'curve-control':'bezier-control'} cx={point.x} cy={point.y} r=".7%" pointerEvents="none" />
+                </g>)}</g>
+                {vectorDrawing && <g className="vector-drawing-overlay">
+                  <rect width={realWidth} height={realDepth} fill="transparent" />
+                  {drawnVector && vectorPreview && <path className="vector-drawing-preview" d={`M ${drawnVector.x+drawnVector.nodes.at(-1).x} ${drawnVector.y+drawnVector.nodes.at(-1).y} L ${vectorPreview.x} ${vectorPreview.y}`} />}
+                  {drawnVector?.nodes.map((node,index)=><circle key={index} cx={drawnVector.x+node.x} cy={drawnVector.y+node.y} r=".012" fill={index===0 ? "#d6ff46" : index===drawnVector.nodes.length-1 ? "#ffbf3f" : "white"} stroke="#35400f" strokeWidth="1.5" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
+                </g>}
               </svg>
-              <div className="axis x">{realWidth} m</div>
-              <div className="axis y">{realDepth} m</div>
+              <div className="axis x">{documentMode === "stage" ? `${realWidth.toFixed(2)} m` : `${Math.round(realWidth * 100)} cm`}</div>
+              <div className="axis y">{documentMode === "stage" ? `${realDepth.toFixed(2)} m` : `${Math.round(realDepth * 100)} cm`}</div>
             </div>
             <p className="canvas-help">
-              Scroll to zoom · Drag empty canvas to pan · Dimensions are metres
+              {vectorDrawing ? "Click to add points · Click the first point to close · Click the last point or Esc to finish" : <>Scroll to zoom · Middle-drag to pan · Left-drag empty space to select · Dimensions are {documentMode === "stage" ? "metres" : "centimetres"}</>}
             </p>
+            {marquee && <div className="selection-marquee" style={{left:marquee.x,top:marquee.y,width:marquee.right-marquee.x,height:marquee.bottom-marquee.y}} />}
           </div>
         </section>
         <aside className="inspector">
@@ -2794,7 +2993,7 @@ function App() {
               </label>
               <div className="field-row">
                 <label className="field">
-                  WIDTH (M)
+                  WIDTH ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     min="0.01"
@@ -2806,7 +3005,7 @@ function App() {
                   />
                 </label>
                 <label className="field">
-                  DEPTH (M)
+                  DEPTH ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     min="0.01"
@@ -2927,7 +3126,7 @@ function App() {
                   <p className="eyebrow advanced-title">TEXT</p>
                   <label className="field">NAME<input value={selectedText.name} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, name: e.target.value } : item))} /></label>
                   <label className="field">TEXT<input value={selectedText.text} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, text: e.target.value } : item))} /></label>
-                  <label className="field">SIZE (M)<CommittedNumberInput type="number" min="0.05" step="0.05" value={selectedText.fontSize} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, fontSize: Math.max(.05, +e.target.value) } : item))} /></label>
+                  <label className="field">SIZE ({documentMode === "stage" ? "M" : "CM"})<CommittedNumberInput type="number" min="0.05" step="0.05" value={selectedText.fontSize} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, fontSize: Math.max(.05, +e.target.value) } : item))} /></label>
                   <label className="field">COLOUR<ColourPicker value={selectedText.color} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, color: e.target.value } : item))} /></label>
                   <label className="field">TRANSPARENCY <span>{Math.round((1 - selectedText.opacity) * 100)}%</span><input type="range" min="0" max="1" step=".05" value={1 - selectedText.opacity} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, opacity: 1 - +e.target.value } : item))} /></label>
                   <button className="delete" onClick={() => { setTextItems((old) => old.filter((item) => item.id !== selectedText.id)); setSelectedTextId(null); }}>Delete text</button>
@@ -2938,7 +3137,7 @@ function App() {
                 <>
                   <div className="field-row">
                     <label className="field">
-                      NODE X
+                      NODE X ({documentMode === "stage" ? "M" : "CM"})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -2949,7 +3148,7 @@ function App() {
                       />
                     </label>
                     <label className="field">
-                      NODE Y
+                      NODE Y ({documentMode === "stage" ? "M" : "CM"})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -3028,7 +3227,7 @@ function App() {
                 <>
                   <div className="field-row">
                     <label className="field">
-                      NODE X
+                      NODE X ({documentMode === "stage" ? "M" : "CM"})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -3039,7 +3238,7 @@ function App() {
                       />
                     </label>
                     <label className="field">
-                      NODE Y
+                      NODE Y ({documentMode === "stage" ? "M" : "CM"})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -3180,7 +3379,7 @@ function App() {
               </label>
               <div className="field-row">
                 <label className="field">
-                  WIDTH (M)
+                  WIDTH ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     min="0.01"
@@ -3192,7 +3391,7 @@ function App() {
                   />
                 </label>
                 <label className="field">
-                  DEPTH (M)
+                  DEPTH ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     min="0.01"
@@ -3245,7 +3444,7 @@ function App() {
               </label>
               <div className="field-row">
                 <label className="field">
-                  X (M)
+                  X ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     step="0.01"
@@ -3254,7 +3453,7 @@ function App() {
                   />
                 </label>
                 <label className="field">
-                  Y (M)
+                  Y ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     step="0.01"
@@ -3263,12 +3462,20 @@ function App() {
                   />
                 </label>
               </div>
-              {selected.type === "circle" ? <div className="field-row">
-                <label className="field">RADIUS (M)<CommittedNumberInput type="number" min=".01" step=".01" value={+(selected.width/2).toFixed(3)} onChange={(e)=>update({width:Math.max(.02,+e.target.value*2),height:Math.max(.02,+e.target.value*2)})}/></label>
-                <label className="field">DIAMETER (M)<CommittedNumberInput type="number" min=".02" step=".01" value={+selected.width.toFixed(3)} onChange={(e)=>update({width:Math.max(.02,+e.target.value),height:Math.max(.02,+e.target.value)})}/></label>
+              {selected.type === "text" ? <>
+                <label className="field">TEXT<textarea rows="4" value={selected.text} onChange={event=>update({text:event.target.value})} /></label>
+                <label className="field">TEXT SIZE ({documentMode === "stage" ? "M" : "CM"})<LiveNumberInput centimetres key={`text-size-${selected.id}`} min={.01} step=".01" value={selected.fontSize} onChange={fontSize=>update({fontSize})}/></label>
+                <div className="field-row"><label><input type="checkbox" checked={selected.bold} onChange={event=>update({bold:event.target.checked})}/> Bold</label><label><input type="checkbox" checked={selected.italic} onChange={event=>update({italic:event.target.checked})}/> Italic</label></div>
+                <label className="field">HORIZONTAL ALIGNMENT<select value={selected.textAlign} onChange={event=>update({textAlign:event.target.value})}><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="field">LINE SPACING<LiveNumberInput key={`text-spacing-${selected.id}`} min={.1} step=".1" value={selected.lineSpacing} onChange={lineSpacing=>update({lineSpacing})}/></label>
+                <label className="field">TEXT COLOUR<ColourPicker value={selected.fill} onChange={event=>update({fill:event.target.value})}/></label>
+                <p className="handle-help">Text, size and spacing update live. Enter adds a line. Bounds follow the text automatically.</p>
+              </> : selected.type === "circle" ? <div className="field-row">
+                <label className="field">RADIUS ({documentMode === "stage" ? "M" : "CM"})<CommittedNumberInput type="number" min=".01" step=".01" value={+(selected.width/2).toFixed(3)} onChange={(e)=>update({width:Math.max(.02,+e.target.value*2),height:Math.max(.02,+e.target.value*2)})}/></label>
+                <label className="field">DIAMETER ({documentMode === "stage" ? "M" : "CM"})<CommittedNumberInput type="number" min=".02" step=".01" value={+selected.width.toFixed(3)} onChange={(e)=>update({width:Math.max(.02,+e.target.value),height:Math.max(.02,+e.target.value)})}/></label>
               </div> : selected.type === "tripod" ? (
                 <label className="field">
-                  LEG RADIUS (M)
+                  LEG RADIUS ({documentMode === "stage" ? "M" : "CM"})
                   <CommittedNumberInput
                     type="number"
                     min="0.01"
@@ -3284,7 +3491,7 @@ function App() {
               ) : (
                 <div className="field-row">
                   <label className="field">
-                    WIDTH (M)
+                    WIDTH ({documentMode === "stage" ? "M" : "CM"})
                     <CommittedNumberInput
                       type="number"
                       min="0.01"
@@ -3294,7 +3501,7 @@ function App() {
                     />
                   </label>
                   <label className="field">
-                    HEIGHT (M)
+                    HEIGHT ({documentMode === "stage" ? "M" : "CM"})
                     <CommittedNumberInput
                       type="number"
                       min="0.01"
@@ -3305,13 +3512,14 @@ function App() {
                   </label>
                 </div>
               )}
+              {["rect","roundRect","line","triangle"].includes(selected.type) && <button className="group-button" onClick={()=>{update(convertToVector(selected));setVectorNodeIndex(null);}}>Convert to editable vector</button>}
               {selected.type === "vector" && <>
                 <p className="handle-help">Drag points to edit the boundary. Shift-click a straight edge to add a point; Ctrl-click an edge for Point on Arc. Select a point to edit its incoming curve.</p>
-                <button className="group-button" onClick={()=>{const index=vectorNodeIndex ?? 0,nodes=[...selected.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index);}}>Add point</button>
+                <button className="group-button" onClick={()=>{const index=selected.open ? Math.max(1,vectorNodeIndex ?? 1) : vectorNodeIndex ?? 0,nodes=[...selected.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index);}}>Add point</button>
                 {selected.nodes[vectorNodeIndex] && <>
-                  <div className="field-row">{["x","y"].map(axis=><label className="field" key={axis}>POINT {axis.toUpperCase()} (M)<CommittedNumberInput type="number" step=".01" value={selected.nodes[vectorNodeIndex][axis]} onChange={event=>update({nodes:selected.nodes.map((node,i)=>i===vectorNodeIndex?{...node,[axis]:+event.target.value}:node)})}/></label>)}</div>
-                  <label className="field">INCOMING SEGMENT<select value={segmentMode(selected.nodes[vectorNodeIndex])} onChange={event=>update({nodes:selected.nodes.map((node,i)=>i===vectorNodeIndex?{...node,curveMode:event.target.value}:node)})}><option value="line">Straight line</option><option value="pointArc">Point on Arc</option><option value="smooth">Smooth curve</option><option value="bezier">B?zier</option></select></label>
-                  <button className="delete" disabled={selected.nodes.length<=3} onClick={()=>{update({nodes:selected.nodes.filter((_,i)=>i!==vectorNodeIndex)});setVectorNodeIndex(null);}}>Delete point</button>
+                  <div className="field-row">{["x","y"].map(axis=><label className="field" key={axis}>POINT {axis.toUpperCase()} ({documentMode === "stage" ? "M" : "CM"})<CommittedNumberInput type="number" step=".01" value={selected.nodes[vectorNodeIndex][axis]} onChange={event=>update({nodes:selected.nodes.map((node,i)=>i===vectorNodeIndex?{...node,[axis]:+event.target.value}:node)})}/></label>)}</div>
+                  <label className="field">INCOMING SEGMENT<select disabled={selected.open && vectorNodeIndex===0} value={segmentMode(selected.nodes[vectorNodeIndex])} onChange={event=>update({nodes:selected.nodes.map((node,i)=>i===vectorNodeIndex?{...node,curveMode:event.target.value}:node)})}><option value="line">Straight line</option><option value="pointArc">Point on Arc</option><option value="smooth">Smooth curve</option><option value="bezier">Bezier</option></select></label>
+                  <button className="delete" disabled={selected.nodes.length<=(selected.open?2:3)} onClick={()=>{update({nodes:selected.nodes.filter((_,i)=>i!==vectorNodeIndex)});setVectorNodeIndex(null);}}>Delete point</button>
                 </>}
               </>}
               {selected.type === "polygon" && (
@@ -3331,7 +3539,7 @@ function App() {
                 <>
                   <div className="field-row">
                     <label className="field">
-                      LEFT ANGLE
+                      LEFT INSET ({documentMode === "stage" ? "M" : "CM"})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -3340,7 +3548,7 @@ function App() {
                       />
                     </label>
                     <label className="field">
-                      RIGHT ANGLE
+                      RIGHT INSET ({documentMode === "stage" ? "M" : "CM"})
                       <CommittedNumberInput
                         type="number"
                         step="0.01"
@@ -3352,7 +3560,7 @@ function App() {
                     </label>
                   </div>
                   <label className="field">
-                    SLEW (M)
+                    SLEW ({documentMode === "stage" ? "M" : "CM"})
                     <CommittedNumberInput
                       type="number"
                       step="0.01"
@@ -3383,7 +3591,7 @@ function App() {
                   onChange={(e) => update({ rotation: +e.target.value })}
                 />
               </label>
-              {selected.type !== "compound" && <>
+              {selected.type !== "compound" && selected.type !== "text" && <>
               <div className="field-row colors">
                 <label className="field">
                   FILL
@@ -3482,8 +3690,8 @@ function App() {
                         <span>
                           <b>{stage.label}</b>
                           <small>
-                            {stage.dimensions.widthMeters} ×{" "}
-                            {stage.dimensions.depthMeters} m ·{" "}
+                            {stage.dimensions.widthMeters.toFixed(2)} ×{" "}
+                            {stage.dimensions.depthMeters.toFixed(2)} m ·{" "}
                             {stage.boundary.nodes.length} nodes
                           </small>
                         </span>
@@ -3518,8 +3726,8 @@ function App() {
                               <span>
                                 <b>{item.label}</b>
                                 <small>
-                                  {item.dimensions.widthMeters} ×{" "}
-                                  {item.dimensions.depthMeters} m ·{" "}
+                                  {Math.round(item.dimensions.widthMeters * 100)} ×{" "}
+                                  {Math.round(item.dimensions.depthMeters * 100)} cm ·{" "}
                                   {item.shapes?.length || 0} layers
                                 </small>
                               </span>
@@ -3535,11 +3743,28 @@ function App() {
           </section>
         </div>
       )}
+      {saveChoice && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !shapeSaving)setSaveChoice(null);}}>
+        <section className="library-modal preset-modal" role="dialog" aria-modal="true" aria-label="Choose how to save equipment">
+          <div className="modal-header"><h2>{saveChoice.renamed ? "Save renamed item" : "Item already exists"}</h2><button disabled={shapeSaving} onClick={()=>setSaveChoice(null)} aria-label="Close">&times;</button></div>
+          <div className="preset-modal-body">
+            <p className="handle-help">{saveChoice.renamed ? <>You are editing “{saveChoice.target.label}” and changed its name to “{saveChoice.data.label}”. Update the original, or keep it and save a new item?</> : <>An equipment item named “{saveChoice.target.label}” already exists. Replace its artwork and settings, or save a separate item named “{saveChoice.data.label}”?</>}</p>
+            <button className="group-button" autoFocus disabled={shapeSaving} onClick={()=>persistEquipment({...saveChoice.data,id:saveChoice.target.id,stageplotPublished:isPublishedItem(saveChoice.target)},saveChoice.snapshot)}>Update existing item</button>
+            <button className="group-button" disabled={shapeSaving} onClick={()=>persistEquipment({...saveChoice.data,id:saveChoice.newId,stageplotPublished:false},saveChoice.snapshot)}>Save as new item</button>
+            <button disabled={shapeSaving} onClick={()=>setSaveChoice(null)}>Cancel</button>
+          </div>
+        </section>
+      </div>}
+      {newItemOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setNewItemOpen(false);}}>
+        <section className="library-modal preset-modal" role="dialog" aria-modal="true" aria-label="Create new item">
+          <div className="modal-header"><h2>New item</h2><button onClick={()=>setNewItemOpen(false)} aria-label="Close">&times;</button></div>
+          <div className="preset-modal-body"><p className="handle-help">What would you like to create?</p><button className="group-button" autoFocus onClick={()=>newItem("item")}>Equipment item</button><button className="group-button" onClick={()=>newItem("stage")}>Stage</button></div>
+        </section>
+      </div>}
       {manageStageplotOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !removingStageplotId)setManageStageplotOpen(false);}}>
-        <section className="library-modal equipment-management-modal" role="dialog" aria-modal="true" aria-label="Equipment library">
-          <div className="modal-header"><h2>Equipment library</h2><button disabled={Boolean(removingStageplotId)} onClick={()=>setManageStageplotOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
-          <div className="preset-modal-body custom-shape-list"><p className="handle-help">Manage all saved equipment here. Check Add to Stageplot Library to make an item available in Stageplot.</p>
-            <label className="management-search">Search items<input type="search" placeholder="Search by item or equipment group" value={managedItemSearch} onChange={event=>setManagedItemSearch(event.target.value)}/></label>
+        <section className="library-modal equipment-management-modal" role="dialog" aria-modal="true" aria-label="Library">
+          <div className="modal-header"><h2>Library</h2><button disabled={Boolean(removingStageplotId)} onClick={()=>setManageStageplotOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
+          <div className="preset-modal-body custom-shape-list"><p className="handle-help">Manage saved equipment and stages here. Custom shapes are building blocks and live in Custom shapes, not this library.</p>
+            <label className="management-search">Search library<input type="search" placeholder="Search equipment, groups or stages" value={managedItemSearch} onChange={event=>setManagedItemSearch(event.target.value)}/></label>
             {matchingManagedItems.length ? managedEquipmentSections.map(group=><section className="managed-equipment-section" key={group.id || "uncategorised"}><h3>{group.label}</h3>{group.items.map(item=><div className="equipment-management-row" key={item.id}>
               <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + item.label} viewBox={"0 0 " + item.dimensions.widthMeters + " " + item.dimensions.depthMeters}>{(item.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg></span>
               <div className="managed-item-name">{editingItemNameId===item.id ? <form onSubmit={event=>{event.preventDefault();if(itemNameDraft.trim())updateManagedItem(item,{label:itemNameDraft.trim()});}}><input aria-label={"Item name for " + item.label} autoFocus value={itemNameDraft} onChange={event=>setItemNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !itemNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingItemNameId(null)}>Cancel</button></form> : <><span>{item.label}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} aria-label={"Rename " + item.label} title="Rename item" onClick={()=>{setEditingItemNameId(item.id);setItemNameDraft(item.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}</div>
@@ -3547,7 +3772,18 @@ function App() {
               <label className="publish-equipment-toggle"><input type="checkbox" checked={isPublishedItem(item)} disabled={Boolean(removingStageplotId)} onChange={event=>updateManagedItem(item,{stageplotPublished:event.target.checked})}/>Add to Stageplot Library</label>
               <button disabled={Boolean(removingStageplotId)} onClick={()=>editManagedItem(item)}>EDIT</button>
               <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + item.label} aria-label={"Delete " + item.label} onClick={()=>removeStageplotItem(item)}>&times;</button>
-            </div>)}</section>) : <p className="empty">{library.length ? "No items match your search." : "No equipment saved yet."}</p>}
+            </div>)}</section>) : <p className="empty">{equipmentItems.length ? "No equipment matches your search." : "No equipment saved yet."}</p>}
+            <section className="managed-equipment-section managed-stages-section"><h3>Stages</h3>
+              {matchingManagedStages.length ? matchingManagedStages.map(stage=><div className="managed-stage-row" key={stage.id}>
+                <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + stage.label} viewBox={`0 0 ${stage.dimensions.widthMeters} ${stage.dimensions.depthMeters}`}><path d={stagePath(stage.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg></span>
+                <div className="managed-item-name">{editingStageNameId === stage.id ? <form onSubmit={event=>{event.preventDefault();if(stageNameDraft.trim())manageStage(stage,stageNameDraft);}}><input autoFocus aria-label={"Stage name for " + stage.label} value={stageNameDraft} onChange={event=>setStageNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !stageNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingStageNameId(null)}>Cancel</button></form> : <><span>{stage.label}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} aria-label={"Rename " + stage.label} title="Rename stage" onClick={()=>{setEditingStageNameId(stage.id);setStageNameDraft(stage.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}<small>{stage.dimensions.widthMeters.toFixed(2)} × {stage.dimensions.depthMeters.toFixed(2)} m</small></div>
+                <button disabled={Boolean(removingStageplotId)} onClick={()=>{
+                  if(projectSnapshot!==savedProject.current && !window.confirm("This project has unsaved changes. Discard them and load " + stage.label + " for editing?"))return;
+                  editLibraryStage(stage);setManageStageplotOpen(false);
+                }}>EDIT</button>
+                <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + stage.label} aria-label={"Delete " + stage.label} onClick={()=>manageStage(stage)}>&times;</button>
+              </div>) : <p className="empty">{stageLibrary.length ? "No stages match your search." : "No stages saved yet."}</p>}
+            </section>
           </div>
         </section>
       </div>}
@@ -3556,7 +3792,7 @@ function App() {
           <div className="modal-header"><h2>Manage equipment groups</h2><button disabled={groupsSaving} onClick={()=>setManageGroupsOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
           <div className="preset-modal-body custom-shape-list"><p className="handle-help">Renaming a group updates its name for every item in that group. Counts show published Stageplot items and unpublished saved designs separately. Only groups with neither can be deleted.</p>
             <label className="management-search">Search equipment groups<input type="search" placeholder="Search groups" value={managedGroupSearch} onChange={event=>setManagedGroupSearch(event.target.value)}/></label>
-            {matchingManagedGroups.length ? matchingManagedGroups.map(group=>{const members=library.filter(item=>item.groupId===group.id);const count=members.length;const publishedCount=members.filter(isPublishedItem).length;const savedCount=count-publishedCount;return <div className="equipment-group-row" key={group.id}>
+            {matchingManagedGroups.length ? matchingManagedGroups.map(group=>{const members=equipmentItems.filter(item=>item.groupId===group.id);const count=members.length;const publishedCount=members.filter(isPublishedItem).length;const savedCount=count-publishedCount;return <div className="equipment-group-row" key={group.id}>
               {editingEquipmentGroupId===group.id ? <form onSubmit={event=>{event.preventDefault();if(equipmentGroupDraft.trim())saveManagedGroups(groups.map(candidate=>candidate.id===group.id?{...candidate,label:equipmentGroupDraft.trim()}:candidate));}}><input aria-label={"Group name for " + group.label} autoFocus value={equipmentGroupDraft} onChange={event=>setEquipmentGroupDraft(event.target.value)} disabled={groupsSaving}/><button disabled={groupsSaving || !equipmentGroupDraft.trim()}>Save</button><button type="button" disabled={groupsSaving} onClick={()=>setEditingEquipmentGroupId(null)}>Cancel</button></form> : <><span>{group.label}</span><button disabled={groupsSaving} onClick={()=>{setEditingEquipmentGroupId(group.id);setEquipmentGroupDraft(group.label);}}>Rename</button></>}
               <small>{publishedCount} published{savedCount>0 && <> ? {savedCount} saved design{savedCount===1?"":"s"}</>}</small><button className="remove-item-button" disabled={groupsSaving || count>0} title={count?"Move all items out of this group before deleting it":"Delete empty group"} onClick={()=>saveManagedGroups(groups.filter(candidate=>candidate.id!==group.id))}>Delete</button>
             </div>;}) : <p className="empty">{groups.length ? "No groups match your search." : "No equipment groups."}</p>}
@@ -3575,8 +3811,10 @@ function App() {
           </div>
         </section>
       </div>}
+      {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {toast && <div className="toast">{toast}</div>}
     </div>
+    </MeasurementUnit.Provider>
   );
 }
 

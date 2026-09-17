@@ -1,9 +1,5 @@
 [
   {
-    "id": "tests",
-    "label": "Tests"
-  },
-  {
     "id": "seating",
     "label": "Seating"
   },
@@ -16,7 +12,15 @@
     "label": "Pianos"
   },
   {
-    "id": "custom-shapes",
-    "label": "Custom Shapes"
+    "id": "speakers-and-amps",
+    "label": "Speakers and Amps"
+  },
+  {
+    "id": "percussion",
+    "label": "Percussion"
+  },
+  {
+    "id": "staging",
+    "label": "Staging"
   }
 ]

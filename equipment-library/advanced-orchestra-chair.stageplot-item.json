@@ -3,7 +3,7 @@
   "stageplotPublished": false,
   "id": "advanced-orchestra-chair",
   "label": "Orchestra Chair",
-  "groupId": "seating",
+  "groupId": null,
   "dimensions": {
     "widthMeters": 0.5,
     "depthMeters": 0.55

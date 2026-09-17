@@ -3,7 +3,7 @@
   "stageplotPublished": false,
   "id": "advanced-person-sitting",
   "label": "Person Sitting",
-  "groupId": "tests",
+  "groupId": null,
   "dimensions": {
     "widthMeters": 1,
     "depthMeters": 1
@@ -1345,6 +1345,7 @@
       }
     ],
     "referenceImages": [],
-    "placementMode": "layers"
+    "placementMode": "layers",
+    "advancedShapeRole": "custom"
   }
 }
