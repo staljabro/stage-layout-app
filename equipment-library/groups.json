@@ -2,5 +2,21 @@
   {
     "id": "tests",
     "label": "Tests"
+  },
+  {
+    "id": "seating",
+    "label": "Seating"
+  },
+  {
+    "id": "people",
+    "label": "People"
+  },
+  {
+    "id": "pianos",
+    "label": "Pianos"
+  },
+  {
+    "id": "custom-shapes",
+    "label": "Custom Shapes"
   }
 ]

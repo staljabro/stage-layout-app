@@ -1,9 +1,10 @@
 import { createServer } from 'node:http'
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, writeFile, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isPublishedItem, unpublishItem } from './library-membership.mjs'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const root = resolve(process.env.STAGEPLOT_LIBRARY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..'))
 const libraryDir = join(root, 'equipment-library')
 const stageLibraryDir = join(root, 'stage-library')
 const groupsFile = join(libraryDir, 'groups.json')
@@ -14,7 +15,7 @@ await mkdir(stageLibraryDir, { recursive: true })
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,PUT,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,PUT,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Cache-Control': 'no-store',
 }
@@ -71,7 +72,8 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/items') {
       const names = (await readdir(libraryDir)).filter((name) => name.endsWith('.stageplot-item.json'))
       const items = await Promise.all(names.map((name) => readLibraryItem(join(libraryDir, name))))
-      return send(response, 200, items.sort((a, b) => a.label.localeCompare(b.label)))
+      const visible = url.searchParams.get('scope') === 'all' ? items : items.filter(isPublishedItem)
+      return send(response, 200, visible.sort((a, b) => a.label.localeCompare(b.label)))
     }
 
     if (request.method === 'GET' && url.pathname === '/api/stages') {
@@ -89,7 +91,14 @@ const server = createServer(async (request, response) => {
         let raw = ''
         for await (const chunk of request) raw += chunk
         const groups = JSON.parse(raw)
-        if (!Array.isArray(groups) || groups.some((group) => !validId(group.id) || typeof group.label !== 'string')) return send(response, 400, { error: 'Invalid group data' })
+        if (!Array.isArray(groups) || groups.some((group) => !validId(group.id) || typeof group.label !== 'string' || !group.label.trim()) || new Set(groups.map(group => group.id)).size !== groups.length) return send(response, 400, { error: 'Invalid group data' })
+        const names = (await readdir(libraryDir)).filter(name => name.endsWith('.stageplot-item.json'))
+        const items = await Promise.all(names.map(name => readLibraryItem(join(libraryDir, name))))
+        let previous = []
+        try { previous = JSON.parse(await readFile(groupsFile, 'utf8')) }
+        catch (error) { if (error.code !== 'ENOENT') throw error }
+        const removed = previous.filter(group => !groups.some(candidate => candidate.id === group.id))
+        if (removed.some(group => items.some(item => item.groupId === group.id))) return send(response, 409, { error: 'Groups containing items cannot be deleted' })
         const temporary = `${groupsFile}.tmp`
         await writeFile(temporary, `${JSON.stringify(groups, null, 2)}\n`, 'utf8')
         await rename(temporary, groupsFile)
@@ -101,6 +110,17 @@ const server = createServer(async (request, response) => {
     if (match && validId(match[1])) {
       const file = join(libraryDir, `${match[1]}.stageplot-item.json`)
       if (request.method === 'GET') return send(response, 200, await readLibraryItem(file))
+      if (request.method === 'DELETE') {
+        if (url.searchParams.get('permanent') === 'true') {
+          await unlink(file)
+          return send(response, 200, { id: match[1], deleted: true })
+        }
+        const item = unpublishItem(await readLibraryItem(file))
+        const temporary = `${file}.tmp`
+        await writeFile(temporary, `${JSON.stringify(item, null, 2)}\n`, 'utf8')
+        await rename(temporary, file)
+        return send(response, 200, item)
+      }
       if (request.method === 'PUT') {
         let raw = ''
         for await (const chunk of request) raw += chunk
@@ -144,7 +164,7 @@ const server = createServer(async (request, response) => {
 })
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Stageplot equipment library: http://127.0.0.1:${port}`)
+  console.log(`Stageplot equipment library: http://127.0.0.1:${server.address().port}`)
   console.log(`Files: ${libraryDir}`)
   console.log(`Stages: ${stageLibraryDir}`)
 })

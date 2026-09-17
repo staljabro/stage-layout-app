@@ -1,171 +1,168 @@
 {
   "schema": "stageplot-stage@1",
-  "id": "untitled-stage",
-  "label": "Untitled Stage",
+  "id": "test-stage-1",
+  "label": "Test Stage 1",
   "dimensions": {
-    "widthMeters": 10.100000000000001,
+    "widthMeters": 10,
     "depthMeters": 5
   },
   "boundary": {
     "closed": true,
     "nodes": [
       {
-        "x": 1,
-        "y": 2,
-        "curveMode": "line"
-      },
-      {
-        "x": 9,
-        "y": 2,
+        "x": 0,
+        "y": 0,
         "curveMode": "line"
       },
       {
         "x": 10,
-        "y": 5,
+        "y": 0,
+        "curveMode": "line"
+      },
+      {
+        "x": 10,
+        "y": 2.5,
         "curveMode": "line"
       },
       {
         "x": 0,
-        "y": 5,
+        "y": 2.5,
         "curveMode": "pointArc",
-        "arcDepth": 1
+        "arcDepth": -2.5
       }
     ]
   },
   "collisionBoundary": [
     {
-      "x": 1,
-      "y": 2
-    },
-    {
-      "x": 9,
-      "y": 2
+      "x": 0,
+      "y": 0
     },
     {
       "x": 10,
-      "y": 5
+      "y": 0
+    },
+    {
+      "x": 10,
+      "y": 2.5
     },
     {
       "x": 9.375,
-      "y": 4.765625
+      "y": 3.0859375
     },
     {
       "x": 8.75,
-      "y": 4.5625
+      "y": 3.59375
     },
     {
       "x": 8.125,
-      "y": 4.390625
+      "y": 4.0234375
     },
     {
       "x": 7.5,
-      "y": 4.25
+      "y": 4.375
     },
     {
       "x": 6.875,
-      "y": 4.140625
+      "y": 4.6484375
     },
     {
       "x": 6.25,
-      "y": 4.0625
+      "y": 4.84375
     },
     {
       "x": 5.625,
-      "y": 4.015625
+      "y": 4.9609375
     },
     {
       "x": 5,
-      "y": 4
+      "y": 5
     },
     {
       "x": 4.375,
-      "y": 4.015625
+      "y": 4.9609375
     },
     {
       "x": 3.75,
-      "y": 4.0625
+      "y": 4.84375
     },
     {
       "x": 3.125,
-      "y": 4.140625
+      "y": 4.6484375
     },
     {
       "x": 2.5,
-      "y": 4.25
+      "y": 4.375
     },
     {
       "x": 1.875,
-      "y": 4.390625
+      "y": 4.0234375
     },
     {
       "x": 1.25,
-      "y": 4.5625
+      "y": 3.59375
     },
     {
       "x": 0.625,
-      "y": 4.765625
+      "y": 3.0859375
     },
     {
       "x": 0,
-      "y": 5
+      "y": 2.5
     }
   ],
   "zones": [
     {
-      "id": "zone-1789548421997",
+      "id": "zone-1789564113638",
       "name": "Zone 1",
-      "solid": true,
+      "solid": false,
       "label": false,
       "locked": false,
-      "fill": "#8eb6d8",
-      "fillOpacity": 0.25,
+      "fill": "#616161",
+      "fillOpacity": 0.5,
       "stroke": "#447799",
       "strokeWidth": 2,
       "strokeOpacity": 1,
       "zOrder": 0,
       "nodes": [
         {
-          "x": 2.3250000000000006,
-          "y": 2.25,
+          "x": -8.881784197001252e-16,
+          "y": 2.51,
           "curveMode": "line"
         },
         {
-          "x": 3,
-          "y": 2.3000000000000003,
+          "x": 10,
+          "y": 2.51,
+          "curveMode": "pointArc",
+          "arcDepth": 2.4899999999999993
+        },
+        {
+          "x": 10,
+          "y": 3.1099999999999994,
           "curveMode": "line"
         },
         {
-          "x": 3,
-          "y": 3.6,
-          "curveMode": "line"
-        },
-        {
-          "x": 2.3250000000000006,
-          "y": 3.75,
-          "curveMode": "line"
-        }
-      ],
-      "collisionBoundary": [
-        {
-          "x": 2.3250000000000006,
-          "y": 2.25
-        },
-        {
-          "x": 3,
-          "y": 2.3000000000000003
-        },
-        {
-          "x": 3,
-          "y": 3.6
-        },
-        {
-          "x": 2.3250000000000006,
-          "y": 3.75
+          "x": -8.881784197001252e-16,
+          "y": 3.1099999999999994,
+          "curveMode": "pointArc",
+          "arcDepth": -2.49
         }
       ]
     }
   ],
-  "textItems": [],
+  "textItems": [
+    {
+      "id": "text-1789564186228",
+      "name": "Text 1",
+      "text": "Audience",
+      "x": 5.06,
+      "y": 5.300000000000001,
+      "fontSize": 0.3,
+      "color": "#191919",
+      "opacity": 1,
+      "locked": false,
+      "zOrder": 1
+    }
+  ],
   "details": [],
   "editor": {
     "referenceImages": []

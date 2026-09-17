@@ -1,8 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { segmentMode, segmentMidpoint, smoothControl, arcOffset, pointOnArc, bezierGeometry, stageSegmentPath, stagePath, sampleStageBoundary } from "../../../src/stage-geometry.js";
+import { isPublishedItem } from "../../library-membership.mjs";
+import { objectPivot, normalizeRotation, rotateObjects, rotatedBounds } from "./rotation.js";
+import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
 
 const LIBRARY_API = "http://127.0.0.1:8787/api/items";
 const STAGES_API = "http://127.0.0.1:8787/api/stages";
 const GROUPS_API = "http://127.0.0.1:8787/api/groups";
+
+const roundDimension = value => Number(value.toFixed(2));
+function useDimensionState(initialValue) {
+  const [value, setValue] = useState(initialValue);
+  const normalize = entry => {
+    if (typeof entry === "number") return roundDimension(entry);
+    const result = {...entry};
+    for (const key of ["width", "height", "legRadius"]) {
+      if (typeof result[key] === "number") result[key] = roundDimension(result[key]);
+    }
+    return result;
+  };
+  const updateValue = next => setValue(previous => {
+    const result = typeof next === "function" ? next(previous) : next;
+    return Array.isArray(result) ? result.map(normalize) : normalize(result);
+  });
+  return [value, updateValue];
+}
+
+function CommittedNumberInput({ value, onChange, min, max, ...props }) {
+  const formattedValue = Number(value).toFixed(2);
+  const commit = (event) => {
+    const input = event.currentTarget;
+    const number = input.value.trim() === "" ? NaN : Number(input.value);
+    if (!Number.isFinite(number)) {
+      input.value = formattedValue;
+      return;
+    }
+    const bounded = roundDimension(Math.min(max === undefined ? Infinity : Number(max), Math.max(min === undefined ? -Infinity : Number(min), number)));
+    input.value = bounded.toFixed(2);
+    if (bounded !== Number(value)) onChange?.({ target: { value: String(bounded) } });
+  };
+  return <input {...props} key={value} type="number" min={min} max={max} defaultValue={formattedValue} onBlur={commit} onKeyDown={event=>{
+    if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+    if (event.key === "Escape") { event.currentTarget.value = formattedValue; event.currentTarget.blur(); }
+  }}/>;
+}
 
 const PALETTE = [
   { type: "rect", label: "Rectangle", glyph: "□" },
@@ -11,20 +52,19 @@ const PALETTE = [
   { type: "ellipse", label: "Ellipse", glyph: "⬭" },
   { type: "triangle", label: "Triangle", glyph: "△" },
   { type: "line", label: "Line", glyph: "╱" },
-  { type: "arc", label: "Arc", glyph: "⌒" },
   { type: "tripod", label: "Tripod base", glyph: "Y" },
   { type: "hexagon", label: "Hexagon", glyph: "⬡" },
 ];
 
 const ADVANCED_PALETTE = [
+  { type: "arc", label: "Arc", glyph: "\u2312" },
+  { type: "vector", label: "Vector", glyph: "\u25c7" },
   { type: "trapezoid", label: "Trapezoid", glyph: "▱" },
   { type: "polygon", label: "Polygon", glyph: "⬠" },
-  { type: "chair", label: "Orchestra chair", glyph: "♬" },
-  { type: "seatedPerson", label: "Seated person", glyph: "◉" },
-  { type: "standingPerson", label: "Standing person", glyph: "♟" },
 ];
 
 const DEFAULTS = {
+  vector: { width: .6, height: .4 },
   rect: { width: 0.6, height: 0.4 },
   roundRect: { width: 0.6, height: 0.4 },
   circle: { width: 0.4, height: 0.4 },
@@ -213,143 +253,200 @@ const defaultStageNodes = (width, depth) => [
   { x: 0, y: depth, curveMode: "line" },
 ];
 
-const segmentMode = (node) =>
-  node.curveMode || (node.curve ? "smooth" : "line");
-const segmentMidpoint = (from, to) => ({
-  x: (from.x + to.x) / 2,
-  y: (from.y + to.y) / 2,
-});
-const smoothControl = (from, to) => {
-  if (Number.isFinite(to.bulge)) {
-    const midpoint = segmentMidpoint(from, to);
-    const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-    return {
-      x: midpoint.x - ((to.y - from.y) / length) * to.bulge,
-      y: midpoint.y + ((to.x - from.x) / length) * to.bulge,
-    };
-  }
-  return { x: to.cx ?? (from.x + to.x) / 2, y: to.cy ?? (from.y + to.y) / 2 };
-};
-const pointOnArc = (from, to) => ({
-  x: to.arcX ?? (from.x + to.x) / 2,
-  y: to.arcY ?? (from.y + to.y) / 2,
-});
-const pointArcControl = (from, to) => {
-  const point = pointOnArc(from, to);
-  return {
-    x: point.x * 2 - (from.x + to.x) / 2,
-    y: point.y * 2 - (from.y + to.y) / 2,
-  };
-};
-const bezierGeometry = (from, to) => {
-  const midpoint = {
-    x: to.mx ?? (from.x + to.x) / 2,
-    y: to.my ?? (from.y + to.y) / 2,
-  };
-  return {
-    midpoint,
-    startOut: {
-      x: to.startOutX ?? (from.x * 2 + midpoint.x) / 3,
-      y: to.startOutY ?? (from.y * 2 + midpoint.y) / 3,
-    },
-    midIn: {
-      x: to.midInX ?? (from.x + midpoint.x * 2) / 3,
-      y: to.midInY ?? (from.y + midpoint.y * 2) / 3,
-    },
-    midOut: {
-      x: to.midOutX ?? (midpoint.x * 2 + to.x) / 3,
-      y: to.midOutY ?? (midpoint.y * 2 + to.y) / 3,
-    },
-    endIn: {
-      x: to.endInX ?? (midpoint.x + to.x * 2) / 3,
-      y: to.endInY ?? (midpoint.y + to.y * 2) / 3,
-    },
-  };
-};
-const stageSegmentPath = (from, to) => {
-  if (segmentMode(to) === "pointArc") {
-    const control = pointArcControl(from, to);
-    return `Q ${control.x} ${control.y} ${to.x} ${to.y}`;
-  }
-  if (segmentMode(to) === "smooth") {
-    const control = smoothControl(from, to);
-    return `Q ${control.x} ${control.y} ${to.x} ${to.y}`;
-  }
-  if (segmentMode(to) === "bezier") {
-    const geometry = bezierGeometry(from, to);
-    return `C ${geometry.startOut.x} ${geometry.startOut.y} ${geometry.midIn.x} ${geometry.midIn.y} ${geometry.midpoint.x} ${geometry.midpoint.y} C ${geometry.midOut.x} ${geometry.midOut.y} ${geometry.endIn.x} ${geometry.endIn.y} ${to.x} ${to.y}`;
-  }
-  return `L ${to.x} ${to.y}`;
-};
-const stagePath = (nodes) =>
-  nodes.length < 3
-    ? ""
-    : `M ${nodes[0].x} ${nodes[0].y} ${nodes
-        .slice(1)
-        .map((node, index) => stageSegmentPath(nodes[index], node))
-        .join(" ")} ${stageSegmentPath(nodes.at(-1), nodes[0])} Z`;
-
-const sampleStageBoundary = (nodes, samples = 16) =>
-  nodes.flatMap((node, index) => {
-    const previous = nodes[(index - 1 + nodes.length) % nodes.length];
-    if (segmentMode(node) === "line") return [{ x: node.x, y: node.y }];
-    const quadratic =
-      segmentMode(node) === "pointArc"
-        ? pointArcControl(previous, node)
-        : smoothControl(previous, node);
-    const bezier = bezierGeometry(previous, node);
-    const cubicPoint = (a, b, c, d, t) => {
-      const u = 1 - t;
-      return {
-        x:
-          u ** 3 * a.x +
-          3 * u ** 2 * t * b.x +
-          3 * u * t ** 2 * c.x +
-          t ** 3 * d.x,
-        y:
-          u ** 3 * a.y +
-          3 * u ** 2 * t * b.y +
-          3 * u * t ** 2 * c.y +
-          t ** 3 * d.y,
-      };
-    };
-    return Array.from({ length: samples }, (_, sample) => {
-      const t = (sample + 1) / samples;
-      const inverse = 1 - t;
-      if (segmentMode(node) === "smooth" || segmentMode(node) === "pointArc")
-        return {
-          x:
-            inverse * inverse * previous.x +
-            2 * inverse * t * quadratic.x +
-            t * t * node.x,
-          y:
-            inverse * inverse * previous.y +
-            2 * inverse * t * quadratic.y +
-            t * t * node.y,
-        };
-      return t <= 0.5
-        ? cubicPoint(
-            previous,
-            bezier.startOut,
-            bezier.midIn,
-            bezier.midpoint,
-            t * 2,
-          )
-        : cubicPoint(
-            bezier.midpoint,
-            bezier.midOut,
-            bezier.endIn,
-            node,
-            (t - 0.5) * 2,
-          );
-    });
+const resizeShape = (item, changes) => {
+  const width = Math.max(.01, changes.width ?? item.width), height = Math.max(.01, changes.height ?? item.height);
+  const sx = width/item.width, sy = height/item.height;
+  const result = {...item,...changes,width,height};
+  if (sx === 1 && sy === 1) return result;
+  for (const key of ["startX","endX","controlX","leftInset","rightInset","slew"]) if (Number.isFinite(item[key])) result[key]=item[key]*sx;
+  for (const key of ["startY","endY","controlY"]) if (Number.isFinite(item[key])) result[key]=item[key]*sy;
+  if (item.type === "tripod") { result.legRadius=width/Math.sqrt(3); result.height=result.legRadius*1.5; }
+  if (item.nodes) result.nodes=item.nodes.map((node,index)=>{
+    const next={...node,x:node.x*sx,y:node.y*sy};
+    for(const key of ["cx","arcX","mx","startOutX","midInX","midOutX","endInX"]) if(Number.isFinite(node[key])) next[key]=node[key]*sx;
+    for(const key of ["cy","arcY","my","startOutY","midInY","midOutY","endInY"]) if(Number.isFinite(node[key])) next[key]=node[key]*sy;
+    const previous=item.nodes[(index-1+item.nodes.length)%item.nodes.length];
+    if(segmentMode(node)==="pointArc") { const point=pointOnArc(previous,node); next.arcDepth=arcOffset({x:previous.x*sx,y:previous.y*sy},next,{x:point.x*sx,y:point.y*sy}); }
+    if(Number.isFinite(node.bulge)){const control=smoothControl(previous,node);next.cx=control.x*sx;next.cy=control.y*sy;next.bulge=undefined;}
+    return next;
   });
+  return result;
+};
+const moveVectorHandle = (original,handle,dx,dy,snap) => {
+  const [,indexValue,kind]=handle.split(":"); const index=+indexValue;
+  const nodes=structuredClone(original.nodes),node=nodes[index],previous=nodes[(index-1+nodes.length)%nodes.length];
+  const base=kind==="node"?node:kind==="pointArc"?pointOnArc(previous,node):kind==="smooth"?smoothControl(previous,node):bezierGeometry(previous,node)[kind];
+  const point={x:snap(base.x+dx),y:snap(base.y+dy)};
+  if(kind==="node")Object.assign(node,point);
+  else if(kind==="pointArc")Object.assign(node,{arcDepth:arcOffset(previous,node,point),arcX:undefined,arcY:undefined});
+  else if(kind==="smooth")Object.assign(node,{cx:point.x,cy:point.y,bulge:undefined});
+  else if(kind==="midpoint") {const g=bezierGeometry(previous,node);Object.assign(node,{mx:point.x,my:point.y,midInX:g.midIn.x+point.x-base.x,midInY:g.midIn.y+point.y-base.y,midOutX:g.midOut.x+point.x-base.x,midOutY:g.midOut.y+point.y-base.y});}
+  else Object.assign(node,{[kind+"X"]:point.x,[kind+"Y"]:point.y});
+  return {...original,nodes};
+};
+function VectorEditor({item,index,onSelect,onDrag,onInsert,onCurve}) {
+  return <g>{item.nodes.map((node,i)=>{
+    const previous=item.nodes[(i-1+item.nodes.length)%item.nodes.length],mode=segmentMode(node);
+    return <path key={i} className="segment-hit" d={`M ${previous.x} ${previous.y} ${stageSegmentPath(previous,node)}`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();onSelect(i);if(event.shiftKey && mode === "line")onInsert(i);else if(event.ctrlKey)onCurve(i);}} />;
+  })}{item.nodes.map((node,i)=>{
+    const previous=item.nodes[(i-1+item.nodes.length)%item.nodes.length],mode=segmentMode(node);
+    const handles=mode==="pointArc"?[["pointArc",pointOnArc(previous,node)]]:mode==="smooth"?[["smooth",smoothControl(previous,node)]]:mode==="bezier"?Object.entries(bezierGeometry(previous,node)):[];
+    return <g key={i}>
+      <circle className={index===i?"boundary-node selected":"boundary-node"} cx={node.x} cy={node.y} r=".025" onPointerDown={event=>{onSelect(i);onDrag(event,`vector:${i}:node`);}} />
+      {index===i && handles.map(([kind,point])=><circle key={kind} className={kind==="midpoint"||kind==="pointArc"||kind==="smooth"?"curve-control":"bezier-control"} cx={point.x} cy={point.y} r=".025" onPointerDown={event=>onDrag(event,`vector:${i}:${kind}`)} />)}
+    </g>;
+  })}</g>;
+}
+
+
+const PRESET_COLOURS = [
+  ["Black", "#191919"], ["Dark walnut", "#49352b"], ["Warm brown", "#80634c"],
+  ["Brass", "#a58a4b"], ["White", "#f5f5f0"], ["Cream", "#e6dcc3"],
+  ["Charcoal", "#454642"], ["Muted olive", "#656b50"], ["Burgundy", "#694249"], ["Slate", "#59636b"],
+];
+function ColourPicker({value,onChange}) {
+  return <div className="colour-picker">
+    <div className="colour-presets">{PRESET_COLOURS.map(([name,colour])=><button type="button" key={colour} title={name} aria-label={name} aria-pressed={value?.toLowerCase()===colour} style={{background:colour}} onClick={()=>onChange({target:{value:colour}})} />)}</div>
+    <input type="color" value={value} onChange={onChange} aria-label="Custom colour" />
+  </div>;
+}
+function ReferenceInspector({referenceImage,setReferenceImage}) {
+  return (                <>
+                  <p className="eyebrow advanced-title">REFERENCE IMAGE</p>
+                  <div className="field-row">
+                    <label className="field">
+                      X
+                      <CommittedNumberInput
+                        type="number"
+                        step="0.01"
+                        value={referenceImage.x}
+                        onChange={(e) =>
+                          setReferenceImage({
+                            ...referenceImage,
+                            x: +e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Y
+                      <CommittedNumberInput
+                        type="number"
+                        step="0.01"
+                        value={referenceImage.y}
+                        onChange={(e) =>
+                          setReferenceImage({
+                            ...referenceImage,
+                            y: +e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      WIDTH
+                      <CommittedNumberInput
+                        type="number"
+                        min=".05"
+                        step="0.01"
+                        value={referenceImage.width}
+                        onChange={(e) => {
+                          const width = +e.target.value;
+                          setReferenceImage({
+                            ...referenceImage,
+                            width,
+                            height:
+                              (referenceImage.lockAspect ?? true)
+                                ? width /
+                                  (referenceImage.aspectRatio ||
+                                    referenceImage.width /
+                                      referenceImage.height)
+                                : referenceImage.height,
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="field">
+                      HEIGHT
+                      <CommittedNumberInput
+                        type="number"
+                        min=".05"
+                        step="0.01"
+                        value={referenceImage.height}
+                        onChange={(e) => {
+                          const height = +e.target.value;
+                          setReferenceImage({
+                            ...referenceImage,
+                            height,
+                            width:
+                              (referenceImage.lockAspect ?? true)
+                                ? height *
+                                  (referenceImage.aspectRatio ||
+                                    referenceImage.width /
+                                      referenceImage.height)
+                                : referenceImage.width,
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <label className="collision-toggle">
+                    <input
+                      type="checkbox"
+                      checked={referenceImage.lockAspect ?? true}
+                      onChange={(e) =>
+                        setReferenceImage({
+                          ...referenceImage,
+                          lockAspect: e.target.checked,
+                          aspectRatio:
+                            referenceImage.width / referenceImage.height,
+                        })
+                      }
+                    />
+                    <span>
+                      <b>Lock aspect ratio</b>
+                      <small>
+                        Preserve the image proportions while resizing.
+                      </small>
+                    </span>
+                  </label>
+                  <label className="collision-toggle">
+                    <input type="checkbox" checked={referenceImage.locked ?? false} onChange={(e) => setReferenceImage({ ...referenceImage, locked: e.target.checked })} />
+                    <span><b>Lock background image</b><small>Locked images can only be selected from the Assets list.</small></span>
+                  </label>
+                  <p className="handle-help">Hold Ctrl and drag an edge of the image frame to crop it.</p>
+                  <button className="delete" onClick={() => setReferenceImage(null)}>Remove background image</button>
+                  <label className="field">
+                    OPACITY{" "}
+                    <span>{Math.round(referenceImage.opacity * 100)}%</span>
+                    <input
+                      type="range"
+                      min=".05"
+                      max="1"
+                      step=".05"
+                      value={referenceImage.opacity}
+                      onChange={(e) =>
+                        setReferenceImage({
+                          ...referenceImage,
+                          opacity: +e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </>
+);
+}
+function EquipmentReferences({images,selectedImage,onDrag,onCrop}) {
+  return <g className="equipment-references">{[...images].sort((a,b)=>(a.zOrder??0)-(b.zOrder??0)).map(image=><svg key={image.id} className={image.locked?"ordered-reference locked":"ordered-reference"} x={image.x} y={image.y} width={image.width} height={image.height} viewBox={`${image.crop?.left||0} ${image.crop?.top||0} ${1-(image.crop?.left||0)-(image.crop?.right||0)} ${1-(image.crop?.top||0)-(image.crop?.bottom||0)}`} preserveAspectRatio="none" opacity={image.opacity} overflow="hidden" onPointerDown={image.locked?undefined:event=>onDrag(event,"image-move",image)}><image href={image.dataUrl} width="1" height="1" preserveAspectRatio="none" /></svg>)}
+    {selectedImage && <><rect className="reference-image-frame" x={selectedImage.x} y={selectedImage.y} width={selectedImage.width} height={selectedImage.height} pointerEvents={selectedImage.locked?"none":"stroke"} onPointerDown={onCrop}/>{!selectedImage.locked && <circle className="image-resize" cx={selectedImage.x+selectedImage.width} cy={selectedImage.y+selectedImage.height} r=".025" onPointerDown={event=>onDrag(event,"image-resize",selectedImage)}/>}</>}
+  </g>;
+}
 
 function Shape({
   item,
   selected,
   onPointerDown,
   onHandlePointerDown,
+  vectorEditor,
   collisionGuide = false,
 }) {
   const common = collisionGuide
@@ -367,7 +464,10 @@ function Shape({
         vectorEffect: "non-scaling-stroke",
       };
   let content;
-  if (item.type === "circle" || item.type === "ellipse")
+  if (item.type === "compound") content = <g transform={`scale(${item.width / item.artworkWidth} ${item.height / item.artworkHeight})`}>{item.children.map((child,index)=><Shape key={index} item={child}/>)}</g>;
+  else if (item.type === "path") content = <path d={item.d} {...common} />;
+  else if (item.type === "vector") content = <path d={stagePath(item.nodes)} {...common} />;
+  else if (item.type === "circle" || item.type === "ellipse")
     content = (
       <ellipse
         cx={item.width / 2}
@@ -481,6 +581,9 @@ function Shape({
       className={`shape-layer ${collisionGuide ? "collision-guide" : ""}`}
     >
       {content}
+      {selected && vectorEditor}
+      {selected && onHandlePointerDown && <g className="rotation-handles"><line x1={pivot.x} y1="0" x2={pivot.x} y2="-.19"/><circle cx={pivot.x} cy="-.22" r=".03" onPointerDown={event=>onHandlePointerDown(event,"rotate")}><title>Rotate object (Shift: 15-degree steps)</title></circle></g>}
+      {selected && item.type !== "vector" && onHandlePointerDown && <g className="shape-handles">{(item.type === "circle" ? [[item.width,item.height/2,"radius"]] : [[0,0,"resize-nw"],[item.width,0,"resize-ne"],[0,item.height,"resize-sw"],[item.width,item.height,"resize-se"]]).map(([x,y,handle]) => <circle key={handle} cx={x} cy={y} r=".035" onPointerDown={(event) => onHandlePointerDown?.(event,handle)} />)}</g>}
       {selected && (
         <rect
           className="selection"
@@ -553,7 +656,10 @@ function svgElement(item) {
       : { x: item.width / 2, y: item.height / 2 };
   const transform = `transform="translate(${item.x} ${item.y}) rotate(${item.rotation} ${pivot.x} ${pivot.y})"`;
   let node;
-  if (item.type === "circle" || item.type === "ellipse")
+  if (item.type === "compound") node = `<g transform="scale(${item.width / item.artworkWidth} ${item.height / item.artworkHeight})">${item.children.map(svgElement).join("\n")}</g>`;
+  else if (item.type === "path") node = `<path d="${item.d}" ${attrs} />`;
+  else if (item.type === "vector") node = `<path d="${stagePath(item.nodes)}" ${attrs} />`;
+  else if (item.type === "circle" || item.type === "ellipse")
     node = `<ellipse cx="${item.width / 2}" cy="${item.height / 2}" rx="${item.width / 2}" ry="${item.height / 2}" ${attrs} />`;
   else if (item.type === "triangle")
     node = `<polygon points="${item.width / 2},0 ${item.width},${item.height} 0,${item.height}" ${attrs} />`;
@@ -591,6 +697,7 @@ function collisionFromLayer(item) {
       y: item.y + pivot.y + x * Math.sin(angle) + y * Math.cos(angle),
     };
   };
+  if (item.type === "vector") return { type: "polygon", points: sampleStageBoundary(item.nodes,48).map(rotatePoint) };
   if (item.type === "trapezoid")
     return { type: "polygon", points: trapezoidPoints(item).map(rotatePoint) };
   if (item.type === "hexagon" || item.type === "polygon")
@@ -628,6 +735,27 @@ function collisionFromLayer(item) {
     height: item.height,
     rotation: item.rotation,
   };
+}
+
+function collisionLayers(item) {
+  if (item.type !== "compound") return item.collision ? [collisionFromLayer(item)] : [];
+  const angle = (item.rotation || 0) * Math.PI / 180;
+  const transform = ({x, y}) => {
+    const dx = x * item.width / item.artworkWidth - item.width / 2;
+    const dy = y * item.height / item.artworkHeight - item.height / 2;
+    return {x:item.x + item.width / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),y:item.y + item.height / 2 + dx * Math.sin(angle) + dy * Math.cos(angle)};
+  };
+  return item.children.flatMap(collisionLayers).map(shape => {
+    let points = shape.points;
+    if (!points) {
+      const rotation = (shape.rotation || 0) * Math.PI / 180;
+      const local = shape.type === "ellipse"
+        ? Array.from({length:64}, (_,i)=>({x:shape.width / 2 * Math.cos(i * Math.PI / 32),y:shape.height / 2 * Math.sin(i * Math.PI / 32)}))
+        : [{x:-shape.width/2,y:-shape.height/2},{x:shape.width/2,y:-shape.height/2},{x:shape.width/2,y:shape.height/2},{x:-shape.width/2,y:shape.height/2}];
+      points = local.map(({x,y})=>({x:shape.x + shape.width/2 + x*Math.cos(rotation)-y*Math.sin(rotation),y:shape.y + shape.height/2 + x*Math.sin(rotation)+y*Math.cos(rotation)}));
+    }
+    return {type:"polygon",points:points.map(transform)};
+  });
 }
 
 function CollisionGuide({ item }) {
@@ -678,11 +806,12 @@ function CollisionGuide({ item }) {
 function App() {
   const [documentMode, setDocumentMode] = useState("item");
   const [shapeName, setShapeName] = useState("Untitled Item");
-  const [realWidth, setRealWidth] = useState(1);
-  const [realDepth, setRealDepth] = useState(1);
+  const [realWidth, setRealWidth] = useDimensionState(1);
+  const [realDepth, setRealDepth] = useDimensionState(1);
   const [groupId, setGroupId] = useState("");
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useDimensionState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [vectorNodeIndex, setVectorNodeIndex] = useState(null);
   const [multiSelectedIds, setMultiSelectedIds] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState(null);
   const [history, setHistory] = useState([]);
@@ -690,10 +819,29 @@ function App() {
   const [grid, setGrid] = useState(true);
   const [toast, setToast] = useState("");
   const [library, setLibrary] = useState([]);
+  const [advancedShapeRole, setAdvancedShapeRole] = useState(null);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [presetSaving, setPresetSaving] = useState(false);
+  const [shapeSaving, setShapeSaving] = useState(false);
+  const [manageCustomOpen, setManageCustomOpen] = useState(false);
+  const [removingPresetId, setRemovingPresetId] = useState(null);
+  const [manageStageplotOpen, setManageStageplotOpen] = useState(false);
+  const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
+  const [managedItemSearch, setManagedItemSearch] = useState("");
+  const [managedGroupSearch, setManagedGroupSearch] = useState("");
+  const [groupsSaving, setGroupsSaving] = useState(false);
+  const [editingItemNameId, setEditingItemNameId] = useState(null);
+  const [itemNameDraft, setItemNameDraft] = useState("");
+  const [editingEquipmentGroupId, setEditingEquipmentGroupId] = useState(null);
+  const [equipmentGroupDraft, setEquipmentGroupDraft] = useState("");
+  const savedProject = useRef(null);
+  const resetProjectBaseline = useRef(false);
+  const [removingStageplotId, setRemovingStageplotId] = useState(null);
   const [stageLibrary, setStageLibrary] = useState([]);
   const [stageNodes, setStageNodes] = useState(() => defaultStageNodes(1, 1));
   const [selectedStageNode, setSelectedStageNode] = useState(null);
-  const [referenceImages, setReferenceImages] = useState([]);
+  const [referenceImages, setReferenceImages] = useDimensionState([]);
   const [selectedReferenceId, setSelectedReferenceId] = useState(null);
   const [zones, setZones] = useState([]);
   const [textItems, setTextItems] = useState([]);
@@ -706,16 +854,36 @@ function App() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [canvasResizeView, setCanvasResizeView] = useState(null);
   const nextId = useRef(20);
   const nextGroupId = useRef(1);
   const canvasRef = useRef(null);
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
   const handleRef = useRef(null);
+  const rotationDragRef = useRef(null);
   const panRef = useRef(null);
   const stageDragRef = useRef(null);
   const imageFileRef = useRef(null);
   const assetDragRef = useRef(null);
+  const projectSnapshot = JSON.stringify(documentMode === "item"
+    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,referenceImages,advancedShapeRole}
+    : {documentMode,shapeName,realWidth,realDepth,stageNodes,zones,textItems,referenceImages});
+  useEffect(() => {
+    if (savedProject.current === null || resetProjectBaseline.current) {
+      savedProject.current = projectSnapshot;
+      resetProjectBaseline.current = false;
+    }
+  });
+  const publishedItems = library.filter(isPublishedItem);
+  const matchingManagedItems = library.filter(item => {
+    const groupName = groups.find(group=>group.id===item.groupId)?.label || "Uncategorised";
+    return (item.label + " " + groupName).toLowerCase().includes(managedItemSearch.trim().toLowerCase());
+  }).sort((a,b)=>a.label.localeCompare(b.label,undefined,{sensitivity:"base"}));
+  const managedEquipmentSections = [...groups, {id:null,label:"Uncategorised"}].map(group => ({...group,items:matchingManagedItems.filter(item => (groups.some(candidate=>candidate.id===item.groupId) ? item.groupId : null) === group.id)})).filter(group=>group.items.length);
+  const matchingManagedGroups = groups.filter(group=>group.label.toLowerCase().includes(managedGroupSearch.trim().toLowerCase()));
+  const activePublished = Boolean(activeLibraryId && publishedItems.some(item => item.id === activeLibraryId));
+  const advancedPresets = library.filter(item => item.editor?.advancedShapeRole && item.editor?.layers?.length);
   const selected = items.find((item) => item.id === selectedId);
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId);
   const selectedText = textItems.find((item) => item.id === selectedTextId);
@@ -733,6 +901,7 @@ function App() {
   };
   const setReferenceImage = (value) => {
     if (!selectedReferenceId) return;
+    if (documentMode === "item") checkpoint();
     if (value === null) {
       setReferenceImages((old) =>
         old.filter((image) => image.id !== selectedReferenceId),
@@ -757,18 +926,7 @@ function App() {
   const selectedGroupItems = selectedGroupId
     ? items.filter((item) => item.editorGroupId === selectedGroupId)
     : [];
-  const groupBounds = selectedGroupItems.length
-    ? {
-        x: Math.min(...selectedGroupItems.map((item) => item.x)),
-        y: Math.min(...selectedGroupItems.map((item) => item.y)),
-        right: Math.max(
-          ...selectedGroupItems.map((item) => item.x + item.width),
-        ),
-        bottom: Math.max(
-          ...selectedGroupItems.map((item) => item.y + item.height),
-        ),
-      }
-    : null;
+  const groupBounds = rotatedBounds(selectedGroupItems);
 
   const svgMarkup = useMemo(
     () =>
@@ -777,30 +935,35 @@ function App() {
   );
   const vectorShapes = useMemo(
     () =>
-      items.map(({ id, name, collision, ...shape }) => ({
+      items.map(function toVectorShape({ id, name, collision, ...shape }) { return ({
         ...shape,
+        ...(shape.type === "vector" ? {type:"path",d:stagePath(shape.nodes)} : {}),
+        ...(shape.type === "compound" ? {children:shape.children.map(toVectorShape)} : {}),
         id: String(id),
         name,
-      })),
+      }); }),
     [items],
   );
   const collisionShapes = useMemo(
-    () => items.filter((item) => item.collision).map(collisionFromLayer),
+    () => items.flatMap(collisionLayers),
     [items],
   );
   const itemData = useMemo(
     () => ({
       schema: "stageplot-item@3",
+      stageplotPublished: activePublished,
       id: activeLibraryId || libraryId(shapeName),
       label: shapeName.trim() || "Untitled Item",
       groupId: groupId || null,
       dimensions: { widthMeters: realWidth, depthMeters: realDepth },
       shapes: vectorShapes,
       collisionShapes,
-      editor: { layers: items },
+      editor: { layers: items, referenceImages, ...(advancedShapeRole ? {advancedShapeRole} : {}), ...(library.find(item=>item.id===activeLibraryId)?.editor?.placementMode ? {placementMode:library.find(item=>item.id===activeLibraryId).editor.placementMode} : {}) },
     }),
     [
       activeLibraryId,
+      activePublished,
+      library,
       shapeName,
       groupId,
       realWidth,
@@ -808,6 +971,8 @@ function App() {
       vectorShapes,
       collisionShapes,
       items,
+      referenceImages,
+      advancedShapeRole,
     ],
   );
   const itemPackage = useMemo(
@@ -847,7 +1012,7 @@ function App() {
   const refreshLibrary = async () => {
     try {
       const [itemsResponse, groupsResponse, stagesResponse] = await Promise.all(
-        [fetch(LIBRARY_API), fetch(GROUPS_API), fetch(STAGES_API)],
+        [fetch(`${LIBRARY_API}?scope=all`), fetch(GROUPS_API), fetch(STAGES_API)],
       );
       if (!itemsResponse.ok || !groupsResponse.ok || !stagesResponse.ok)
         throw new Error("Library server unavailable");
@@ -868,6 +1033,7 @@ function App() {
       ...old.slice(-9),
       {
         items: structuredClone(items),
+        referenceImages: structuredClone(referenceImages),
         realWidth,
         realDepth,
         shapeName,
@@ -878,6 +1044,8 @@ function App() {
     const previous = history.at(-1);
     if (!previous) return;
     setItems(previous.items);
+    setReferenceImages(previous.referenceImages || []);
+    setSelectedReferenceId(null);
     setRealWidth(previous.realWidth);
     setRealDepth(previous.realDepth);
     setShapeName(previous.shapeName);
@@ -891,7 +1059,7 @@ function App() {
     checkpoint();
     setItems((old) =>
       old.map((item) =>
-        item.id === selectedId ? { ...item, ...changes } : item,
+        item.id === selectedId ? resizeShape(item,changes) : item,
       ),
     );
   };
@@ -915,7 +1083,39 @@ function App() {
     setToast(message);
     window.setTimeout(() => setToast(""), 1800);
   };
+  const addAdvancedPreset = (preset) => {
+    try {
+      let groupId;
+      do { groupId = `preset-group-${nextGroupId.current++}`; } while (items.some(item => item.editorGroupId === groupId));
+      const layers = instantiateAdvancedShape(preset, {width:realWidth,depth:realDepth}, nextId.current, groupId);
+      checkpoint();
+      nextId.current += layers.length;
+      setItems(old => [...old,...layers]);
+      setSelectedId(layers[0].type === "compound" ? layers[0].id : null);
+      setSelectedReferenceId(null);
+      setMultiSelectedIds([]);
+      setSelectedGroupId(layers[0].type === "compound" ? null : groupId);
+    } catch(error) { flash(error.message); }
+  };
+  const saveAdvancedPreset = async () => {
+    if (!items.length || !presetName.trim()) return;
+    setPresetSaving(true);
+    try {
+      const id = advancedShapeRole && activeLibraryId ? activeLibraryId : advancedPresetId("custom", libraryId(presetName));
+      const existing = library.find(item => item.id === id);
+      const data = {...itemData,id,stageplotPublished:existing ? isPublishedItem(existing) : false,label:presetName.trim(),editor:{...itemData.editor,advancedShapeRole:"custom",placementMode:existing?.editor?.placementMode || "layers"}};
+      const response = await fetch(`${LIBRARY_API}/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save custom shape");
+      setLibrary(old => [...old.filter(item => item.id !== id),result]);
+      savedProject.current = projectSnapshot;
+      setPresetDialogOpen(false);
+      flash("Custom shape saved");
+    } catch(error) { flash(error.message || "Could not save advanced shape"); }
+    finally { setPresetSaving(false); }
+  };
   const add = (type) => {
+    setSelectedReferenceId(null);
     checkpoint();
     const size = DEFAULTS[type];
     const definition = [...PALETTE, ...ADVANCED_PALETTE].find(
@@ -928,6 +1128,7 @@ function App() {
       x: realWidth / 2 - size.width / 2,
       y: realDepth / 2 - size.height / 2,
       ...size,
+      ...(type === "vector" ? {nodes:defaultStageNodes(size.width,size.height)} : {}),
       fill: "#e9f5bc",
       stroke: "#25261f",
       strokeWidth: 2,
@@ -940,6 +1141,7 @@ function App() {
     setSelectedGroupId(null);
   };
   const pointerDown = (event, item) => {
+    setSelectedReferenceId(null);
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     if (item.editorGroupId) {
@@ -987,6 +1189,7 @@ function App() {
     }
   };
   const selectLayer = (event, item) => {
+    setSelectedReferenceId(null);
     if (item.editorGroupId) {
       setSelectedGroupId(item.editorGroupId);
       setSelectedId(null);
@@ -1009,6 +1212,15 @@ function App() {
     }
   };
   const pointerMove = (event) => {
+    if (rotationDragRef.current && canvasRef.current) {
+      const drag=rotationDragRef.current,rect=canvasRef.current.getBoundingClientRect();
+      const point={x:(event.clientX-rect.left)/rect.width*realWidth,y:(event.clientY-rect.top)/rect.height*realDepth};
+      const angle=Math.atan2(point.y-drag.center.y,point.x-drag.center.x)*180/Math.PI;
+      const step=event.shiftKey?15:1,degrees=Math.round(normalizeRotation(angle-drag.startAngle)/step)*step;
+      const rotated=new Map(rotateObjects(drag.original,drag.center,degrees).map(item=>[item.id,item]));
+      setItems(old=>old.map(item=>rotated.get(item.id)||item));
+      return;
+    }
     const snapStep =
       snapMode === "advanced" ? 0.01 : snapMode === "standard" ? 0.1 : 0;
     const snapValue = (value) =>
@@ -1020,9 +1232,19 @@ function App() {
       const deltaY =
         ((event.clientY - handleRef.current.py) / rect.height) * realDepth;
       const { id, handle, original } = handleRef.current;
+      const angle = (original.rotation || 0)*Math.PI/180;
+      const localX=deltaX*Math.cos(angle)+deltaY*Math.sin(angle), localY=-deltaX*Math.sin(angle)+deltaY*Math.cos(angle);
       setItems((old) =>
         old.map((item) => {
           if (item.id !== id) return item;
+          if (handle.startsWith("vector:")) return moveVectorHandle(original,handle,localX,localY,snapValue);
+          if (handle === "radius") { const diameter=Math.max(.02,snapValue(original.width+localX*2)); return {...item,width:diameter,height:diameter,x:original.x+(original.width-diameter)/2,y:original.y+(original.height-diameter)/2}; }
+          if (handle.startsWith("resize-")) {
+            const west=handle.endsWith("nw")||handle.endsWith("sw"), north=handle.endsWith("nw")||handle.endsWith("ne");
+            const width=Math.max(.01,snapValue(original.width+(west?-localX:localX))),height=Math.max(.01,snapValue(original.height+(north?-localY:localY)));
+            const shiftX=(west?original.width-width:0)+(width-original.width)/2,shiftY=(north?original.height-height:0)+(height-original.height)/2;
+            return resizeShape(original,{width,height,x:original.x+original.width/2+shiftX*Math.cos(angle)-shiftY*Math.sin(angle)-width/2,y:original.y+original.height/2+shiftX*Math.sin(angle)+shiftY*Math.cos(angle)-height/2});
+          }
           if (handle === "arc-start")
             return {
               ...item,
@@ -1095,6 +1317,7 @@ function App() {
     );
   };
   const startHandleDrag = (event, handle) => {
+    if (handle === "rotate") { startRotationDrag(event, selected); return; }
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     checkpoint();
@@ -1104,6 +1327,7 @@ function App() {
       px: event.clientX,
       py: event.clientY,
       original: {
+        ...structuredClone(selected),
         leftInset: selected.leftInset || 0,
         rightInset: selected.rightInset || 0,
         slew: selected.slew || 0,
@@ -1115,6 +1339,53 @@ function App() {
         controlY: selected.controlY,
       },
     };
+  };
+  const startRotationDrag = (event, item = null) => {
+    const originals=item?[item]:selectedGroupItems;
+    if (!originals.length) return;
+    event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);checkpoint();
+    const bounds=rotatedBounds(originals),pivot=item?objectPivot(item):null;
+    const center=item?{x:item.x+pivot.x,y:item.y+pivot.y}:{x:(bounds.x+bounds.right)/2,y:(bounds.y+bounds.bottom)/2};
+    const rect=canvasRef.current.getBoundingClientRect();
+    const point={x:(event.clientX-rect.left)/rect.width*realWidth,y:(event.clientY-rect.top)/rect.height*realDepth};
+    rotationDragRef.current={original:structuredClone(originals),center,startAngle:Math.atan2(point.y-center.y,point.x-center.x)*180/Math.PI};
+  };
+  const removeStageplotItem = async (item) => {
+    if (!window.confirm(`Delete "${item.label}" from the equipment library? This removes its saved design, custom shape, and Stageplot library entry.`)) return;
+    setRemovingStageplotId(item.id);
+    try {
+      const response=await fetch(`${LIBRARY_API}/${encodeURIComponent(item.id)}?permanent=true`,{method:"DELETE"});
+      const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not remove Stageplot item");
+      if (result.deleted !== true || result.id !== item.id) throw new Error("The library server did not delete this item. Restart npm run dev:all to load the updated server, then try again.");
+      setLibrary(old=>old.filter(candidate=>candidate.id!==item.id));
+      if (documentMode === "item" && activeLibraryId === item.id) { setActiveLibraryId(null); setAdvancedShapeRole(null); }
+      flash("Item deleted from equipment library");
+    } catch(error) {flash(error.message||"Could not remove Stageplot item");}
+    finally {setRemovingStageplotId(null);}
+  };
+  const setPresetPlacementMode = async (preset, placementMode) => {
+    setRemovingPresetId(preset.id);
+    try {
+      const data = {...preset,editor:{...preset.editor,placementMode}};
+      const response = await fetch(LIBRARY_API+"/"+encodeURIComponent(preset.id),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save placement setting");
+      setLibrary(old=>old.map(item=>item.id===preset.id?result:item));
+      flash("Placement setting saved");
+    } catch(error) { flash(error.message); }
+    finally { setRemovingPresetId(null); }
+  };
+  const removeCustomPreset = async (preset) => {
+    setRemovingPresetId(preset.id);
+    try {
+      const data=removeCustomShapeMembership(preset);
+      const response=await fetch(`${LIBRARY_API}/${encodeURIComponent(preset.id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not remove custom shape");
+      setLibrary(old=>old.map(item=>item.id===preset.id?result:item));
+      if(activeLibraryId===preset.id)setAdvancedShapeRole(null);
+      flash("Custom shape removed");
+    } catch(error) {flash(error.message||"Could not remove custom shape");}
+    finally {setRemovingPresetId(null);}
   };
   const startStageNodeDrag = (event, index, handle = "node", zoneId = null) => {
     event.stopPropagation();
@@ -1168,6 +1439,7 @@ function App() {
                 ...node,
                 curveMode: "pointArc",
                 curve: undefined,
+                arcDepth: 0,
                 arcX:
                   (old[(nodeIndex - 1 + old.length) % old.length].x + node.x) /
                   2,
@@ -1193,10 +1465,12 @@ function App() {
     }
     if (stageDragRef.current.handle === "canvas-width" || stageDragRef.current.handle === "canvas-depth") {
       const drag = stageDragRef.current;
-      const rect = canvasRef.current.getBoundingClientRect();
       const step = snapMode === "advanced" ? .01 : .1;
-      if (drag.handle === "canvas-width") setRealWidth(Math.max(.1, Math.round((drag.original + (event.clientX - drag.client) / rect.width * drag.original) / step) * step));
-      else setRealDepth(Math.max(.1, Math.round((drag.original + (event.clientY - drag.client) / rect.height * drag.original) / step) * step));
+      const client = drag.handle === "canvas-width" ? event.clientX : event.clientY;
+      const raw = drag.original + (client - drag.client) / drag.pixelsPerMeter;
+      const size = Math.max(.1, snapMode === "off" ? raw : Math.round(raw / step) * step);
+      if (drag.handle === "canvas-width") setRealWidth(size);
+      else setRealDepth(size);
       return;
     }
     if (
@@ -1253,8 +1527,15 @@ function App() {
       old.map((node, index) => {
         if (index !== targetIndex) return node;
         if (handle === "node") return { ...node, ...point };
-        if (handle === "pointArc")
-          return { ...node, arcX: point.x, arcY: point.y };
+        if (handle === "pointArc") {
+          const previous = old[(index - 1 + old.length) % old.length];
+          return {
+            ...node,
+            arcDepth: arcOffset(previous, node, point),
+            arcX: undefined,
+            arcY: undefined,
+          };
+        }
         if (handle === "smooth")
           return { ...node, cx: point.x, cy: point.y, bulge: undefined };
         if (handle === "midpoint") {
@@ -1287,6 +1568,7 @@ function App() {
       image.onload = () => {
         const width = Math.min(realWidth * 0.8, 5);
         const id = `image-${Date.now()}`;
+        checkpoint();
         setReferenceImages((old) => [
           ...old,
           {
@@ -1305,6 +1587,9 @@ function App() {
           crop: { left: 0, top: 0, right: 0, bottom: 0 },
           },
         ]);
+        setSelectedId(null);
+        setSelectedGroupId(null);
+        setMultiSelectedIds([]);
         setSelectedReferenceId(id);
         setSelectedStageNode(null);
         setSelectedZoneId(null);
@@ -1317,6 +1602,10 @@ function App() {
   const startReferenceDrag = (event, handle, imageOverride = referenceImage) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    checkpoint();
+    setSelectedId(null);
+    setSelectedGroupId(null);
+    setMultiSelectedIds([]);
     const start = stagePointer(event, false);
     stageDragRef.current = { handle, start, original: { ...imageOverride }, imageId: imageOverride.id };
     setSelectedReferenceId(imageOverride.id);
@@ -1333,7 +1622,10 @@ function App() {
     if (!canvasResizeEnabled || !event.ctrlKey) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    stageDragRef.current = { handle: dimension === "width" ? "canvas-width" : "canvas-depth", client: dimension === "width" ? event.clientX : event.clientY, original: dimension === "width" ? realWidth : realDepth };
+    checkpoint();
+    const rect = canvasRef.current.parentElement.getBoundingClientRect();
+    if (!canvasResizeView) setCanvasResizeView({ pixelsPerMeter: rect.width / zoom / realWidth, width: realWidth, depth: realDepth });
+    stageDragRef.current = { handle: dimension === "width" ? "canvas-width" : "canvas-depth", client: dimension === "width" ? event.clientX : event.clientY, original: dimension === "width" ? realWidth : realDepth, pixelsPerMeter: dimension === "width" ? rect.width / realWidth : rect.height / realDepth };
   };
   const startAssetMove = (event, asset, assetType) => {
     if (asset.locked || event.ctrlKey || event.shiftKey) return;
@@ -1457,6 +1749,7 @@ function App() {
     flash("SVG downloaded");
   };
   const saveToLibrary = async () => {
+    if (shapeSaving) return;
     if (documentMode === "stage") {
       try {
         const response = await fetch(
@@ -1469,6 +1762,7 @@ function App() {
         );
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
+        savedProject.current = projectSnapshot;
         setActiveLibraryId(result.id);
         await refreshLibrary();
         flash(activeLibraryId ? "Stage updated" : "Stage added to Stageplot");
@@ -1477,33 +1771,42 @@ function App() {
       }
       return;
     }
-    if (!collisionShapes.length)
-      return flash("Mark at least one layer as physical");
+    if (!items.length) return flash("Add artwork before saving");
+    if (!shapeName.trim()) return flash("Give the shape a name before saving");
+    if (!activeLibraryId && library.some(item=>item.id===itemData.id)) return flash("An item with this name already exists. Edit it in Equipment library or choose another name.");
+    setShapeSaving(true);
     try {
       const response = await fetch(
         `${LIBRARY_API}/${encodeURIComponent(itemData.id)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: itemPackage,
+          body: JSON.stringify(itemData),
         },
       );
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
+      savedProject.current = projectSnapshot;
       setActiveLibraryId(result.id);
       await refreshLibrary();
-      flash(activeLibraryId ? "Stageplot item updated" : "Added to Stageplot");
+      flash("Shape saved to equipment library");
     } catch (error) {
       flash(error.message || "Could not save item");
-    }
+    } finally { setShapeSaving(false); }
   };
   const editLibraryItem = (item) => {
+    setCanvasResizeView(null);
+    resetProjectBaseline.current = true;
+    setDocumentMode("item");
+    setAdvancedShapeRole(item.editor?.advancedShapeRole || null);
     setActiveLibraryId(item.id);
     setShapeName(item.label);
     setGroupId(item.groupId || "");
     setRealWidth(item.dimensions.widthMeters);
     setRealDepth(item.dimensions.depthMeters);
     setItems(item.editor?.layers || []);
+    setReferenceImages(item.editor?.referenceImages || []);
+    setSelectedReferenceId(null);
     setSelectedId(null);
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
@@ -1516,6 +1819,8 @@ function App() {
     flash(`Editing ${item.label}`);
   };
   const editLibraryStage = (stage) => {
+    setCanvasResizeView(null);
+    resetProjectBaseline.current = true;
     const source = stage.boundary.nodes;
     const normalized = source.map((node, index) => {
       const mode = segmentMode(node);
@@ -1554,6 +1859,9 @@ function App() {
     setHistory([]);
   };
   const newItem = () => {
+    setCanvasResizeView(null);
+    resetProjectBaseline.current = true;
+    setAdvancedShapeRole(null);
     const width = documentMode === "stage" ? 10 : 1;
     const depth = documentMode === "stage" ? 5 : 1;
     setActiveLibraryId(null);
@@ -1574,6 +1882,47 @@ function App() {
     setReferenceImages([]);
     setSelectedReferenceId(null);
     setSelectedStageNode(null);
+  };
+  const updateManagedItem = async (item, changes) => {
+    setRemovingStageplotId(item.id);
+    try {
+      const response = await fetch(LIBRARY_API+"/"+encodeURIComponent(item.id),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...item,...changes})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not update item");
+      setLibrary(old=>old.map(candidate=>candidate.id===item.id?result:candidate));
+      if (activeLibraryId === item.id && documentMode === "item") {
+        if (changes.label !== undefined) setShapeName(changes.label);
+        if (changes.groupId !== undefined) setGroupId(changes.groupId || "");
+        const baseline = JSON.parse(savedProject.current);
+        if (baseline.documentMode === "item") {
+          if (changes.label !== undefined) baseline.shapeName = changes.label;
+          if (changes.groupId !== undefined) baseline.groupId = changes.groupId || "";
+          savedProject.current = JSON.stringify(baseline);
+        }
+      }
+      setEditingItemNameId(null);
+      flash("Item updated");
+    } catch(error) { flash(error.message); }
+    finally { setRemovingStageplotId(null); }
+  };
+  const editManagedItem = item => {
+    if (projectSnapshot !== savedProject.current && !window.confirm("This project has unsaved changes. Discard them and load " + item.label + " for editing?")) return;
+    editLibraryItem(item);
+    setManageStageplotOpen(false);
+    setEditingItemNameId(null);
+  };
+  const saveManagedGroups = async updated => {
+    setGroupsSaving(true);
+    try {
+      const response = await fetch(GROUPS_API,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not update groups");
+      setGroups(result);
+      setEditingEquipmentGroupId(null);
+      if (groupId && !result.some(group=>group.id===groupId)) setGroupId("");
+      flash("Equipment groups updated");
+    } catch(error) { flash(error.message); }
+    finally { setGroupsSaving(false); }
   };
   const addGroup = async () => {
     const label = window.prompt("Group name")?.trim();
@@ -1634,6 +1983,7 @@ function App() {
     });
   };
   const resetView = () => {
+    setCanvasResizeView(null);
     setZoom(1);
     setPan({ x: 0, y: 0 });
   };
@@ -1679,7 +2029,9 @@ function App() {
             onChange={(e) => {
               const stageMode = e.target.value === "stage";
               setDocumentMode(e.target.value);
+              setAdvancedShapeRole(null);
               setActiveLibraryId(null);
+              setCanvasResizeView(null);
               setShapeName(stageMode ? "Untitled Stage" : "Untitled Item");
               setRealWidth(stageMode ? 10 : 1);
               setRealDepth(stageMode ? 5 : 1);
@@ -1702,10 +2054,11 @@ function App() {
           <button
             onClick={() => {
               refreshLibrary();
-              setLibraryOpen(true);
+              if (documentMode === "item") setManageStageplotOpen(true);
+              else setLibraryOpen(true);
             }}
           >
-            Load existing
+            {documentMode === "item" ? "Equipment library" : "Load existing"}
           </button>
           {documentMode === "item" && (
             <>
@@ -1722,10 +2075,8 @@ function App() {
               <button onClick={download}>SVG only</button>
             </>
           )}
-          <button className="accent" onClick={saveToLibrary}>
-            {activeLibraryId
-              ? `Update ${documentMode}`
-              : `Add ${documentMode} to Stageplot`}
+          <button className="accent" disabled={shapeSaving} onClick={saveToLibrary}>
+            {shapeSaving ? "Saving..." : documentMode === "item" ? "Save shape" : activeLibraryId ? "Update stage" : "Add stage to Stageplot"}
           </button>
         </div>
       </header>
@@ -1852,7 +2203,11 @@ function App() {
             </>
           ) : (
             <>
-              <p className="eyebrow">ADD SHAPE</p>
+              <p className="eyebrow">REFERENCE IMAGES</p>
+              <button className="group-button" onClick={()=>imageFileRef.current?.click()}>Add background image</button>
+              <input ref={imageFileRef} type="file" accept="image/*" onChange={loadReferenceImage} hidden />
+              <div className="layers asset-layers">{referenceImages.map(image=><button key={image.id} draggable={!image.locked} onDragStart={(event)=>{assetDragRef.current=image.id;event.dataTransfer.setData("text/plain",image.id);}} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(assetDragRef.current)reorderAsset(assetDragRef.current,image.id);assetDragRef.current=null;}} className={selectedReferenceId===image.id?"active":""} onClick={()=>{setSelectedReferenceId(image.id);setSelectedId(null);setSelectedGroupId(null);setMultiSelectedIds([]);}}><i style={{background:"#d8d8d8"}}/><span>{image.name}</span><small>{image.locked?"locked":"image"}</small></button>)}</div>
+              <p className="eyebrow advanced-title">SHAPES</p>
               <div className="shape-grid">
                 {PALETTE.map((tool) => (
                   <button key={tool.type} onClick={() => add(tool.type)}>
@@ -1863,13 +2218,13 @@ function App() {
               </div>
               <p className="eyebrow advanced-title">ADVANCED SHAPES</p>
               <div className="shape-grid advanced-grid">
-                {ADVANCED_PALETTE.map((tool) => (
-                  <button key={tool.type} onClick={() => add(tool.type)}>
-                    <b>{tool.glyph}</b>
-                    <span>{tool.label}</span>
-                  </button>
-                ))}
+                {ADVANCED_PALETTE.map(tool => <button key={tool.type} onClick={()=>add(tool.type)}><b>{tool.glyph}</b><span>{tool.label}</span></button>)}
               </div>
+              <p className="eyebrow advanced-title">CUSTOM SHAPES</p>
+              <div className="shape-grid custom-grid">{advancedPresets.map(preset=><button key={preset.id} title={preset.label} onClick={()=>addAdvancedPreset(preset)}><b><svg className="advanced-preset-preview" viewBox={`0 0 ${preset.dimensions.widthMeters} ${preset.dimensions.depthMeters}`}>{preset.editor.layers.map(layer=><Shape key={layer.id} item={layer}/>)}</svg></b><span>{preset.label}</span></button>)}</div>
+              {!advancedPresets.length && <p className="handle-help">Save artwork as a custom shape to reuse it here.</p>}
+              <button className="group-button manage-custom-button" onClick={()=>setManageCustomOpen(true)}>Manage custom shapes</button>
+              <button className="group-button" onClick={()=>{refreshLibrary();setManageGroupsOpen(true);}}>Manage equipment groups</button>
               <p className="eyebrow layer-title">
                 LAYERS <span>{items.length}</span>
               </p>
@@ -1884,7 +2239,11 @@ function App() {
                         : ""
                     }
                     key={item.id}
-                    onClick={(event) => selectLayer(event, item)}
+                    draggable
+                    onDragStart={(event)=>{assetDragRef.current=item.id;event.dataTransfer.setData("text/plain",String(item.id));}}
+                    onDragOver={(event)=>event.preventDefault()}
+                    onDrop={(event)=>{event.preventDefault();const from=items.findIndex(layer=>layer.id===assetDragRef.current),to=items.findIndex(layer=>layer.id===item.id);if(from<0||from===to)return;checkpoint();const copy=[...items];copy.splice(to,0,copy.splice(from,1)[0]);setItems(copy);assetDragRef.current=null;}}
+                    onClick={(event)=>{setVectorNodeIndex(null);selectLayer(event,item);}}
                   >
                     <i style={{ background: item.fill }} />{" "}
                     <span>
@@ -1917,6 +2276,8 @@ function App() {
               +
             </button>
             <button onClick={resetView}>Fit</button>
+            {documentMode === "item" && <button disabled={!items.length} onClick={()=>{setPresetName(shapeName);setPresetDialogOpen(true);}}>Save as custom shape</button>}
+            <label><input type="checkbox" checked={!canvasResizeEnabled} onChange={(event)=>setCanvasResizeEnabled(!event.target.checked)} /> Lock canvas size</label>
             <label>
               <input
                 type="checkbox"
@@ -1954,8 +2315,9 @@ function App() {
               className="canvas-shell"
               style={{
                 aspectRatio: `${realWidth} / ${realDepth}`,
-                width: `min(76%, ${(68 * realWidth) / realDepth}vh)`,
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                width: canvasResizeView ? `${realWidth * canvasResizeView.pixelsPerMeter}px` : `min(76%, ${(68 * realWidth) / realDepth}vh)`,
+                height: canvasResizeView ? `${realDepth * canvasResizeView.pixelsPerMeter}px` : undefined,
+                transform: `translate(${pan.x + (canvasResizeView ? (realWidth - canvasResizeView.width) * canvasResizeView.pixelsPerMeter * zoom / 2 : 0)}px, ${pan.y + (canvasResizeView ? (realDepth - canvasResizeView.depth) * canvasResizeView.pixelsPerMeter * zoom / 2 : 0)}px) scale(${zoom})`,
               }}
             >
               <svg
@@ -1963,20 +2325,23 @@ function App() {
                 className={`canvas ${grid ? "show-grid" : ""}`}
                 viewBox={`0 0 ${realWidth} ${realDepth}`}
                 onPointerMove={
-                  documentMode === "stage" ? moveStageNode : pointerMove
+                  (event) => { if (stageDragRef.current || documentMode === "stage") moveStageNode(event); else pointerMove(event); }
                 }
                 onPointerUp={() => {
                   dragRef.current = null;
                   handleRef.current = null;
+                  rotationDragRef.current = null;
                   stageDragRef.current = null;
                 }}
                 onPointerCancel={() => {
                   dragRef.current = null;
                   handleRef.current = null;
+                  rotationDragRef.current = null;
                   stageDragRef.current = null;
                 }}
                 onPointerDown={() => {
                   setSelectedId(null);
+                  setSelectedReferenceId(null);
                   if (documentMode === "stage") {
                     setSelectedStageNode(null);
                     setReferenceSelected(false);
@@ -2339,6 +2704,7 @@ function App() {
                   </g>
                 ) : (
                   <>
+                    <EquipmentReferences images={referenceImages} selectedImage={referenceImage} onDrag={startReferenceDrag} onCrop={startReferenceCrop} />
                     {items.map((item) => (
                       <Shape
                         key={item.id}
@@ -2348,7 +2714,8 @@ function App() {
                           multiSelectedIds.includes(item.id)
                         }
                         onPointerDown={(e) => pointerDown(e, item)}
-                        onHandlePointerDown={startHandleDrag}
+                        onHandlePointerDown={item.id === selectedId ? startHandleDrag : undefined}
+                        vectorEditor={item.id === selectedId && item.type === "vector" ? <VectorEditor item={item} index={vectorNodeIndex} onSelect={setVectorNodeIndex} onDrag={startHandleDrag} onCurve={(index)=>update({nodes:item.nodes.map((node,i)=>i===index?{...node,curveMode:"pointArc",arcDepth:0}:node)})} onInsert={(index)=>{const nodes=[...item.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index);}} /> : null}
                       />
                     ))}
                     {items
@@ -2360,13 +2727,13 @@ function App() {
                         />
                       ))}
                     {groupBounds && (
-                      <rect
+                      <g><g className="rotation-handles"><line x1={(groupBounds.x+groupBounds.right)/2} y1={groupBounds.y} x2={(groupBounds.x+groupBounds.right)/2} y2={groupBounds.y-.1}/><circle cx={(groupBounds.x+groupBounds.right)/2} cy={groupBounds.y-.13} r=".03" onPointerDown={event=>startRotationDrag(event)}><title>Rotate group (Shift: 15-degree steps)</title></circle></g><rect
                         className="group-selection"
                         x={groupBounds.x - 0.03}
                         y={groupBounds.y - 0.03}
                         width={groupBounds.right - groupBounds.x + 0.06}
                         height={groupBounds.bottom - groupBounds.y + 0.06}
-                      />
+                      /></g>
                     )}
                   </>
                 )}
@@ -2399,7 +2766,7 @@ function App() {
                       </g>
                     );
                     })()}
-                {documentMode === "stage" && canvasResizeEnabled && <><line className="canvas-resize-edge width" x1={realWidth} y1="0" x2={realWidth} y2={realDepth} onPointerDown={(event) => startCanvasResize(event, "width")} /><line className="canvas-resize-edge depth" x1="0" y1={realDepth} x2={realWidth} y2={realDepth} onPointerDown={(event) => startCanvasResize(event, "depth")} /></>}
+                {canvasResizeEnabled && <><line className="canvas-resize-edge width" x1={realWidth} y1="0" x2={realWidth} y2={realDepth} onPointerDown={(event) => startCanvasResize(event, "width")} /><line className="canvas-resize-edge depth" x1="0" y1={realDepth} x2={realWidth} y2={realDepth} onPointerDown={(event) => startCanvasResize(event, "depth")} /></>}
               </svg>
               <div className="axis x">{realWidth} m</div>
               <div className="axis y">{realDepth} m</div>
@@ -2428,7 +2795,7 @@ function App() {
               <div className="field-row">
                 <label className="field">
                   WIDTH (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     min="0.01"
                     step="0.1"
@@ -2440,7 +2807,7 @@ function App() {
                 </label>
                 <label className="field">
                   DEPTH (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     min="0.01"
                     step="0.1"
@@ -2473,8 +2840,7 @@ function App() {
                       <div className="field-row colors">
                         <label className="field">
                           FILL
-                          <input
-                            type="color"
+                          <ColourPicker
                             value={selectedZone.fill}
                             onChange={(e) =>
                               updateSelectedZone({ fill: e.target.value })
@@ -2483,8 +2849,7 @@ function App() {
                         </label>
                         <label className="field">
                           LINE
-                          <input
-                            type="color"
+                          <ColourPicker
                             value={selectedZone.stroke}
                             onChange={(e) =>
                               updateSelectedZone({ stroke: e.target.value })
@@ -2562,142 +2927,19 @@ function App() {
                   <p className="eyebrow advanced-title">TEXT</p>
                   <label className="field">NAME<input value={selectedText.name} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, name: e.target.value } : item))} /></label>
                   <label className="field">TEXT<input value={selectedText.text} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, text: e.target.value } : item))} /></label>
-                  <label className="field">SIZE (M)<input type="number" min="0.05" step="0.05" value={selectedText.fontSize} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, fontSize: Math.max(.05, +e.target.value) } : item))} /></label>
-                  <label className="field">COLOUR<input type="color" value={selectedText.color} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, color: e.target.value } : item))} /></label>
+                  <label className="field">SIZE (M)<CommittedNumberInput type="number" min="0.05" step="0.05" value={selectedText.fontSize} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, fontSize: Math.max(.05, +e.target.value) } : item))} /></label>
+                  <label className="field">COLOUR<ColourPicker value={selectedText.color} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, color: e.target.value } : item))} /></label>
                   <label className="field">TRANSPARENCY <span>{Math.round((1 - selectedText.opacity) * 100)}%</span><input type="range" min="0" max="1" step=".05" value={1 - selectedText.opacity} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, opacity: 1 - +e.target.value } : item))} /></label>
                   <button className="delete" onClick={() => { setTextItems((old) => old.filter((item) => item.id !== selectedText.id)); setSelectedTextId(null); }}>Delete text</button>
                 </>
               )}
-              {referenceSelected && referenceImage && (
-                <>
-                  <p className="eyebrow advanced-title">REFERENCE IMAGE</p>
-                  <div className="field-row">
-                    <label className="field">
-                      X
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={referenceImage.x}
-                        onChange={(e) =>
-                          setReferenceImage({
-                            ...referenceImage,
-                            x: +e.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      Y
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={referenceImage.y}
-                        onChange={(e) =>
-                          setReferenceImage({
-                            ...referenceImage,
-                            y: +e.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      WIDTH
-                      <input
-                        type="number"
-                        min=".05"
-                        step="0.01"
-                        value={referenceImage.width}
-                        onChange={(e) => {
-                          const width = +e.target.value;
-                          setReferenceImage({
-                            ...referenceImage,
-                            width,
-                            height:
-                              (referenceImage.lockAspect ?? true)
-                                ? width /
-                                  (referenceImage.aspectRatio ||
-                                    referenceImage.width /
-                                      referenceImage.height)
-                                : referenceImage.height,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label className="field">
-                      HEIGHT
-                      <input
-                        type="number"
-                        min=".05"
-                        step="0.01"
-                        value={referenceImage.height}
-                        onChange={(e) => {
-                          const height = +e.target.value;
-                          setReferenceImage({
-                            ...referenceImage,
-                            height,
-                            width:
-                              (referenceImage.lockAspect ?? true)
-                                ? height *
-                                  (referenceImage.aspectRatio ||
-                                    referenceImage.width /
-                                      referenceImage.height)
-                                : referenceImage.width,
-                          });
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <label className="collision-toggle">
-                    <input
-                      type="checkbox"
-                      checked={referenceImage.lockAspect ?? true}
-                      onChange={(e) =>
-                        setReferenceImage({
-                          ...referenceImage,
-                          lockAspect: e.target.checked,
-                          aspectRatio:
-                            referenceImage.width / referenceImage.height,
-                        })
-                      }
-                    />
-                    <span>
-                      <b>Lock aspect ratio</b>
-                      <small>
-                        Preserve the image proportions while resizing.
-                      </small>
-                    </span>
-                  </label>
-                  <label className="collision-toggle">
-                    <input type="checkbox" checked={referenceImage.locked ?? false} onChange={(e) => setReferenceImage({ ...referenceImage, locked: e.target.checked })} />
-                    <span><b>Lock background image</b><small>Locked images can only be selected from the Assets list.</small></span>
-                  </label>
-                  <p className="handle-help">Hold Ctrl and drag an edge of the image frame to crop it.</p>
-                  <button className="delete" onClick={() => setReferenceImage(null)}>Remove background image</button>
-                  <label className="field">
-                    OPACITY{" "}
-                    <span>{Math.round(referenceImage.opacity * 100)}%</span>
-                    <input
-                      type="range"
-                      min=".05"
-                      max="1"
-                      step=".05"
-                      value={referenceImage.opacity}
-                      onChange={(e) =>
-                        setReferenceImage({
-                          ...referenceImage,
-                          opacity: +e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                </>
-              )}
+              {referenceSelected && <ReferenceInspector referenceImage={referenceImage} setReferenceImage={setReferenceImage} />}
               {stageNode && (
                 <>
                   <div className="field-row">
                     <label className="field">
                       NODE X
-                      <input
+                      <CommittedNumberInput
                         type="number"
                         step="0.01"
                         value={stageNode.x}
@@ -2708,7 +2950,7 @@ function App() {
                     </label>
                     <label className="field">
                       NODE Y
-                      <input
+                      <CommittedNumberInput
                         type="number"
                         step="0.01"
                         value={stageNode.y}
@@ -2787,7 +3029,7 @@ function App() {
                   <div className="field-row">
                     <label className="field">
                       NODE X
-                      <input
+                      <CommittedNumberInput
                         type="number"
                         step="0.01"
                         value={stageNode.x}
@@ -2798,7 +3040,7 @@ function App() {
                     </label>
                     <label className="field">
                       NODE Y
-                      <input
+                      <CommittedNumberInput
                         type="number"
                         step="0.01"
                         value={stageNode.y}
@@ -2829,8 +3071,9 @@ function App() {
                   </label>
                   {segmentMode(stageNode) === "pointArc" && (
                     <p className="handle-help">
-                      The amber point stays at the parameter midpoint of the
-                      arc. Drag it to define the arc through that point.
+                      The amber point stays centered between the segment
+                      endpoints. Drag it perpendicular to the line between them
+                      to change the arc depth.
                     </p>
                   )}
                   {segmentMode(stageNode) === "smooth" && (
@@ -2895,8 +3138,9 @@ function App() {
                 <span>{selectedGroupItems.length} layers</span>
               </div>
               <p className="footprint-help">
-                Grouped layers act as one object and cannot be selected
-                individually until the group is released.
+                Drag the round handle above the group to rotate all its layers
+                together. Hold Shift for 15-degree steps. Ungroup to edit
+                individual layers.
               </p>
               <button className="ungroup" onClick={ungroup}>
                 Ungroup layers
@@ -2920,6 +3164,8 @@ function App() {
                 selection.
               </p>
             </>
+          ) : referenceSelected ? (
+            <><p className="inspector-context">Equipment reference image</p><ReferenceInspector referenceImage={referenceImage} setReferenceImage={setReferenceImage}/></>
           ) : !selected ? (
             <>
               <p className="inspector-context">
@@ -2935,11 +3181,11 @@ function App() {
               <div className="field-row">
                 <label className="field">
                   WIDTH (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     min="0.01"
                     step="0.1"
-                    value={realWidth}
+                    disabled={!canvasResizeEnabled} value={realWidth}
                     onChange={(e) =>
                       setRealWidth(Math.max(0.01, +e.target.value))
                     }
@@ -2947,11 +3193,11 @@ function App() {
                 </label>
                 <label className="field">
                   DEPTH (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     min="0.01"
                     step="0.1"
-                    value={realDepth}
+                    disabled={!canvasResizeEnabled} value={realDepth}
                     onChange={(e) =>
                       setRealDepth(Math.max(0.01, +e.target.value))
                     }
@@ -2989,7 +3235,7 @@ function App() {
             </>
           ) : (
             <>
-              <p className="inspector-context">Selected vector layer</p>
+              <p className="inspector-context">{selected.type === "compound" ? "Custom shape ? artwork is not editable" : "Selected vector layer"}</p>
               <label className="field">
                 LAYER NAME
                 <input
@@ -3000,7 +3246,7 @@ function App() {
               <div className="field-row">
                 <label className="field">
                   X (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     step="0.01"
                     value={+selected.x.toFixed(3)}
@@ -3009,7 +3255,7 @@ function App() {
                 </label>
                 <label className="field">
                   Y (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     step="0.01"
                     value={+selected.y.toFixed(3)}
@@ -3017,10 +3263,13 @@ function App() {
                   />
                 </label>
               </div>
-              {selected.type === "tripod" ? (
+              {selected.type === "circle" ? <div className="field-row">
+                <label className="field">RADIUS (M)<CommittedNumberInput type="number" min=".01" step=".01" value={+(selected.width/2).toFixed(3)} onChange={(e)=>update({width:Math.max(.02,+e.target.value*2),height:Math.max(.02,+e.target.value*2)})}/></label>
+                <label className="field">DIAMETER (M)<CommittedNumberInput type="number" min=".02" step=".01" value={+selected.width.toFixed(3)} onChange={(e)=>update({width:Math.max(.02,+e.target.value),height:Math.max(.02,+e.target.value)})}/></label>
+              </div> : selected.type === "tripod" ? (
                 <label className="field">
                   LEG RADIUS (M)
-                  <input
+                  <CommittedNumberInput
                     type="number"
                     min="0.01"
                     step="0.01"
@@ -3036,7 +3285,7 @@ function App() {
                 <div className="field-row">
                   <label className="field">
                     WIDTH (M)
-                    <input
+                    <CommittedNumberInput
                       type="number"
                       min="0.01"
                       step="0.01"
@@ -3046,7 +3295,7 @@ function App() {
                   </label>
                   <label className="field">
                     HEIGHT (M)
-                    <input
+                    <CommittedNumberInput
                       type="number"
                       min="0.01"
                       step="0.01"
@@ -3056,6 +3305,15 @@ function App() {
                   </label>
                 </div>
               )}
+              {selected.type === "vector" && <>
+                <p className="handle-help">Drag points to edit the boundary. Shift-click a straight edge to add a point; Ctrl-click an edge for Point on Arc. Select a point to edit its incoming curve.</p>
+                <button className="group-button" onClick={()=>{const index=vectorNodeIndex ?? 0,nodes=[...selected.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index);}}>Add point</button>
+                {selected.nodes[vectorNodeIndex] && <>
+                  <div className="field-row">{["x","y"].map(axis=><label className="field" key={axis}>POINT {axis.toUpperCase()} (M)<CommittedNumberInput type="number" step=".01" value={selected.nodes[vectorNodeIndex][axis]} onChange={event=>update({nodes:selected.nodes.map((node,i)=>i===vectorNodeIndex?{...node,[axis]:+event.target.value}:node)})}/></label>)}</div>
+                  <label className="field">INCOMING SEGMENT<select value={segmentMode(selected.nodes[vectorNodeIndex])} onChange={event=>update({nodes:selected.nodes.map((node,i)=>i===vectorNodeIndex?{...node,curveMode:event.target.value}:node)})}><option value="line">Straight line</option><option value="pointArc">Point on Arc</option><option value="smooth">Smooth curve</option><option value="bezier">B?zier</option></select></label>
+                  <button className="delete" disabled={selected.nodes.length<=3} onClick={()=>{update({nodes:selected.nodes.filter((_,i)=>i!==vectorNodeIndex)});setVectorNodeIndex(null);}}>Delete point</button>
+                </>}
+              </>}
               {selected.type === "polygon" && (
                 <label className="field">
                   NUMBER OF SIDES <span>{selected.sides}</span>
@@ -3074,7 +3332,7 @@ function App() {
                   <div className="field-row">
                     <label className="field">
                       LEFT ANGLE
-                      <input
+                      <CommittedNumberInput
                         type="number"
                         step="0.01"
                         value={+(selected.leftInset || 0).toFixed(3)}
@@ -3083,7 +3341,7 @@ function App() {
                     </label>
                     <label className="field">
                       RIGHT ANGLE
-                      <input
+                      <CommittedNumberInput
                         type="number"
                         step="0.01"
                         value={+(selected.rightInset || 0).toFixed(3)}
@@ -3095,7 +3353,7 @@ function App() {
                   </div>
                   <label className="field">
                     SLEW (M)
-                    <input
+                    <CommittedNumberInput
                       type="number"
                       step="0.01"
                       value={+(selected.slew || 0).toFixed(3)}
@@ -3125,19 +3383,18 @@ function App() {
                   onChange={(e) => update({ rotation: +e.target.value })}
                 />
               </label>
+              {selected.type !== "compound" && <>
               <div className="field-row colors">
                 <label className="field">
                   FILL
-                  <input
-                    type="color"
+                  <ColourPicker
                     value={selected.fill}
                     onChange={(e) => update({ fill: e.target.value })}
                   />
                 </label>
                 <label className="field">
                   STROKE
-                  <input
-                    type="color"
+                  <ColourPicker
                     value={selected.stroke}
                     onChange={(e) => update({ stroke: e.target.value })}
                   />
@@ -3167,6 +3424,7 @@ function App() {
                   </small>
                 </span>
               </label>
+              </>}
               <div className="layer-actions">
                 <button onClick={() => reorder(-1)}>Send back</button>
                 <button onClick={() => reorder(1)}>Bring forward</button>
@@ -3196,9 +3454,7 @@ function App() {
                 <p className="eyebrow">STAGEPLOT LIBRARY</p>
                 <h2>Load existing</h2>
               </div>
-              <button onClick={() => setLibraryOpen(false)} aria-label="Close">
-                ×
-              </button>
+              <button onClick={() => setLibraryOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button>
             </div>
             {libraryError && <p className="library-error">{libraryError}</p>}
             <div className="modal-library">
@@ -3279,6 +3535,46 @@ function App() {
           </section>
         </div>
       )}
+      {manageStageplotOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !removingStageplotId)setManageStageplotOpen(false);}}>
+        <section className="library-modal equipment-management-modal" role="dialog" aria-modal="true" aria-label="Equipment library">
+          <div className="modal-header"><h2>Equipment library</h2><button disabled={Boolean(removingStageplotId)} onClick={()=>setManageStageplotOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
+          <div className="preset-modal-body custom-shape-list"><p className="handle-help">Manage all saved equipment here. Check Add to Stageplot Library to make an item available in Stageplot.</p>
+            <label className="management-search">Search items<input type="search" placeholder="Search by item or equipment group" value={managedItemSearch} onChange={event=>setManagedItemSearch(event.target.value)}/></label>
+            {matchingManagedItems.length ? managedEquipmentSections.map(group=><section className="managed-equipment-section" key={group.id || "uncategorised"}><h3>{group.label}</h3>{group.items.map(item=><div className="equipment-management-row" key={item.id}>
+              <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + item.label} viewBox={"0 0 " + item.dimensions.widthMeters + " " + item.dimensions.depthMeters}>{(item.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg></span>
+              <div className="managed-item-name">{editingItemNameId===item.id ? <form onSubmit={event=>{event.preventDefault();if(itemNameDraft.trim())updateManagedItem(item,{label:itemNameDraft.trim()});}}><input aria-label={"Item name for " + item.label} autoFocus value={itemNameDraft} onChange={event=>setItemNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !itemNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingItemNameId(null)}>Cancel</button></form> : <><span>{item.label}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} aria-label={"Rename " + item.label} title="Rename item" onClick={()=>{setEditingItemNameId(item.id);setItemNameDraft(item.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}</div>
+              <select aria-label={"Equipment group for " + item.label} value={item.groupId || ""} disabled={Boolean(removingStageplotId)} onChange={event=>updateManagedItem(item,{groupId:event.target.value || null})}><option value="">Uncategorised</option>{groups.map(group=><option key={group.id} value={group.id}>{group.label}</option>)}</select>
+              <label className="publish-equipment-toggle"><input type="checkbox" checked={isPublishedItem(item)} disabled={Boolean(removingStageplotId)} onChange={event=>updateManagedItem(item,{stageplotPublished:event.target.checked})}/>Add to Stageplot Library</label>
+              <button disabled={Boolean(removingStageplotId)} onClick={()=>editManagedItem(item)}>EDIT</button>
+              <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + item.label} aria-label={"Delete " + item.label} onClick={()=>removeStageplotItem(item)}>&times;</button>
+            </div>)}</section>) : <p className="empty">{library.length ? "No items match your search." : "No equipment saved yet."}</p>}
+          </div>
+        </section>
+      </div>}
+      {manageGroupsOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !groupsSaving)setManageGroupsOpen(false);}}>
+        <section className="library-modal equipment-management-modal" role="dialog" aria-modal="true" aria-label="Manage equipment groups">
+          <div className="modal-header"><h2>Manage equipment groups</h2><button disabled={groupsSaving} onClick={()=>setManageGroupsOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
+          <div className="preset-modal-body custom-shape-list"><p className="handle-help">Renaming a group updates its name for every item in that group. Counts show published Stageplot items and unpublished saved designs separately. Only groups with neither can be deleted.</p>
+            <label className="management-search">Search equipment groups<input type="search" placeholder="Search groups" value={managedGroupSearch} onChange={event=>setManagedGroupSearch(event.target.value)}/></label>
+            {matchingManagedGroups.length ? matchingManagedGroups.map(group=>{const members=library.filter(item=>item.groupId===group.id);const count=members.length;const publishedCount=members.filter(isPublishedItem).length;const savedCount=count-publishedCount;return <div className="equipment-group-row" key={group.id}>
+              {editingEquipmentGroupId===group.id ? <form onSubmit={event=>{event.preventDefault();if(equipmentGroupDraft.trim())saveManagedGroups(groups.map(candidate=>candidate.id===group.id?{...candidate,label:equipmentGroupDraft.trim()}:candidate));}}><input aria-label={"Group name for " + group.label} autoFocus value={equipmentGroupDraft} onChange={event=>setEquipmentGroupDraft(event.target.value)} disabled={groupsSaving}/><button disabled={groupsSaving || !equipmentGroupDraft.trim()}>Save</button><button type="button" disabled={groupsSaving} onClick={()=>setEditingEquipmentGroupId(null)}>Cancel</button></form> : <><span>{group.label}</span><button disabled={groupsSaving} onClick={()=>{setEditingEquipmentGroupId(group.id);setEquipmentGroupDraft(group.label);}}>Rename</button></>}
+              <small>{publishedCount} published{savedCount>0 && <> ? {savedCount} saved design{savedCount===1?"":"s"}</>}</small><button className="remove-item-button" disabled={groupsSaving || count>0} title={count?"Move all items out of this group before deleting it":"Delete empty group"} onClick={()=>saveManagedGroups(groups.filter(candidate=>candidate.id!==group.id))}>Delete</button>
+            </div>;}) : <p className="empty">{groups.length ? "No groups match your search." : "No equipment groups."}</p>}
+          </div>
+        </section>
+      </div>}
+      {manageCustomOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !removingPresetId)setManageCustomOpen(false);}}><section className="library-modal preset-modal" role="dialog" aria-modal="true" aria-label="Manage custom shapes"><div className="modal-header"><h2>Manage custom shapes</h2><button disabled={Boolean(removingPresetId)} onClick={()=>setManageCustomOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div><div className="preset-modal-body custom-shape-list">{advancedPresets.length?advancedPresets.map(preset=><div className="custom-shape-row" key={preset.id}><span>{preset.label}</span><select aria-label={`Placement mode for ${preset.label}`} value={preset.editor.placementMode || "layers"} disabled={Boolean(removingPresetId)} onChange={event=>setPresetPlacementMode(preset,event.target.value)}><option value="layers">Separate editable layers</option><option value="single">Single non-editable layer</option></select><button disabled={Boolean(removingPresetId)} title={`Remove ${preset.label}`} aria-label={`Remove ${preset.label}`} onClick={()=>removeCustomPreset(preset)}>&times;</button></div>):<p className="empty">No custom shapes saved.</p>}</div></section></div>}
+      {presetDialogOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !presetSaving)setPresetDialogOpen(false);}}>
+        <section className="library-modal preset-modal" role="dialog" aria-modal="true" aria-label="Save as advanced shape">
+          <div className="modal-header"><div><p className="eyebrow">REUSABLE ARTWORK</p><h2>Save as advanced shape</h2></div><button disabled={presetSaving} onClick={()=>setPresetDialogOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
+          <div className="preset-modal-body">
+            <label className="field">PRESET NAME<input autoFocus value={presetName} onChange={event=>setPresetName(event.target.value)} /></label>
+            <p className="handle-help">Save the current artwork to Custom shapes. Choose separate editable layers or a single non-editable layer in Manage custom shapes. Both can be resized and rotated.</p>
+            <button className="group-button" disabled={presetSaving || !presetName.trim()} onClick={saveAdvancedPreset}>{presetSaving ? "Saving..." : "Save custom shape"}</button>
+            <button className="delete" disabled={presetSaving} onClick={()=>setPresetDialogOpen(false)}>Cancel</button>
+          </div>
+        </section>
+      </div>}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
