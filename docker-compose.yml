@@ -1,0 +1,38 @@
+services:
+  library-api:
+    build:
+      context: .
+      target: library-api
+    restart: unless-stopped
+    volumes:
+      - ${LIBRARY_DATA_PATH:-.}/equipment-library:/data/equipment-library
+      - ${LIBRARY_DATA_PATH:-.}/stage-library:/data/stage-library
+    networks:
+      - internal
+
+  stageplot:
+    build:
+      context: .
+      target: stageplot
+    restart: unless-stopped
+    depends_on:
+      - library-api
+    ports:
+      - "${STAGEPLOT_PORT:-8088}:80"
+    networks:
+      - internal
+
+  studio:
+    build:
+      context: .
+      target: studio
+    restart: unless-stopped
+    depends_on:
+      - library-api
+    ports:
+      - "${STUDIO_BIND:-0.0.0.0}:${STUDIO_PORT:-8089}:80"
+    networks:
+      - internal
+
+networks:
+  internal:

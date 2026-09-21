@@ -13,9 +13,10 @@ import { stageControlPoints, nearestControl } from "./stage-controls.js";
 import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
 
-const LIBRARY_API = "http://127.0.0.1:8787/api/items";
-const STAGES_API = "http://127.0.0.1:8787/api/stages";
-const GROUPS_API = "http://127.0.0.1:8787/api/groups";
+const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:8787/api" : "/api")).replace(/\/$/, "");
+const LIBRARY_API = `${API_BASE}/items`;
+const STAGES_API = `${API_BASE}/stages`;
+const GROUPS_API = `${API_BASE}/groups`;
 const MeasurementUnit = createContext("cm");
 
 const roundDimension = value => Number(value.toFixed(2));

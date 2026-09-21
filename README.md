@@ -31,6 +31,41 @@ The Studio Library lists stages separately from equipment groups. Use the pencil
 
 New equipment and stages receive name-independent UUID identifiers. Existing identifiers are retained for compatibility. Updating names or artwork preserves the identifier; saving equipment as a new item creates a separate identifier. Project files reference these IDs and load current library artwork rather than embedded copies.
 
+## Docker deployment
+
+The production stack contains a public Stageplot site, a private Shape Studio site, and an internal library API. Equipment and stage JSON remain in the repository folders and are mounted into the API container, so rebuilding does not erase them.
+
+On the server, copy the example settings and start the stack:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+- Stageplot: `http://SERVER_ADDRESS:8088`
+- Shape Studio: `http://SERVER_ADDRESS:8089` on the local network
+- Library API: internal only; it has no published host port
+
+To inspect it:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+To deploy an update:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Stageplot permits read-only library requests. Studio permits library changes and is available on the server's LAN address by default. Do not forward port 8089 through the router or public tunnel. If Studio is ever made remotely accessible, put it behind HTTPS and authentication first.
+
+Back up `equipment-library/` and `stage-library/` regularly. Container replacement leaves these bind-mounted directories intact, but it does not protect against disk failure or accidental deletion from Studio.
+
+For an Unraid deployment, set `LIBRARY_DATA_PATH=/mnt/user/appdata/empire-band-layout-data` in `.env` and copy the initial `equipment-library/` and `stage-library/` into that directory. This keeps live Studio data separate from application source uploads and prevents a later source copy from replacing the server's current library.
+
 Run both apps and the repository-backed equipment library together:
 
 ```powershell

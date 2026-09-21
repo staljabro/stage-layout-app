@@ -8,7 +8,7 @@ import { isPublishedItem, isEquipmentItem } from '../tools/library-membership.mj
 import { footprintPoints, isItemInsideSpace, pointInPolygon, rectangleBoundary } from './geometry.js'
 import { projectFile, resolveProject, stageSpace } from './project-file.js'
 
-const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || 'http://127.0.0.1:8787/api').replace(/\/$/, '')
+const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8787/api' : '/api')).replace(/\/$/, '')
 const LIBRARY_API = `${API_BASE}/items`
 const GROUPS_API = `${API_BASE}/groups`
 const STAGES_API = `${API_BASE}/stages`

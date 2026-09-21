@@ -9,12 +9,14 @@ const libraryDir = join(root, 'equipment-library')
 const stageLibraryDir = join(root, 'stage-library')
 const groupsFile = join(libraryDir, 'groups.json')
 const port = Number(process.env.STAGEPLOT_LIBRARY_PORT || 8787)
+const host = process.env.STAGEPLOT_LIBRARY_HOST || '127.0.0.1'
+const allowedOrigin = process.env.STAGEPLOT_ALLOWED_ORIGIN ?? '*'
 
 await mkdir(libraryDir, { recursive: true })
 await mkdir(stageLibraryDir, { recursive: true })
 
 const headers = {
-  'Access-Control-Allow-Origin': '*',
+  ...(allowedOrigin ? { 'Access-Control-Allow-Origin': allowedOrigin } : {}),
   'Access-Control-Allow-Methods': 'GET,PUT,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Cache-Control': 'no-store',
@@ -167,8 +169,8 @@ const server = createServer(async (request, response) => {
   }
 })
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Stageplot equipment library: http://127.0.0.1:${server.address().port}`)
+server.listen(port, host, () => {
+  console.log(`Stageplot equipment library: http://${host}:${server.address().port}`)
   console.log(`Files: ${libraryDir}`)
   console.log(`Stages: ${stageLibraryDir}`)
 })
