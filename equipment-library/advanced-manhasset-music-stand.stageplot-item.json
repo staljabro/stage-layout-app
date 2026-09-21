@@ -1,0 +1,144 @@
+{
+  "schema": "stageplot-item@3",
+  "stageplotPublished": false,
+  "id": "advanced-manhasset-music-stand",
+  "label": "Manhasset Music Stand",
+  "groupId": null,
+  "dimensions": {
+    "widthMeters": 0.53,
+    "depthMeters": 0.39
+  },
+  "shapes": [
+    {
+      "type": "tripod",
+      "x": 0.06,
+      "y": -0.09999999999999998,
+      "width": 0.42,
+      "height": 0.36,
+      "legRadius": 0.24,
+      "fill": "#e9f5bc",
+      "stroke": "#25261f",
+      "strokeWidth": 4,
+      "rotation": 180,
+      "id": "20",
+      "name": "Tripod base"
+    },
+    {
+      "type": "rect",
+      "x": 0.010000000000000009,
+      "y": 0.07,
+      "width": 0.51,
+      "height": 0.15,
+      "fill": "#f5f5f0",
+      "stroke": "#191919",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "id": "21",
+      "name": "Rectangle"
+    },
+    {
+      "type": "rect",
+      "x": 0.010000000000000009,
+      "y": 0.21999999999999997,
+      "width": 0.51,
+      "height": 0.06,
+      "fill": "#f5f5f0",
+      "stroke": "#191919",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "leftInset": 0,
+      "rightInset": 0,
+      "slew": 0,
+      "id": "22",
+      "name": "Rectangle"
+    }
+  ],
+  "collisionShapes": [
+    {
+      "type": "polygon",
+      "points": [
+        {
+          "x": 0.2678460969082653,
+          "y": 0.38
+        },
+        {
+          "x": 0.059999999999999956,
+          "y": 0.020000000000000046
+        },
+        {
+          "x": 0.4756921938165305,
+          "y": 0.01999999999999999
+        }
+      ]
+    },
+    {
+      "type": "rect",
+      "x": 0.010000000000000009,
+      "y": 0.07,
+      "width": 0.51,
+      "height": 0.15,
+      "rotation": 0
+    },
+    {
+      "type": "rect",
+      "x": 0.010000000000000009,
+      "y": 0.21999999999999997,
+      "width": 0.51,
+      "height": 0.06,
+      "rotation": 0
+    }
+  ],
+  "editor": {
+    "layers": [
+      {
+        "id": 20,
+        "type": "tripod",
+        "name": "Tripod base",
+        "x": 0.06,
+        "y": -0.09999999999999998,
+        "width": 0.42,
+        "height": 0.36,
+        "legRadius": 0.24,
+        "fill": "#e9f5bc",
+        "stroke": "#25261f",
+        "strokeWidth": 4,
+        "rotation": 180,
+        "collision": true
+      },
+      {
+        "id": 21,
+        "type": "rect",
+        "name": "Rectangle",
+        "x": 0.010000000000000009,
+        "y": 0.07,
+        "width": 0.51,
+        "height": 0.15,
+        "fill": "#f5f5f0",
+        "stroke": "#191919",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "collision": true
+      },
+      {
+        "id": 22,
+        "type": "rect",
+        "name": "Rectangle",
+        "x": 0.010000000000000009,
+        "y": 0.21999999999999997,
+        "width": 0.51,
+        "height": 0.06,
+        "fill": "#f5f5f0",
+        "stroke": "#191919",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "collision": true,
+        "leftInset": 0,
+        "rightInset": 0,
+        "slew": 0
+      }
+    ],
+    "referenceImages": [],
+    "advancedShapeRole": "custom",
+    "placementMode": "layers"
+  }
+}

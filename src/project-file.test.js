@@ -12,6 +12,13 @@ test('downloads contain references and placement data, never equipment or stage 
   const json=JSON.stringify(file);
   for(const property of ['shapes','collisionShapes','boundary','zones','dimensions'])assert.ok(!json.includes('"'+property+'"'));
 });
+test('adjustable part rotations survive project files and ignore removed controls',()=>{
+  const articulated={...asset,rotationParts:[{id:'tray',name:'Tray',pivotX:.25,pivotY:.3,defaultRotation:0}]};
+  const file=projectFile('Concert',stageSpace(stage),[{...placement,assetId:asset.id,controls:{tray:{rotation:42},obsolete:{rotation:90}}}]);
+  assert.deepEqual(file.items[0].controls,{tray:{rotation:42},obsolete:{rotation:90}});
+  const result=resolveProject(file,[articulated],[stage]);
+  assert.deepEqual(result.items[0].controls,{tray:{rotation:42}});
+});
 test('opening uses current library geometry and drops missing equipment',()=>{
   const file=projectFile('Concert',stageSpace(stage),[placement,{...placement,id:124,assetId:'missing'}]);
   const updated={...asset,dimensions:{widthMeters:.7,depthMeters:.8},shapes:[{type:'ellipse',fill:'#000000'}]};

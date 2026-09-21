@@ -5,52 +5,119 @@
   "label": "Orchestra Chair",
   "groupId": null,
   "dimensions": {
-    "widthMeters": 0.5,
-    "depthMeters": 0.55
+    "widthMeters": 0.54,
+    "depthMeters": 0.48
   },
   "shapes": [
     {
-      "type": "rect",
-      "x": 0.2,
-      "y": 0.05994700451690297,
-      "width": 0.1,
-      "height": 0.06,
-      "fill": "#191919",
-      "stroke": "#25261f",
-      "strokeWidth": 2,
-      "rotation": 0,
-      "leftInset": 0,
-      "rightInset": 0,
-      "slew": 0,
-      "editorGroupId": "preset-group-1",
-      "editorGroupName": "Orchestra Chair",
-      "id": "20",
-      "name": "Support"
-    },
-    {
-      "type": "rect",
-      "x": 0.4699999999999998,
-      "y": -0.00005299548309702258,
-      "width": 0.03,
-      "height": 0.55,
-      "fill": "#191919",
-      "stroke": "#25261f",
-      "strokeWidth": 2,
-      "rotation": 0,
-      "leftInset": 0,
-      "rightInset": 0,
-      "slew": 0,
-      "editorGroupId": "preset-group-1",
-      "editorGroupName": "Orchestra Chair",
-      "id": "21",
-      "name": "LeftLeg"
-    },
-    {
-      "type": "rect",
-      "x": -1.3877787807814457e-17,
-      "y": -0.00005299548309696707,
-      "width": 0.03,
-      "height": 0.55,
+      "type": "path",
+      "x": 0,
+      "y": 0,
+      "width": 0.54,
+      "height": 0.48,
+      "nodes": [
+        {
+          "x": 0.53,
+          "y": 0,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.54,
+          "y": 0,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.54,
+          "y": 0.02,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.46,
+          "y": 0.2,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.46,
+          "y": 0.3,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.54,
+          "y": 0.46,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.54,
+          "y": 0.48,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.53,
+          "y": 0.48,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.44,
+          "y": 0.3,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.1,
+          "y": 0.3,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.01,
+          "y": 0.48,
+          "curveMode": "line"
+        },
+        {
+          "x": 0,
+          "y": 0.48,
+          "curveMode": "line"
+        },
+        {
+          "x": 0,
+          "y": 0.46,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.08,
+          "y": 0.3,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.08,
+          "y": 0.2,
+          "curveMode": "line"
+        },
+        {
+          "x": 0,
+          "y": 0.02,
+          "curveMode": "line"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.01,
+          "y": 0,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.1,
+          "y": 0.2,
+          "curveMode": "line"
+        },
+        {
+          "x": 0.44,
+          "y": 0.2,
+          "curveMode": "line"
+        }
+      ],
+      "open": false,
       "fill": "#191919",
       "stroke": "#191919",
       "strokeWidth": 2,
@@ -58,32 +125,29 @@
       "leftInset": 0,
       "rightInset": 0,
       "slew": 0,
-      "editorGroupId": "preset-group-1",
-      "editorGroupName": "Orchestra Chair",
-      "id": "22",
-      "name": "RightLeg"
+      "d": "M 0.53 0 L 0.54 0 L 0.54 0.02 L 0.46 0.2 L 0.46 0.3 L 0.54 0.46 L 0.54 0.48 L 0.53 0.48 L 0.44 0.3 L 0.1 0.3 L 0.01 0.48 L 0 0.48 L 0 0.46 L 0.08 0.3 L 0.08 0.2 L 0 0.02 L 0 0 L 0.01 0 L 0.1 0.2 L 0.44 0.2 L 0.53 0 Z",
+      "id": "25",
+      "name": "Legs"
     },
     {
       "type": "roundRect",
-      "x": -1.3877787807814457e-17,
-      "y": 0.09994700451690296,
-      "width": 0.5,
-      "height": 0.4,
-      "fill": "#191919",
+      "x": 0.04,
+      "y": 0.06,
+      "width": 0.46,
+      "height": 0.42,
+      "fill": "#454642",
       "stroke": "#25261f",
       "strokeWidth": 2,
       "rotation": 0,
-      "editorGroupId": "preset-group-1",
-      "editorGroupName": "Orchestra Chair",
       "id": "23",
       "name": "Seat"
     },
     {
       "type": "roundRect",
-      "x": 0.049999999999999975,
-      "y": 0.01994700451690297,
+      "x": 0.07,
+      "y": 0,
       "width": 0.4,
-      "height": 0.06,
+      "height": 0.08,
       "fill": "#191919",
       "stroke": "#25261f",
       "strokeWidth": 2,
@@ -91,137 +155,257 @@
       "leftInset": 0,
       "rightInset": 0,
       "slew": 0,
-      "editorGroupId": "preset-group-1",
-      "editorGroupName": "Orchestra Chair",
       "id": "24",
       "name": "Backrest"
     }
   ],
   "collisionShapes": [
     {
+      "type": "polygon",
+      "points": [
+        {
+          "x": 0.53,
+          "y": 0
+        },
+        {
+          "x": 0.54,
+          "y": 0
+        },
+        {
+          "x": 0.54,
+          "y": 0.01999999999999999
+        },
+        {
+          "x": 0.46,
+          "y": 0.2
+        },
+        {
+          "x": 0.46,
+          "y": 0.3
+        },
+        {
+          "x": 0.54,
+          "y": 0.46
+        },
+        {
+          "x": 0.54,
+          "y": 0.48
+        },
+        {
+          "x": 0.53,
+          "y": 0.48
+        },
+        {
+          "x": 0.44,
+          "y": 0.3
+        },
+        {
+          "x": 0.1,
+          "y": 0.3
+        },
+        {
+          "x": 0.010000000000000009,
+          "y": 0.48
+        },
+        {
+          "x": 0,
+          "y": 0.48
+        },
+        {
+          "x": 0,
+          "y": 0.46
+        },
+        {
+          "x": 0.08000000000000002,
+          "y": 0.3
+        },
+        {
+          "x": 0.08000000000000002,
+          "y": 0.2
+        },
+        {
+          "x": 0,
+          "y": 0.01999999999999999
+        },
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 0.010000000000000009,
+          "y": 0
+        },
+        {
+          "x": 0.1,
+          "y": 0.2
+        },
+        {
+          "x": 0.44,
+          "y": 0.2
+        }
+      ]
+    },
+    {
       "type": "rect",
-      "x": 0.2,
-      "y": 0.05994700451690297,
-      "width": 0.1,
-      "height": 0.06,
+      "x": 0.04,
+      "y": 0.06,
+      "width": 0.46,
+      "height": 0.42,
       "rotation": 0
     },
     {
       "type": "rect",
-      "x": 0.4699999999999998,
-      "y": -0.00005299548309702258,
-      "width": 0.03,
-      "height": 0.55,
-      "rotation": 0
-    },
-    {
-      "type": "rect",
-      "x": -1.3877787807814457e-17,
-      "y": -0.00005299548309696707,
-      "width": 0.03,
-      "height": 0.55,
-      "rotation": 0
-    },
-    {
-      "type": "rect",
-      "x": -1.3877787807814457e-17,
-      "y": 0.09994700451690296,
-      "width": 0.5,
-      "height": 0.4,
-      "rotation": 0
-    },
-    {
-      "type": "rect",
-      "x": 0.049999999999999975,
-      "y": 0.01994700451690297,
+      "x": 0.07,
+      "y": 0,
       "width": 0.4,
-      "height": 0.06,
+      "height": 0.08,
       "rotation": 0
     }
   ],
   "editor": {
     "layers": [
       {
-        "id": 20,
-        "type": "rect",
-        "name": "Support",
-        "x": 0.2,
-        "y": 0.05994700451690297,
-        "width": 0.1,
-        "height": 0.06,
-        "fill": "#191919",
-        "stroke": "#25261f",
-        "strokeWidth": 2,
-        "rotation": 0,
+        "id": 25,
+        "type": "vector",
+        "name": "Legs",
+        "x": 0,
+        "y": 0,
+        "width": 0.54,
+        "height": 0.48,
+        "nodes": [
+          {
+            "x": 0.53,
+            "y": 0,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.54,
+            "y": 0,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.54,
+            "y": 0.02,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.46,
+            "y": 0.2,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.46,
+            "y": 0.3,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.54,
+            "y": 0.46,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.54,
+            "y": 0.48,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.53,
+            "y": 0.48,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.44,
+            "y": 0.3,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.1,
+            "y": 0.3,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.01,
+            "y": 0.48,
+            "curveMode": "line"
+          },
+          {
+            "x": 0,
+            "y": 0.48,
+            "curveMode": "line"
+          },
+          {
+            "x": 0,
+            "y": 0.46,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.08,
+            "y": 0.3,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.08,
+            "y": 0.2,
+            "curveMode": "line"
+          },
+          {
+            "x": 0,
+            "y": 0.02,
+            "curveMode": "line"
+          },
+          {
+            "x": 0,
+            "y": 0,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.01,
+            "y": 0,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.1,
+            "y": 0.2,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.44,
+            "y": 0.2,
+            "curveMode": "line"
+          }
+        ],
+        "open": false,
         "collision": true,
-        "leftInset": 0,
-        "rightInset": 0,
-        "slew": 0,
-        "editorGroupId": "preset-group-1",
-        "editorGroupName": "Orchestra Chair"
-      },
-      {
-        "id": 21,
-        "type": "rect",
-        "name": "LeftLeg",
-        "x": 0.4699999999999998,
-        "y": -0.00005299548309702258,
-        "width": 0.03,
-        "height": 0.55,
-        "fill": "#191919",
-        "stroke": "#25261f",
-        "strokeWidth": 2,
-        "rotation": 0,
-        "collision": true,
-        "leftInset": 0,
-        "rightInset": 0,
-        "slew": 0,
-        "editorGroupId": "preset-group-1",
-        "editorGroupName": "Orchestra Chair"
-      },
-      {
-        "id": 22,
-        "type": "rect",
-        "name": "RightLeg",
-        "x": -1.3877787807814457e-17,
-        "y": -0.00005299548309696707,
-        "width": 0.03,
-        "height": 0.55,
         "fill": "#191919",
         "stroke": "#191919",
         "strokeWidth": 2,
         "rotation": 0,
-        "collision": true,
         "leftInset": 0,
         "rightInset": 0,
-        "slew": 0,
-        "editorGroupId": "preset-group-1",
-        "editorGroupName": "Orchestra Chair"
+        "slew": 0
       },
       {
         "id": 23,
         "type": "roundRect",
         "name": "Seat",
-        "x": -1.3877787807814457e-17,
-        "y": 0.09994700451690296,
-        "width": 0.5,
-        "height": 0.4,
-        "fill": "#191919",
+        "x": 0.04,
+        "y": 0.06,
+        "width": 0.46,
+        "height": 0.42,
+        "fill": "#454642",
         "stroke": "#25261f",
         "strokeWidth": 2,
         "rotation": 0,
-        "collision": true,
-        "editorGroupId": "preset-group-1",
-        "editorGroupName": "Orchestra Chair"
+        "collision": true
       },
       {
         "id": 24,
         "type": "roundRect",
         "name": "Backrest",
-        "x": 0.049999999999999975,
-        "y": 0.01994700451690297,
+        "x": 0.07,
+        "y": 0,
         "width": 0.4,
-        "height": 0.06,
+        "height": 0.08,
         "fill": "#191919",
         "stroke": "#25261f",
         "strokeWidth": 2,
@@ -229,9 +413,7 @@
         "collision": true,
         "leftInset": 0,
         "rightInset": 0,
-        "slew": 0,
-        "editorGroupId": "preset-group-1",
-        "editorGroupName": "Orchestra Chair"
+        "slew": 0
       }
     ],
     "referenceImages": [],

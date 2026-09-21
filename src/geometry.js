@@ -42,6 +42,8 @@ export function footprintPoints(item, samples = 32) {
         normalizedX = shape.x + shape.width / 2 + px * Math.cos(shapeRotation) - py * Math.sin(shapeRotation)
         normalizedY = shape.y + shape.height / 2 + px * Math.sin(shapeRotation) + py * Math.cos(shapeRotation)
       }
+      const part=item.rotationParts?.find(candidate=>candidate.id===shape.rotationPartId)
+      if(part){const angle=((item.controls?.[part.id]?.rotation??part.defaultRotation??0)*Math.PI)/180,dx=normalizedX-part.pivotX,dy=normalizedY-part.pivotY;normalizedX=part.pivotX+dx*Math.cos(angle)-dy*Math.sin(angle);normalizedY=part.pivotY+dx*Math.sin(angle)+dy*Math.cos(angle)}
       const localX = normalizedX - width / 2
       const localY = normalizedY - depth / 2
       return {

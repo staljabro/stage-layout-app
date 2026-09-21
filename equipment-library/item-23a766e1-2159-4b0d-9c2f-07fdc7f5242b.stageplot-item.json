@@ -1,0 +1,156 @@
+{
+  "schema": "stageplot-item@3",
+  "stageplotPublished": true,
+  "id": "item-23a766e1-2159-4b0d-9c2f-07fdc7f5242b",
+  "label": "Manhasset Conductor Music Stand",
+  "groupId": "music-stands",
+  "dimensions": {
+    "widthMeters": 0.81,
+    "depthMeters": 0.48
+  },
+  "shapes": [
+    {
+      "type": "tripod",
+      "x": 0.2,
+      "y": 0,
+      "width": 0.42,
+      "height": 0.36,
+      "legRadius": 0.24,
+      "fill": "#e9f5bc",
+      "stroke": "#25261f",
+      "strokeWidth": 4,
+      "rotation": 0,
+      "rotationPartId": "rotation-part-1789977154756",
+      "id": "20",
+      "name": "Tripod base"
+    },
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0.07,
+      "width": 0.81,
+      "height": 0.15,
+      "fill": "#f5f5f0",
+      "stroke": "#191919",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "id": "21",
+      "name": "Rectangle"
+    },
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0.22,
+      "width": 0.81,
+      "height": 0.06,
+      "fill": "#f5f5f0",
+      "stroke": "#191919",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "leftInset": 0,
+      "rightInset": 0,
+      "slew": 0,
+      "id": "22",
+      "name": "Rectangle"
+    }
+  ],
+  "collisionShapes": [
+    {
+      "type": "polygon",
+      "points": [
+        {
+          "x": 0.40784609690826523,
+          "y": 0
+        },
+        {
+          "x": 0.6156921938165305,
+          "y": 0.36
+        },
+        {
+          "x": 0.19999999999999998,
+          "y": 0.36
+        }
+      ]
+    },
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0.07,
+      "width": 0.81,
+      "height": 0.15,
+      "rotation": 0
+    },
+    {
+      "type": "rect",
+      "x": 0,
+      "y": 0.22,
+      "width": 0.81,
+      "height": 0.06,
+      "rotation": 0
+    }
+  ],
+  "rotationParts": [
+    {
+      "id": "rotation-part-1789977154756",
+      "name": "Tripod Base",
+      "pivotX": 0.40784609690826523,
+      "pivotY": 0.24,
+      "minRotation": -180,
+      "maxRotation": 180,
+      "defaultRotation": 0,
+      "pivotLockedToTripod": true
+    }
+  ],
+  "editor": {
+    "layers": [
+      {
+        "id": 20,
+        "type": "tripod",
+        "name": "Tripod base",
+        "x": 0.2,
+        "y": 0,
+        "width": 0.42,
+        "height": 0.36,
+        "legRadius": 0.24,
+        "fill": "#e9f5bc",
+        "stroke": "#25261f",
+        "strokeWidth": 4,
+        "rotation": 0,
+        "collision": true,
+        "rotationPartId": "rotation-part-1789977154756"
+      },
+      {
+        "id": 21,
+        "type": "rect",
+        "name": "Rectangle",
+        "x": 0,
+        "y": 0.07,
+        "width": 0.81,
+        "height": 0.15,
+        "fill": "#f5f5f0",
+        "stroke": "#191919",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "collision": true
+      },
+      {
+        "id": 22,
+        "type": "rect",
+        "name": "Rectangle",
+        "x": 0,
+        "y": 0.22,
+        "width": 0.81,
+        "height": 0.06,
+        "fill": "#f5f5f0",
+        "stroke": "#191919",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "collision": true,
+        "leftInset": 0,
+        "rightInset": 0,
+        "slew": 0
+      }
+    ],
+    "referenceImages": []
+  }
+}

@@ -1,14 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { segmentMode, segmentMidpoint, smoothControl, arcOffset, pointOnArc, bezierGeometry, stageSegmentPath, stagePath, sampleStageBoundary } from "../../../src/stage-geometry.js";
 import { isPublishedItem, isEquipmentItem } from "../../library-membership.mjs";
-import { objectPivot, normalizeRotation, rotateObjects, rotatedBounds } from "./rotation.js";
+import { objectPivot, normalizeRotation, rotateObjects, rotatedBounds, lockTripodPartPivots } from "./rotation.js";
 import { TextArtwork } from "../../../src/text-shape.jsx";
 import { sizeText, textSvg } from "../../../src/text-layout.js";
 import { convertToVector, vectorPath } from "./vector-conversion.js";
 import { equipmentSaveChoice, newAssetId } from "./equipment-save.js";
 import { toCentimetres, fromCentimetres } from "./measurements.js";
 import { readSessionDraft, useSessionDraft } from "../../../src/session-draft.js";
-import { selectionBox, enclosedItems } from "../../../src/marquee.js";
+import { selectionBox, enclosedItems, containsBounds } from "../../../src/marquee.js";
 import { stageControlPoints, nearestControl } from "./stage-controls.js";
 import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
@@ -774,6 +774,7 @@ function collisionFromLayer(item) {
     width: item.width,
     height: item.height,
     rotation: item.rotation,
+    rotationPartId: item.rotationPartId,
   };
 }
 
@@ -794,7 +795,7 @@ function collisionLayers(item) {
         : [{x:-shape.width/2,y:-shape.height/2},{x:shape.width/2,y:-shape.height/2},{x:shape.width/2,y:shape.height/2},{x:-shape.width/2,y:shape.height/2}];
       points = local.map(({x,y})=>({x:shape.x + shape.width/2 + x*Math.cos(rotation)-y*Math.sin(rotation),y:shape.y + shape.height/2 + x*Math.sin(rotation)+y*Math.cos(rotation)}));
     }
-    return {type:"polygon",points:points.map(transform)};
+    return {type:"polygon",points:points.map(transform),rotationPartId:shape.rotationPartId};
   });
 }
 
@@ -851,6 +852,7 @@ function App() {
   const [realDepth, setRealDepth] = useDimensionState(session.realDepth ?? 1);
   const [groupId, setGroupId] = useState(session.groupId ?? "");
   const [items, setItems] = useDimensionState(session.items ?? []);
+  const [rotationParts, setRotationParts] = useState(session.rotationParts ?? []);
   const [selectedId, setSelectedId] = useState(null);
   const [vectorNodeIndex, setVectorNodeIndex] = useState(null);
   const [vectorDrawing, setVectorDrawing] = useState(session.vectorDrawing ?? null);
@@ -867,6 +869,8 @@ function App() {
   const [presetName, setPresetName] = useState("");
   const [presetSaving, setPresetSaving] = useState(false);
   const [shapeSaving, setShapeSaving] = useState(false);
+  const [stageSaveAsOpen, setStageSaveAsOpen] = useState(false);
+  const [stageSaveAsName, setStageSaveAsName] = useState("");
   const [saveChoice, setSaveChoice] = useState(null);
   const [manageCustomOpen, setManageCustomOpen] = useState(false);
   const [removingPresetId, setRemovingPresetId] = useState(null);
@@ -894,6 +898,9 @@ function App() {
   const [selectedTextId, setSelectedTextId] = useState(null);
   const [canvasResizeEnabled, setCanvasResizeEnabled] = useState(session.canvasResizeEnabled ?? false);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
+  const [selectedStageAssetIds, setSelectedStageAssetIds] = useState([]);
+  const [stageNodesExpanded, setStageNodesExpanded] = useState(false);
+  const [stageBoundaryLocked, setStageBoundaryLocked] = useState(session.stageBoundaryLocked ?? false);
   const [groups, setGroups] = useState([]);
   const [activeLibraryId, setActiveLibraryId] = useState(session.activeLibraryId ?? null);
   const [draftAssetId, setDraftAssetId] = useState(() => session.draftAssetId ?? newAssetId(session.documentMode === "stage" ? "stage" : "item"));
@@ -917,8 +924,8 @@ function App() {
   const imageFileRef = useRef(null);
   const assetDragRef = useRef(null);
   const projectSnapshot = JSON.stringify(documentMode === "item"
-    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,referenceImages,advancedShapeRole}
-    : {documentMode,shapeName,realWidth,realDepth,stageNodes,zones,textItems,referenceImages});
+    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,rotationParts,referenceImages,advancedShapeRole}
+    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,zones,textItems,referenceImages});
   useEffect(() => {
     if (savedProject.current === null || resetProjectBaseline.current) {
       savedProject.current = projectSnapshot;
@@ -926,8 +933,8 @@ function App() {
     }
   });
   const sessionError = useSessionDraft("shape-studio:draft", {
-    documentMode, shapeName, realWidth, realDepth, groupId, items, referenceImages,
-    advancedShapeRole, stageNodes, zones, textItems, activeLibraryId, draftAssetId, snapMode, grid,
+    documentMode, shapeName, realWidth, realDepth, groupId, items, rotationParts, referenceImages,
+    advancedShapeRole, stageNodes, zones, textItems, stageBoundaryLocked, activeLibraryId, draftAssetId, snapMode, grid,
     zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
     savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
   });
@@ -954,7 +961,7 @@ function App() {
     ...referenceImages.map((asset) => ({ ...asset, assetType: "image" })),
     ...zones.map((asset) => ({ ...asset, assetType: "zone" })),
     ...textItems.map((asset) => ({ ...asset, assetType: "text" })),
-  ].sort((a, b) => (a.zOrder ?? 0) - (b.zOrder ?? 0));
+  ].sort((a, b) => (b.zOrder ?? 0) - (a.zOrder ?? 0));
   const setReferenceSelected = (selected) => {
     if (!selected) setSelectedReferenceId(null);
   };
@@ -982,11 +989,12 @@ function App() {
     selectedStageNode === null
       ? null
       : (selectedZone?.nodes || stageNodes)[selectedStageNode];
-  const activeStageControls = documentMode === "stage" && !selectedZone?.locked ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
+  const activeStageControls = documentMode === "stage" && !selectedZone?.locked && (selectedZone || !stageBoundaryLocked) ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
   const selectedGroupItems = selectedGroupId
     ? items.filter((item) => item.editorGroupId === selectedGroupId)
     : [];
   const groupBounds = rotatedBounds(selectedGroupItems);
+  const effectiveRotationParts = lockTripodPartPivots(rotationParts,items);
 
   const svgMarkup = useMemo(
     () =>
@@ -1018,6 +1026,7 @@ function App() {
       dimensions: { widthMeters: realWidth, depthMeters: realDepth },
       shapes: vectorShapes,
       collisionShapes,
+      rotationParts: effectiveRotationParts,
       editor: { layers: items, referenceImages, ...(advancedShapeRole ? {advancedShapeRole} : {}), ...(library.find(item=>item.id===activeLibraryId)?.editor?.placementMode ? {placementMode:library.find(item=>item.id===activeLibraryId).editor.placementMode} : {}) },
     }),
     [
@@ -1030,6 +1039,7 @@ function App() {
       realDepth,
       vectorShapes,
       collisionShapes,
+      effectiveRotationParts,
       items,
       referenceImages,
       advancedShapeRole,
@@ -1055,7 +1065,7 @@ function App() {
       })),
       textItems,
       details: [],
-      editor: { referenceImages },
+      editor: { referenceImages, stageBoundaryLocked },
     }),
     [
       activeLibraryId, draftAssetId,
@@ -1063,6 +1073,7 @@ function App() {
       realWidth,
       realDepth,
       stageNodes,
+      stageBoundaryLocked,
       zones,
       textItems,
       referenceImages,
@@ -1093,7 +1104,12 @@ function App() {
       ...old.slice(-9),
       {
         items: structuredClone(items),
+        rotationParts: structuredClone(rotationParts),
         referenceImages: structuredClone(referenceImages),
+        stageNodes: structuredClone(stageNodes),
+        stageBoundaryLocked,
+        zones: structuredClone(zones),
+        textItems: structuredClone(textItems),
         realWidth,
         realDepth,
         shapeName,
@@ -1104,7 +1120,12 @@ function App() {
     const previous = history.at(-1);
     if (!previous) return;
     setItems(previous.items);
+    setRotationParts(previous.rotationParts || []);
     setReferenceImages(previous.referenceImages || []);
+    if (previous.stageNodes) setStageNodes(previous.stageNodes);
+    if (previous.stageBoundaryLocked !== undefined) setStageBoundaryLocked(previous.stageBoundaryLocked);
+    if (previous.zones) setZones(previous.zones);
+    if (previous.textItems) setTextItems(previous.textItems);
     setSelectedReferenceId(null);
     setRealWidth(previous.realWidth);
     setRealDepth(previous.realDepth);
@@ -1114,6 +1135,7 @@ function App() {
     setSelectedId(null);
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
+    setSelectedStageAssetIds([]);
   };
   const update = (changes) => {
     checkpoint();
@@ -1495,6 +1517,7 @@ function App() {
     };
   };
   const stageSegmentClick = (event, index, zoneId = null) => {
+    if ((!zoneId && stageBoundaryLocked) || (zoneId && zones.find(zone => zone.id === zoneId)?.locked)) return;
     event.stopPropagation();
     const updateNodes = (updater) =>
       zoneId
@@ -1577,8 +1600,18 @@ function App() {
     if (!stageDragRef.current || !canvasRef.current) return;
     if (stageDragRef.current.handle === "asset-move") {
       const point = stagePointer(event, false); const drag = stageDragRef.current; const dx = point.x - drag.start.x; const dy = point.y - drag.start.y;
-      if (drag.assetType === "zone") setZones((old) => old.map((zone) => zone.id === drag.id ? { ...zone, nodes: drag.original.map((node) => ({ ...node, x: node.x + dx, y: node.y + dy, cx: Number.isFinite(node.cx) ? node.cx + dx : node.cx, cy: Number.isFinite(node.cy) ? node.cy + dy : node.cy, arcX: Number.isFinite(node.arcX) ? node.arcX + dx : node.arcX, arcY: Number.isFinite(node.arcY) ? node.arcY + dy : node.arcY })) } : zone));
-      if (drag.assetType === "text") setTextItems((old) => old.map((item) => item.id === drag.id ? { ...item, x: drag.original.x + dx, y: drag.original.y + dy } : item));
+      const translateNodes = nodes => nodes.map((node) => ({ ...node, x: node.x + dx, y: node.y + dy, cx: Number.isFinite(node.cx) ? node.cx + dx : node.cx, cy: Number.isFinite(node.cy) ? node.cy + dy : node.cy, arcX: Number.isFinite(node.arcX) ? node.arcX + dx : node.arcX, arcY: Number.isFinite(node.arcY) ? node.arcY + dy : node.arcY }));
+      if (drag.assetType === "stage") setStageNodes(translateNodes(drag.original));
+      if (drag.originals) {
+        if (drag.originals["stage-boundary"]?.nodes) setStageNodes(translateNodes(drag.originals["stage-boundary"].nodes));
+        setZones(old => old.map(zone => drag.originals[zone.id]?.nodes ? {...zone,nodes:translateNodes(drag.originals[zone.id].nodes)} : zone));
+        setTextItems(old => old.map(item => drag.originals[item.id] ? {...item,x:drag.originals[item.id].x+dx,y:drag.originals[item.id].y+dy} : item));
+        setReferenceImages(old => old.map(image => drag.originals[image.id] ? {...image,x:drag.originals[image.id].x+dx,y:drag.originals[image.id].y+dy} : image));
+      } else {
+        if (drag.assetType === "zone") setZones((old) => old.map((zone) => zone.id === drag.id ? { ...zone, nodes: translateNodes(drag.original) } : zone));
+        if (drag.assetType === "text") setTextItems((old) => old.map((item) => item.id === drag.id ? { ...item, x: drag.original.x + dx, y: drag.original.y + dy } : item));
+        if (drag.assetType === "image") setReferenceImages((old) => old.map((image) => image.id === drag.id ? { ...image, x: drag.original.x + dx, y: drag.original.y + dy } : image));
+      }
       return;
     }
     if (stageDragRef.current.handle === "canvas-width" || stageDragRef.current.handle === "canvas-depth") {
@@ -1750,10 +1783,15 @@ function App() {
   const startAssetMove = (event, asset, assetType) => {
     if (event.button !== 0) return;
     if (asset.locked || event.ctrlKey || event.shiftKey) return;
-    event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId);
-    stageDragRef.current = { handle: "asset-move", assetType, id: asset.id, start: stagePointer(event, false), original: assetType === "zone" ? structuredClone(asset.nodes) : { x: asset.x, y: asset.y } };
+    event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); checkpoint();
+    const moveIds = selectedStageAssetIds.includes(asset.id) ? selectedStageAssetIds : [asset.id];
+    const selectedAssets = [{id:"stage-boundary",assetType:"stage",nodes:stageNodes,locked:stageBoundaryLocked}, ...orderedAssets].filter(candidate => moveIds.includes(candidate.id) && !candidate.locked);
+    const originals = selectedAssets.length > 1 ? Object.fromEntries(selectedAssets.map(candidate => [candidate.id, candidate.assetType === "zone" || candidate.assetType === "stage" ? {nodes:structuredClone(candidate.nodes)} : {x:candidate.x,y:candidate.y}])) : null;
+    stageDragRef.current = { handle: "asset-move", assetType, id: asset.id, start: stagePointer(event, false), original: assetType === "zone" || assetType === "stage" ? structuredClone(asset.nodes) : { x: asset.x, y: asset.y }, originals };
+    setSelectedStageAssetIds(moveIds);
     if (assetType === "zone") { setSelectedZoneId(asset.id); setSelectedTextId(null); }
-    else { setSelectedTextId(asset.id); setSelectedZoneId(null); }
+    else if (assetType === "text") { setSelectedTextId(asset.id); setSelectedZoneId(null); }
+    else { setSelectedTextId(null); setSelectedZoneId(null); }
     setSelectedReferenceId(null); setSelectedStageNode(null);
   };
   const updateBoundaryNode = (changes) =>
@@ -1789,7 +1827,7 @@ function App() {
     const to = ids.indexOf(targetId);
     if (from < 0 || to < 0 || from === to) return;
     ids.splice(to, 0, ids.splice(from, 1)[0]);
-    const order = new Map(ids.map((id, index) => [id, index]));
+    const order = new Map(ids.map((id, index) => [id, ids.length - index - 1]));
     setReferenceImages((old) =>
       old.map((image) => ({ ...image, zOrder: order.get(image.id) })),
     );
@@ -1801,8 +1839,9 @@ function App() {
     );
   };
   const toggleAssetLock = (asset) => {
+    checkpoint();
     if (asset.assetType === "image") setReferenceImages((old) => old.map((item) => item.id === asset.id ? { ...item, locked: !item.locked } : item));
-    if (asset.assetType === "zone") setZones((old) => old.map((item) => item.id === asset.id ? { ...item, locked: !item.locked } : item));
+    if (asset.assetType === "zone") { setZones((old) => old.map((item) => item.id === asset.id ? { ...item, locked: !item.locked } : item)); if (selectedZoneId === asset.id) setSelectedStageNode(null); }
     if (asset.assetType === "text") setTextItems((old) => old.map((item) => item.id === asset.id ? { ...item, locked: !item.locked } : item));
   };
   const remove = () => {
@@ -1872,27 +1911,7 @@ function App() {
   const saveToLibrary = async () => {
     if (shapeSaving) return;
     if (documentMode === "stage") {
-      setShapeSaving(true);
-      try {
-        const response = await fetch(
-          `${STAGES_API}/${encodeURIComponent(stageData.id)}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(stageData, null, 2),
-          },
-        );
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        savedProject.current = projectSnapshot;
-        setActiveLibraryId(result.id);
-        await refreshLibrary();
-        flash(activeLibraryId ? "Stage updated" : "Stage added to Stageplot");
-      } catch (error) {
-        flash(error.message || "Could not save stage");
-      } finally {
-        setShapeSaving(false);
-      }
+      await persistStage(stageData, projectSnapshot, activeLibraryId ? "Stage updated" : "Stage added to Stageplot");
       return;
     }
     if (!items.length) return flash("Add artwork before saving");
@@ -1903,6 +1922,45 @@ function App() {
       return;
     }
     await persistEquipment(itemData, projectSnapshot);
+  };
+  const createRotationPart = () => {
+    const ids = selectedGroupId ? selectedGroupItems.map(item=>item.id) : [...new Set([...multiSelectedIds,...(selectedId ? [selectedId] : [])])];
+    if (!ids.length) return flash("Select one or more layers first");
+    const name = window.prompt("Rotation part name", "Adjustable part")?.trim();
+    if (!name) return;
+    const members = items.filter(item=>ids.includes(item.id));
+    const bounds = rotatedBounds(members);
+    const tripod = members.find(item=>item.type==="tripod");
+    const tripodHub = tripod ? objectPivot(tripod) : null;
+    const id = `rotation-part-${Date.now()}`;
+    checkpoint();
+    setRotationParts(old=>[...old,{id,name,pivotX:tripod ? tripod.x+tripodHub.x : (bounds.x+bounds.right)/2,pivotY:tripod ? tripod.y+tripodHub.y : (bounds.y+bounds.bottom)/2,minRotation:-180,maxRotation:180,defaultRotation:0}]);
+    setItems(old=>old.map(item=>ids.includes(item.id)?{...item,rotationPartId:id}:item));
+    flash(`${name} rotation control added`);
+  };
+  const persistStage = async (data, snapshot, message) => {
+    if (shapeSaving) return;
+    setShapeSaving(true);
+    try {
+      const response = await fetch(`${STAGES_API}/${encodeURIComponent(data.id)}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data,null,2)});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      savedProject.current = snapshot;
+      setShapeName(result.label);
+      setActiveLibraryId(result.id);
+      setDraftAssetId(result.id);
+      setStageSaveAsOpen(false);
+      await refreshLibrary();
+      flash(message);
+    } catch (error) { flash(error.message || "Could not save stage"); }
+    finally { setShapeSaving(false); }
+  };
+  const saveStageAs = async () => {
+    const label = stageSaveAsName.trim();
+    if (!label) return;
+    const id = newAssetId("stage");
+    const snapshot = JSON.stringify({...JSON.parse(projectSnapshot),shapeName:label});
+    await persistStage({...stageData,id,label},snapshot,"New stage version saved");
   };
   const persistEquipment = async (data, snapshot) => {
     if (shapeSaving) return;
@@ -1939,6 +1997,7 @@ function App() {
     setRealWidth(item.dimensions.widthMeters);
     setRealDepth(item.dimensions.depthMeters);
     setItems(item.editor?.layers || []);
+    setRotationParts(item.rotationParts || []);
     setReferenceImages(item.editor?.referenceImages || []);
     setSelectedReferenceId(null);
     setSelectedId(null);
@@ -1982,6 +2041,7 @@ function App() {
     setRealWidth(stage.dimensions.widthMeters);
     setRealDepth(stage.dimensions.depthMeters);
     setStageNodes(normalized);
+    setStageBoundaryLocked(stage.editor?.stageBoundaryLocked ?? false);
     setZones((stage.zones || []).map((zone, index) => ({ ...zone, zOrder: zone.zOrder ?? index })));
     setTextItems((stage.textItems || []).map((item, index) => ({ ...item, zOrder: item.zOrder ?? (stage.zones?.length || 0) + index })));
     setSelectedTextId(null);
@@ -2008,6 +2068,7 @@ function App() {
     setShapeName(mode === "stage" ? "Untitled Stage" : "Untitled Item");
     setGroupId("");
     setItems([]);
+    setRotationParts([]);
     setSelectedId(null);
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
@@ -2015,6 +2076,7 @@ function App() {
     setRealWidth(width);
     setRealDepth(depth);
     setStageNodes(defaultStageNodes(width, depth));
+    setStageBoundaryLocked(false);
     setZones([]);
     setTextItems([]);
     setSelectedTextId(null);
@@ -2100,12 +2162,16 @@ function App() {
   };
   const startPan = (event) => {
     if (vectorDrawing && event.button===0) {drawVectorPoint(event);return;}
-    if (event.button === 0 && documentMode === "item" && !event.target.closest?.(".shape-layer, .reference-image, .ordered-reference")) {
+    const occupied = documentMode === "item"
+      ? ".shape-layer, .reference-image, .ordered-reference"
+      : ".editable-zone, .ordered-reference, .stage-text, .stage-floor, .boundary-node, .segment-hit, .curve-control, .bezier-control";
+    if (event.button === 0 && !event.target.closest?.(occupied)) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       const rect = viewportRef.current.getBoundingClientRect();
       const start = { x: event.clientX - rect.left, y: event.clientY - rect.top };
       marqueeRef.current = { start, worldStart: canvasWorldPoint(event), additive: event.shiftKey ? [...multiSelectedIds, ...(selectedId ? [selectedId] : []), ...selectedGroupItems.map(item=>item.id)] : [] };
+      if (documentMode === "stage") marqueeRef.current.additive = event.shiftKey ? selectedStageAssetIds : [];
       setMarquee(selectionBox(start,start));
       return;
     }
@@ -2170,6 +2236,26 @@ function App() {
   const finishViewportDrag = (event) => {
     if (marqueeRef.current) {
       const drag = marqueeRef.current;
+      if (documentMode === "stage") {
+        const box = selectionBox(drag.worldStart,canvasWorldPoint(event));
+        const boundsFor = asset => {
+          if (asset.assetType === "image") return {x:asset.x,y:asset.y,right:asset.x+asset.width,bottom:asset.y+asset.height};
+          if (asset.assetType === "text") {
+            const width = Math.max(asset.fontSize, (asset.text?.length || 1) * asset.fontSize * .6);
+            return {x:asset.x-width/2,y:asset.y-asset.fontSize/2,right:asset.x+width/2,bottom:asset.y+asset.fontSize/2};
+          }
+          const xs=asset.nodes.map(node=>node.x), ys=asset.nodes.map(node=>node.y);
+          return {x:Math.min(...xs),y:Math.min(...ys),right:Math.max(...xs),bottom:Math.max(...ys)};
+        };
+        const selectableAssets = [...orderedAssets, {id:"stage-boundary",assetType:"stage",nodes:stageNodes,locked:stageBoundaryLocked}];
+        const ids = [...new Set([...drag.additive,...selectableAssets.filter(asset=>!asset.locked && asset.id && containsBounds(box,boundsFor(asset))).map(asset=>asset.id)])];
+        setSelectedStageAssetIds(ids);
+        if (ids.length === 1) {
+          const asset=selectableAssets.find(candidate=>candidate.id===ids[0]);
+          setSelectedReferenceId(asset?.assetType==="image"?asset.id:null); setSelectedZoneId(asset?.assetType==="zone"?asset.id:null); setSelectedTextId(asset?.assetType==="text"?asset.id:null);
+        } else { setSelectedReferenceId(null); setSelectedZoneId(null); setSelectedTextId(null); }
+        setSelectedStageNode(null); marqueeRef.current=null; setMarquee(null); panRef.current=null; return;
+      }
       const ids = [...new Set([...drag.additive, ...enclosedItems(items,selectionBox(drag.worldStart,canvasWorldPoint(event)),item=>{
         const layer = [...canvasRef.current.querySelectorAll(".shape-layer")].find(element=>element.dataset.shapeId===String(item.id));
         const bounds = layer?.firstElementChild?.getBoundingClientRect();
@@ -2259,6 +2345,7 @@ function App() {
               <button onClick={download}>SVG only</button>
             </>
           )}
+          {documentMode === "stage" && activeLibraryId && <button disabled={shapeSaving} onClick={()=>{setStageSaveAsName(`${shapeName} Copy`);setStageSaveAsOpen(true);}}>Save stage as</button>}
           <button className="accent" disabled={shapeSaving} onClick={saveToLibrary}>
             {shapeSaving ? "Saving..." : documentMode === "item" ? "Save shape" : activeLibraryId ? "Update stage" : "Add stage to Stageplot"}
           </button>
@@ -2299,7 +2386,7 @@ function App() {
                 {orderedAssets.map((asset) => (
                   <button
                     draggable={!asset.locked}
-                    className={(asset.assetType === "image" ? selectedReferenceId === asset.id : asset.assetType === "text" ? selectedTextId === asset.id : selectedZoneId === asset.id) ? "active" : ""}
+                    className={selectedStageAssetIds.includes(asset.id) || (asset.assetType === "image" ? selectedReferenceId === asset.id : asset.assetType === "text" ? selectedTextId === asset.id : selectedZoneId === asset.id) ? "active" : ""}
                     key={asset.id}
                     onDragStart={() => { assetDragRef.current = asset.id; }}
                     onDragOver={(event) => event.preventDefault()}
@@ -2309,24 +2396,25 @@ function App() {
                       else if (asset.assetType === "text") { setSelectedTextId(asset.id); setSelectedZoneId(null); setSelectedReferenceId(null); }
                       else { setSelectedZoneId(asset.id); setSelectedTextId(null); setSelectedReferenceId(null); }
                       setSelectedStageNode(null);
+                      setSelectedStageAssetIds([asset.id]);
                     }}
                   >
-                    <i style={{ background: asset.assetType === "image" ? "#d8d8d8" : asset.assetType === "text" ? asset.color : asset.solid ? "#f7f6ef" : asset.fill }} />
-                    <span>{asset.name || (asset.assetType === "image" ? "Background image" : asset.assetType === "text" ? "Text" : "Zone")}</span>
+                    <i style={{ background: asset.assetType === "image" ? "#d8d8d8" : asset.assetType === "text" ? asset.color : asset.fill || "#f7f6ef" }} />
+                    <span className="asset-name">{asset.name || (asset.assetType === "image" ? "Background image" : asset.assetType === "text" ? "Text" : "Zone")}<span className="asset-lock" role="button" title={asset.locked ? "Unlock asset" : "Lock asset"} onClick={(event) => { event.stopPropagation(); toggleAssetLock(asset); }}>{asset.locked ? "🔒" : "🔓"}</span></span>
                     <small>{asset.assetType === "image" ? "image" : asset.assetType === "text" ? "text" : asset.label ? "label zone" : asset.solid ? "solid zone" : "aesthetic zone"}</small>
-                    <span className="asset-lock" role="button" title={asset.locked ? "Unlock asset" : "Lock asset"} onClick={(event) => { event.stopPropagation(); toggleAssetLock(asset); }}>{asset.locked ? "🔒" : "🔓"}</span>
                   </button>
                 ))}
               </div>
-              <p className="eyebrow advanced-title">STAGE BOUNDARY</p>
+              <button className={`stage-boundary-toggle${selectedStageAssetIds.includes("stage-boundary") ? " selected" : ""}`} type="button" aria-expanded={stageNodesExpanded} onClick={()=>setStageNodesExpanded(value=>!value)}><span>STAGE BOUNDARY</span><small>{stageNodes.length} nodes</small><span className="asset-lock" role="button" title={stageBoundaryLocked ? "Unlock main stage" : "Lock main stage"} onClick={event=>{event.stopPropagation();checkpoint();setStageBoundaryLocked(value=>!value);setSelectedStageNode(null);setSelectedStageAssetIds([]);}}>{stageBoundaryLocked ? "🔒" : "🔓"}</span><b>{stageNodesExpanded ? "−" : "+"}</b></button>
               <p className="handle-help">
                 <b>Shift-click</b> a highlighted edge to insert a node.{" "}
                 <b>Ctrl-click</b> an edge to make it a smooth curve. Select a
                 curved segment to change its handle mode.
               </p>
-              <div className="layers">
+              {stageNodesExpanded && <div className="layers">
                 {stageNodes.map((node, index) => (
                   <button
+                    disabled={stageBoundaryLocked}
                     className={
                       !selectedZoneId && selectedStageNode === index
                         ? "active"
@@ -2344,7 +2432,7 @@ function App() {
                     <small>{segmentMode(node)}</small>
                   </button>
                 ))}
-              </div>
+              </div>}
               <p className="eyebrow advanced-title">ZONES</p>
               <button
                 className="group-button"
@@ -2433,10 +2521,18 @@ function App() {
                     <span>
                       {item.editorGroupId ? `↳ ${item.name}` : item.name}
                     </span>
-                    <small>{item.editorGroupId ? "grouped" : item.type}</small>
+                    <small>{rotationParts.find(part=>part.id===item.rotationPartId)?.name || (item.editorGroupId ? "grouped" : item.type)}</small>
                   </button>
                 ))}
               </div>
+              <button className="group-button" disabled={!selectedId && !selectedGroupId && !multiSelectedIds.length} onClick={createRotationPart}>+ Rotation control from selection</button>
+              {effectiveRotationParts.length > 0 && <><p className="eyebrow advanced-title">ROTATION CONTROLS</p>{effectiveRotationParts.map(part=><div className="rotation-part-card" key={part.id}>
+                <input aria-label="Rotation part name" value={part.name} onChange={event=>setRotationParts(old=>old.map(value=>value.id===part.id?{...value,name:event.target.value}:value))}/>
+                <div className="field-row"><label className="field">PIVOT X (CM)<CommittedNumberInput type="number" step="1" disabled={part.pivotLockedToTripod} value={part.pivotX} onChange={event=>setRotationParts(old=>old.map(value=>value.id===part.id?{...value,pivotX:+event.target.value}:value))}/></label><label className="field">PIVOT Y (CM)<CommittedNumberInput type="number" step="1" disabled={part.pivotLockedToTripod} value={part.pivotY} onChange={event=>setRotationParts(old=>old.map(value=>value.id===part.id?{...value,pivotY:+event.target.value}:value))}/></label></div>
+                {part.pivotLockedToTripod && <p className="handle-help">Pivot locked to the tripod hub.</p>}
+                <div className="field-row"><label className="field">MIN °<CommittedNumberInput type="number" step="1" value={part.minRotation} onChange={event=>setRotationParts(old=>old.map(value=>value.id===part.id?{...value,minRotation:+event.target.value}:value))}/></label><label className="field">MAX °<CommittedNumberInput type="number" step="1" value={part.maxRotation} onChange={event=>setRotationParts(old=>old.map(value=>value.id===part.id?{...value,maxRotation:+event.target.value}:value))}/></label></div>
+                <button className="delete" onClick={()=>{checkpoint();setRotationParts(old=>old.filter(value=>value.id!==part.id));setItems(old=>old.map(item=>item.rotationPartId===part.id?{...item,rotationPartId:undefined}:item));}}>Remove control</button>
+              </div>)}</>}
             </>
           )}
         </aside>
@@ -2573,16 +2669,19 @@ function App() {
                   />
                 )}
                 {documentMode === "stage" && (
+                  <path className={`stage-floor stage-floor-drag${stageBoundaryLocked ? " locked" : ""}`} d={stagePath(stageNodes)} onPointerDown={stageBoundaryLocked ? undefined : (event)=>startAssetMove(event,{id:"stage-boundary",nodes:stageNodes,locked:false},"stage")} />
+                )}
+                {documentMode === "stage" && (
                   <g className="ordered-stage-assets">
-                    {orderedAssets.map((asset) =>
+                    {[...orderedAssets].reverse().map((asset) =>
                       asset.assetType === "image" ? (
-                        <svg key={asset.id} className={asset.locked ? "ordered-reference locked" : "ordered-reference"} x={asset.x} y={asset.y} width={asset.width} height={asset.height} viewBox={`${asset.crop?.left || 0} ${asset.crop?.top || 0} ${1 - (asset.crop?.left || 0) - (asset.crop?.right || 0)} ${1 - (asset.crop?.top || 0) - (asset.crop?.bottom || 0)}`} preserveAspectRatio="none" opacity={asset.opacity} overflow="hidden" onPointerDown={asset.locked ? undefined : (event) => startReferenceDrag(event, "image-move", asset)}>
+                        <svg key={asset.id} className={asset.locked ? "ordered-reference locked" : "ordered-reference"} x={asset.x} y={asset.y} width={asset.width} height={asset.height} viewBox={`${asset.crop?.left || 0} ${asset.crop?.top || 0} ${1 - (asset.crop?.left || 0) - (asset.crop?.right || 0)} ${1 - (asset.crop?.top || 0) - (asset.crop?.bottom || 0)}`} preserveAspectRatio="none" opacity={asset.opacity} overflow="hidden" onPointerDown={asset.locked ? undefined : (event) => startAssetMove(event, asset, "image")}>
                           <image href={asset.dataUrl} x="0" y="0" width="1" height="1" preserveAspectRatio="none" />
                         </svg>
                       ) : asset.assetType === "text" ? (
                         <text key={asset.id} x={asset.x} y={asset.y} fill={asset.color} fillOpacity={asset.opacity} fontSize={asset.fontSize} textAnchor="middle" dominantBaseline="middle" className={asset.locked ? "stage-text locked" : "stage-text"} onPointerDown={(event) => startAssetMove(event, asset, "text")}>{asset.text}</text>
                       ) : (
-                        <path pointerEvents="none" key={asset.id} d={stagePath(asset.nodes)} fill={asset.solid ? "#f7f6ef" : asset.fill} fillOpacity={asset.solid ? 1 : asset.fillOpacity} stroke={asset.solid ? "#71851f" : asset.stroke} strokeOpacity={asset.solid ? 1 : asset.strokeOpacity} strokeWidth={asset.solid ? 2 : asset.strokeWidth} vectorEffect="non-scaling-stroke" />
+                        <path pointerEvents="none" key={asset.id} d={stagePath(asset.nodes)} fill={asset.fill || "#f7f6ef"} fillOpacity={asset.fillOpacity ?? 1} stroke={asset.stroke || "#71851f"} strokeOpacity={asset.strokeOpacity ?? 1} strokeWidth={asset.strokeWidth ?? 2} vectorEffect="non-scaling-stroke" />
                       ),
                     )}
                   </g>
@@ -2592,9 +2691,7 @@ function App() {
                     {referenceImage && (
                       <g
                         className="reference-image"
-                        onPointerDown={referenceImage.locked ? undefined : (event) =>
-                          startReferenceDrag(event, "image-move")
-                        }
+                        onPointerDown={referenceImage.locked ? undefined : (event) => startAssetMove(event, referenceImage, "image")}
                       >
                         <image
                           opacity="0"
@@ -2639,7 +2736,7 @@ function App() {
                           strokeWidth={zone.solid ? 2 : zone.strokeWidth}
                           vectorEffect="non-scaling-stroke"
                         />
-                        {zone.nodes.map((node, index) => {
+                        {!zone.locked && zone.nodes.map((node, index) => {
                           const previous =
                             zone.nodes[
                               (index - 1 + zone.nodes.length) %
@@ -2783,8 +2880,7 @@ function App() {
                         })}
                       </g>
                     ))}
-                    <path className="stage-floor" d={stagePath(stageNodes)} />
-                    {stageNodes.map((node, index) => {
+                    {!stageBoundaryLocked && stageNodes.map((node, index) => {
                       const previous =
                         stageNodes[
                           (index - 1 + stageNodes.length) % stageNodes.length
@@ -3034,7 +3130,7 @@ function App() {
                     />
                   </label>
                   <label className="field">ZONE TYPE<select value={selectedZone.label ? "label" : selectedZone.solid ? "solid" : "aesthetic"} onChange={(e) => updateSelectedZone({ solid: e.target.value === "solid", label: e.target.value === "label" })}><option value="aesthetic">Aesthetic</option><option value="solid">Solid (collision)</option><option value="label">Label (outside stage)</option></select></label>
-                  {!selectedZone.solid && (
+                  {(
                     <>
                       <div className="field-row colors">
                         <label className="field">
@@ -3752,6 +3848,16 @@ function App() {
             <button className="group-button" disabled={shapeSaving} onClick={()=>persistEquipment({...saveChoice.data,id:saveChoice.newId,stageplotPublished:false},saveChoice.snapshot)}>Save as new item</button>
             <button disabled={shapeSaving} onClick={()=>setSaveChoice(null)}>Cancel</button>
           </div>
+        </section>
+      </div>}
+      {stageSaveAsOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !shapeSaving)setStageSaveAsOpen(false);}}>
+        <section className="library-modal save-choice-modal" role="dialog" aria-modal="true" aria-label="Save stage as">
+          <div className="modal-header"><h2>Save stage as</h2><button disabled={shapeSaving} onClick={()=>setStageSaveAsOpen(false)} aria-label="Close">&times;</button></div>
+          <form className="preset-modal-body" onSubmit={event=>{event.preventDefault();saveStageAs();}}>
+            <p className="handle-help">This creates a new stage with its own permanent link. The original stage will not be changed.</p>
+            <label className="field">NEW STAGE NAME<input autoFocus value={stageSaveAsName} onChange={event=>setStageSaveAsName(event.target.value)} disabled={shapeSaving}/></label>
+            <div className="modal-actions"><button type="submit" className="group-button" disabled={shapeSaving || !stageSaveAsName.trim()}>{shapeSaving ? "Saving..." : "Save new stage"}</button><button type="button" disabled={shapeSaving} onClick={()=>setStageSaveAsOpen(false)}>Cancel</button></div>
+          </form>
         </section>
       </div>}
       {newItemOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setNewItemOpen(false);}}>

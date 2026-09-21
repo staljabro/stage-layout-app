@@ -82,8 +82,9 @@ function VectorShape({ shape }) {
   return <g transform={transform}>{node}</g>
 }
 
-function VectorArtwork({ shapes, width, depth }) {
-  return <svg viewBox={`0 0 ${width} ${depth}`} aria-hidden="true">{(shapes || []).map((shape) => <VectorShape shape={shape} key={shape.id} />)}</svg>
+function VectorArtwork({ shapes, width, depth, rotationParts = [], controls = {} }) {
+  const parts = new Map(rotationParts.map(part=>[part.id,part]))
+  return <svg viewBox={`0 0 ${width} ${depth}`} aria-hidden="true">{(shapes || []).map((shape) => {const part=parts.get(shape.rotationPartId);const angle=part ? controls[part.id]?.rotation ?? part.defaultRotation ?? 0 : 0;return <g key={shape.id} transform={part?`rotate(${angle} ${part.pivotX} ${part.pivotY})`:undefined}><VectorShape shape={shape} /></g>})}</svg>
 }
 
 const Icon = ({ name }) => {
@@ -201,7 +202,8 @@ function App() {
       widthMeters, depthMeters, showLabel: false,
       shapes: tool.shapes, collisionShapes: tool.collisionShapes || [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
       xMeters: Math.max(widthMeters / 2, Math.min(space.width - widthMeters / 2, centre.x)),
-      yMeters: Math.max(depthMeters / 2, Math.min(space.depth - depthMeters / 2, centre.y)), rotation: 0 }
+      yMeters: Math.max(depthMeters / 2, Math.min(space.depth - depthMeters / 2, centre.y)), rotation: 0,
+      controls:Object.fromEntries((tool.rotationParts || []).map(part=>[part.id,{rotation:part.defaultRotation || 0}])) }
     setItems((old) => [...old, item])
     setSelected(item.id)
     setMultiSelected([])
@@ -269,6 +271,19 @@ function App() {
     panRef.current = { x: event.clientX, y: event.clientY, pan }
   }
 
+  const startPartRotation = (event,item,part) => {
+    if(event.button!==0)return
+    event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);checkpoint()
+    const board=boardRef.current.getBoundingClientRect(), angle=(item.rotation||0)*Math.PI/180
+    const dx=part.pivotX-item.widthMeters/2,dy=part.pivotY-item.depthMeters/2
+    const cx=board.left+(item.xMeters+dx*Math.cos(angle)-dy*Math.sin(angle))*100*zoom
+    const cy=board.top+(item.yMeters+dx*Math.sin(angle)+dy*Math.cos(angle))*100*zoom
+    const pointer=Math.atan2(event.clientY-cy,event.clientX-cx)*180/Math.PI-(item.rotation||0)
+    const current=item.controls?.[part.id]?.rotation ?? part.defaultRotation ?? 0
+    rotateRef.current={id:item.id,partId:part.id,cx,cy,itemRotation:item.rotation||0,min:part.minRotation??-180,max:part.maxRotation??180,offset:current-pointer}
+    setSelected(item.id);setMultiSelected([])
+  }
+
   const finishViewportDrag = event => {
     if(marqueeRef.current) {
       const drag=marqueeRef.current
@@ -290,10 +305,11 @@ function App() {
     }
     if (rotateRef.current) {
       const current = rotateRef.current
-      const rotation = Math.atan2(event.clientY - current.cy, event.clientX - current.cx) * 180 / Math.PI + current.offset
+      const pointer = Math.atan2(event.clientY - current.cy, event.clientX - current.cx) * 180 / Math.PI
+      const rotation = current.partId ? Math.max(current.min,Math.min(current.max,Math.round(pointer-current.itemRotation+current.offset))) : pointer + current.offset
       setItems((old) => old.map((item) => {
         if (item.id !== current.id) return item
-        const candidate = { ...item, rotation: Math.round(rotation) }
+        const candidate = current.partId ? {...item,controls:{...item.controls,[current.partId]:{rotation}}} : { ...item, rotation: Math.round(rotation) }
         return isItemInsideSpace(candidate, boundaryForSpace(space)) && itemAvoidsSolidZones(candidate, space.zones) ? candidate : item
       }))
       return
@@ -463,7 +479,7 @@ function App() {
           <div className="stage-viewport" ref={viewportRef} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;setMarquee(null) }}>
             {space ? <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
               <div className="stage-boundary-surface" style={{ clipPath: stageClipPath(space) }} />
-              {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => !zone.solid && !zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} />)}</svg>}
+              {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => !zone.solid && !zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill || "#faf9f4"} fillOpacity={zone.fillOpacity ?? 1} stroke={zone.stroke || "#71851f"} strokeOpacity={zone.strokeOpacity ?? 1} strokeWidth={zone.strokeWidth ?? 2} />)}</svg>}
               {((space.zones || []).some((zone) => zone.label) || space.textItems?.length > 0) && <svg className="stage-label-assets" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{(space.textItems || []).map((item) => <text key={item.id} x={item.x} y={item.y} fill={item.color} fillOpacity={item.opacity} stroke="none" fontSize={item.fontSize} textAnchor="middle" dominantBaseline="middle">{item.text}</text>)}</svg>}
               <div className="stage-title"><span>UPSTAGE</span><b>{space.name}</b><span>{space.width} × {space.depth} m</span></div>
               {items.map((item) => (
@@ -477,9 +493,10 @@ function App() {
                     if (label?.trim()) setItems((old) => old.map((x) => x.id === item.id ? { ...x, label: label.trim() } : x))
                   }}
                 >
-                  {item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
+                  {item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
                   {item.showLabel === true && <span className="placed-label">{item.label}</span>}
                   {selected === item.id && <span className="rotation-stem"><span className="rotation-handle" onPointerDown={(event) => startRotation(event, item)} /></span>}
+                  {selected === item.id && (item.rotationParts || []).map(part=><span key={part.id} className="part-rotation-handle" title={`Rotate ${part.name}`} style={{left:`${part.pivotX/item.widthMeters*100}%`,top:`${part.pivotY/item.depthMeters*100}%`}} onPointerDown={event=>startPartRotation(event,item,part)} />)}
                 </button>
               ))}
               {!space.collisionBoundary && <div className="stage-front">AUDIENCE</div>}
@@ -527,6 +544,7 @@ function App() {
               <label className="field">DEPTH (m)<input value={selectedItem.depthMeters} disabled /></label>
             </div>
             <label className="field">ROTATION<input type="number" step="1" value={selectedItem.rotation || 0} onChange={(e) => updateSelected({ rotation: +e.target.value })} /></label>
+            {(selectedItem.rotationParts || []).map(part=><label className="field" key={part.id}>{part.name.toUpperCase()} ROTATION<input type="number" step="1" min={part.minRotation??-180} max={part.maxRotation??180} value={selectedItem.controls?.[part.id]?.rotation ?? part.defaultRotation ?? 0} onChange={event=>updateSelected({controls:{...selectedItem.controls,[part.id]:{rotation:Math.max(part.minRotation??-180,Math.min(part.maxRotation??180,+event.target.value))}}})}/></label>)}
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.showLabel === true} onChange={event => { checkpoint(); updateSelected({ showLabel: event.target.checked }) }} /> Show label</label>
             <button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete item</button>
           </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Drag a selected item to move the selection.</p><button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>

@@ -57,7 +57,7 @@ select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #
 .stage-label-assets { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .stage-label-assets text { stroke: none; }
 .main-stage-outline { fill: none; stroke: #71851f; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.solid-zone { fill: #faf9f4; stroke: #71851f; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.solid-zone { vector-effect: non-scaling-stroke; }
 .stage-title { position: absolute; left: 0; right: 0; top: -28px; display: grid; grid-template-columns: 1fr auto 1fr; color: #666860; font: 700 10px 'Space Mono'; letter-spacing: .08em; pointer-events: none; }
 .stage-title span:last-child { text-align: right; }
 .stage-wrap { flex: 1; min-height: 560px; padding: 38px 45px 28px; display: grid; place-items: center; }
@@ -75,6 +75,7 @@ select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #
 .rotation-stem { position: absolute; left: 50%; top: 100%; width: 1px; height: 30px; background: #809622; transform: translateX(-50%); pointer-events: none; }
 .rotation-handle { position: absolute; left: 50%; bottom: -7px; width: 14px; height: 14px; border: 2px solid #71851d; border-radius: 50%; background: #d6ff46; box-shadow: 0 1px 3px #0003; transform: translateX(-50%); pointer-events: auto; cursor: grab; }
 .rotation-handle:active { cursor: grabbing; }
+.part-rotation-handle { position: absolute; width: 12px; height: 12px; border: 2px solid #287da1; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0004; transform: translate(-50%,-50%); pointer-events: auto; cursor: grab; z-index: 5; }.part-rotation-handle:active { cursor: grabbing; }
 .stage-viewport, .stage-viewport:active { cursor: default; }
 .placed-item { cursor: move; }
 .selection-marquee { position: absolute; border: 1px solid #71851f; background: #a7c62822; pointer-events: none; z-index: 100; }

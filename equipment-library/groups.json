@@ -22,5 +22,9 @@
   {
     "id": "staging",
     "label": "Staging"
+  },
+  {
+    "id": "music-stands",
+    "label": "Music Stands"
   }
 ]

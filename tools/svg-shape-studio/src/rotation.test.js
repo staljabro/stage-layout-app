@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { objectPivot, rotateObjects, rotatedBounds } from './rotation.js';
+import { objectPivot, rotateObjects, rotatedBounds, lockTripodPartPivots } from './rotation.js';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-10, `${a} differs from ${b}`);
 
@@ -21,6 +21,14 @@ test('group rotation moves centers together and preserves each local shape', () 
     assert.equal(item.rotation, items[i].rotation);
   });
   assert.equal(items[0].rotation, 30);
+});
+
+test('tripod rotation parts are pinned to the convergence hub', () => {
+  const tripod={id:1,type:'tripod',rotationPartId:'base',x:1,y:2,width:Math.sqrt(3)*.6,height:.9,legRadius:.6};
+  const [part]=lockTripodPartPivots([{id:'base',pivotX:99,pivotY:99}], [tripod]);
+  const hub=objectPivot(tripod);
+  near(part.pivotX,tripod.x+hub.x);near(part.pivotY,tripod.y+hub.y);
+  assert.equal(part.pivotLockedToTripod,true);
 });
 
 test('object rotation respects the tripod hub and rotated selection bounds', () => {

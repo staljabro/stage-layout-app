@@ -7,7 +7,7 @@ export function assetReference(item) {
 export function projectFile(project,space,items,preset='') {
   const stageId=space?.stageId || (preset.startsWith('stage:') ? preset.slice(6) : null);
   return {schema:'stageplot-project@2',version:2,project,stage:space ? stageId ? {kind:'library',id:stageId} : {kind:'rectangle',name:space.name,width:space.width,depth:space.depth} : null,
-    items:items.map(item=>({id:item.id,assetId:assetReference(item),xMeters:item.xMeters,yMeters:item.yMeters,rotation:item.rotation || 0,label:item.label,showLabel:item.showLabel===true}))};
+    items:items.map(item=>({id:item.id,assetId:assetReference(item),xMeters:item.xMeters,yMeters:item.yMeters,rotation:item.rotation || 0,...(item.controls&&Object.keys(item.controls).length?{controls:item.controls}:{}),label:item.label,showLabel:item.showLabel===true}))};
 }
 export function resolveProject(data,equipment,stages,lockedStageId=null) {
   if(!data || !Array.isArray(data.items) || ![1,2].includes(data.version))throw new Error('Invalid project file');
@@ -29,7 +29,9 @@ export function resolveProject(data,equipment,stages,lockedStageId=null) {
     const xMeters=Number.isFinite(placement.xMeters)?placement.xMeters:data.version===1 && space ? (placement.x ?? 50)/100*space.width : NaN;
     const yMeters=Number.isFinite(placement.yMeters)?placement.yMeters:data.version===1 && space ? (placement.y ?? 50)/100*space.depth : NaN;
     if(!Number.isFinite(xMeters)||!Number.isFinite(yMeters))return [];
-    return [{...asset,id:index+100,assetId,type:'library:'+assetId,tone:'custom',widthMeters:asset.dimensions.widthMeters,depthMeters:asset.dimensions.depthMeters,xMeters,yMeters,rotation:Number.isFinite(placement.rotation)?placement.rotation:0,label:typeof placement.label==='string'?placement.label:asset.label,showLabel:placement.showLabel===true}];
+    const validParts=new Set((asset.rotationParts||[]).map(part=>part.id));
+    const controls=Object.fromEntries(Object.entries(placement.controls||{}).filter(([id,value])=>validParts.has(id)&&Number.isFinite(value?.rotation)));
+    return [{...asset,id:index+100,assetId,type:'library:'+assetId,tone:'custom',widthMeters:asset.dimensions.widthMeters,depthMeters:asset.dimensions.depthMeters,xMeters,yMeters,rotation:Number.isFinite(placement.rotation)?placement.rotation:0,controls,label:typeof placement.label==='string'?placement.label:asset.label,showLabel:placement.showLabel===true}];
   });
   return {project:typeof data.project==='string'?data.project:'Untitled stageplot',space,preset,items,dropped:data.items.length-items.length,missingStage:stageRef?.kind==='library' && !space};
 }

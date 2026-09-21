@@ -4,6 +4,15 @@ export const objectPivot = (item) => item.type === 'tripod'
 
 export const normalizeRotation = (degrees) => ((degrees + 180) % 360 + 360) % 360 - 180;
 
+export function lockTripodPartPivots(parts, items) {
+  return parts.map(part => {
+    const tripod = items.find(item => item.rotationPartId === part.id && item.type === 'tripod');
+    if (!tripod) return part;
+    const hub = objectPivot(tripod);
+    return { ...part, pivotX: tripod.x + hub.x, pivotY: tripod.y + hub.y, pivotLockedToTripod: true };
+  });
+}
+
 export function rotateObjects(items, center, degrees) {
   const angle = degrees * Math.PI / 180;
   return items.map(item => {
