@@ -1,105 +1,210 @@
-# Stageplot
+# Stage Layout App
 
-A lightweight React/Vite app for creating top-down band layouts.
+Stage Layout App is a two-part React/Vite system for designing accurate top-down theatre band and equipment layouts.
 
-## Client stage links and project files
+- **Stageplot** is the client-facing planner. Users choose an approved stage, arrange current library equipment at real-world scale, validate collisions, save editable projects and export PDFs.
+- **Shape Studio** is the administrative editor. Theatre staff create vector equipment, collision footprints, articulated controls, reusable shapes and custom stages.
+- **Library API** stores the shared equipment, groups and stages as JSON. Stageplot receives read-only access; Shape Studio receives full library access.
 
-A fresh Stageplot session starts without a stage and opens a stage picker. **New project** confirms before clearing equipment and the selected stage, then reopens that picker. Refreshing the same browser tab still recovers its current project.
+Both interfaces include a **Help** button with workflow-specific instructions.
 
-Select a saved stage and click **Copy stage-locked link** in the inspector. A link such as `http://localhost:5173/?stage=test-stage-1` loads only the stage with that library ID, hides other stage choices and custom dimensions, and rejects project files for other stages. New projects from that link can only choose its designated stage. An invalid or deleted stage does not fall back to a different space. Equipment groups do not affect stage choices.
+Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
 
-The URL restriction is a workflow convenience, not authorization: a user can remove the query parameter. Use server-side permissions if stage access needs to be enforced securely.
+## Main capabilities
 
-**Save** downloads a `.stageplot.json` project containing stage/equipment library IDs, positions, rotations and label settings—not the asset artwork. **Open** retrieves the latest library versions. Missing equipment is dropped; a missing stage returns to the stage picker. A custom rectangle stores its dimensions because it has no library asset. Older project files are supported where their equipment IDs and stage names can be matched to current library entries.
+### Stageplot
 
-Localhost links only work on your computer. To send usable links to external clients, host the Stageplot frontend and a publicly reachable **read-only** library API. The frontend API base can be set at build time with `VITE_LIBRARY_API_URL` (for example `/api` behind a same-origin server). The default is the local development library at `http://127.0.0.1:8787/api`. Do not expose the Studio's unauthenticated write/delete API publicly; keep administration private or add authentication before deploying it.
+- Choose a saved custom stage or create a rectangular space.
+- Use stage-locked links such as `?stage=<stable-stage-id>` for client-specific workflows.
+- Click or drag real-scale vector equipment from a grouped library.
+- Move against and slide along accurate equipment, stage and solid-zone collision geometry.
+- Temporarily disable equipment collision, stage/zone collision or 30 cm corner snapping.
+- Disable equipment collision on an individual placement, such as a deck that must sit below other equipment.
+- Rotate whole items and independently configured articulated parts.
+- Show or hide artwork parts marked toggleable in Shape Studio.
+- Marquee-select objects or Shift-click layers for additive selection.
+- Organise the draw stack with collapsible, reorderable layer folders.
+- Hide individual layers or folders without changing their physical collision behaviour.
+- Automatically place equipment in the `Staging` group behind other layers.
+- Recover unsaved work after an accidental refresh in the same browser tab.
+- Save reference-based `.stageplot` project files and open legacy `.stageplot.json`/JSON projects.
+- Warn before saving enabled collision objects that overlap, intersect solid zones or leave the usable stage.
+- Export the complete canvas, automatically fitted to one landscape A3 page with the project/show name as its header and a versioned creation footer.
 
-## Run locally
+### Shape Studio
 
-```bash
-npm install
-npm run dev
+- Create equipment in centimetres and stages in metres.
+- Work in a CAD-style viewport with pointer-centred zoom, middle-button panning and marquee selection.
+- Use standard 10 cm snapping, advanced 1 cm snapping or no grid snapping.
+- Build artwork from rectangles, rounded rectangles, circles, ellipses, triangles, lines, text, tripods, arcs, polygons, trapezoids, chairs and custom vectors.
+- Convert basic shapes into editable vector paths.
+- Group layers, draw open or closed paths and configure Point on Arc, Smooth and Bezier curves.
+- Mark exact layers as physical collision geometry.
+- Mark layers as toggleable so each Stageplot placement can show or hide them.
+- Enable optional four-corner Stageplot snapping for rectangular equipment such as stage decks.
+- Add independent rotation parts with configurable pivots and angle limits.
+- Build curved or angled stage boundaries by editing nodes and segment modes.
+- Add aesthetic, solid-collision and outside-stage label zones.
+- Add draggable stage text and multiple reorderable, lockable, crop-capable background images.
+- Save new assets, update stable asset IDs, save copies and maintain equipment groups.
+- Rename or delete library equipment and stages. Stage IDs remain stable across renames.
+- Maintain Studio-only custom shapes separately from published client equipment.
+
+## Typical workflow
+
+1. Open Shape Studio and create or edit an equipment item.
+2. Set its real-world canvas dimensions and build its top-down vector artwork.
+3. Mark the layers that define its collision footprint.
+4. Optionally configure corner snapping, toggleable artwork or additional rotation controls.
+5. Assign an equipment group, save the item and publish it to Stageplot.
+6. Create a stage boundary and any visual, solid or label zones, then save the stage.
+7. Open Stageplot, choose the stage and arrange equipment.
+8. Save the editable `.stageplot` project and export a PDF for distribution.
+
+## Stageplot usage
+
+### Canvas navigation
+
+- Scroll to zoom toward the pointer.
+- Middle-drag to pan.
+- Left-drag empty canvas to select fully enclosed equipment.
+- Drag equipment to move it; collision-constrained movement stops at the nearest valid position and slides along obstacles.
+- Drag the lower handle to rotate an item. Additional handles control articulated parts.
+- Press **Delete** or **Backspace** to remove the current selection.
+
+### Layers and folders
+
+The top Layers row renders in front. Drag layers to reorder them. Use **New folder** to create an organisational folder, then drag layers onto it. Children can be reordered inside the folder, and the complete folder can be moved through the stack.
+
+Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Visibility controls hide layers or folders from the canvas and PDF but deliberately retain collision.
+
+### Collision and snapping
+
+Global movement controls appear in the canvas inspector when nothing is selected:
+
+- **Equipment collision** prevents enabled equipment from overlapping.
+- **Stage and zone collision** keeps equipment inside the main boundary and outside solid zones.
+- **Corner snapping** joins configured equipment snap points within 0.30 m.
+
+Each selected placement also has an **Equipment collision** override. Turning it off allows intentional overlap with that item while keeping stage and zone collision active. Saving always validates the layout, but intentional overlaps involving a placement-level disabled item are ignored.
+
+### Project files
+
+`.stageplot` files contain stable stage/equipment IDs, placement transforms, layer folders, visibility and control settings. They do not embed library artwork. Opening a project therefore uses the newest asset versions; missing assets are dropped safely.
+
+**New project** clears the selected stage and equipment. **Clear stage** removes equipment and folders but retains the selected stage. Browser session recovery is convenient but is not a replacement for downloading a project file.
+
+## Shape Studio usage
+
+Use **New item** to choose equipment or stage mode. The right inspector shows canvas settings when nothing is selected and selected-layer properties otherwise.
+
+For equipment, keep the canvas tightly fitted to the physical item. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users.
+
+For stages, Shift-click a segment to insert a node and Ctrl-click a straight segment to convert it to a Point on Arc curve. Background images can extend beyond the stage and are editing references only. The main stage boundary clips normal stage assets in Stageplot; Label zones may render outside it, while Solid zones block equipment.
+
+The Library dialog opens saved equipment and stages for editing. Updating an asset retains its stable ID; saving as new creates a new ID. Renaming a stage does not break its stage-locked URL.
+
+## Local development
+
+Requirements: Node.js 24 or a compatible current Node release, plus npm.
+
+Install both frontend dependency sets:
+
+```powershell
+npm.cmd install
+npm.cmd install --prefix tools/svg-shape-studio
 ```
 
-Use **Save** to download an editable `.stageplot.json` file, **Open** to restore one, and **Export PDF** to open the browser's print dialog (choose “Save as PDF”).
-
-## Shape Studio
-
-The companion Shape Studio lives in `tools/svg-shape-studio`. It publishes `stageplot-item@3` JSON vectors whose canvas, artwork coordinates, dimensions, and collision shapes are all measured in metres. Stageplot renders these vectors directly; SVG is available only as a convenience export.
-
-The Studio Library lists stages separately from equipment groups. Use the pencil button to rename a stage or the delete button to permanently remove it (confirmation required). Renaming preserves its stage-locked link, `?stage=<id>`. Deleting makes that link unavailable; projects referencing a deleted stage need another stage selected.
-
-New equipment and stages receive name-independent UUID identifiers. Existing identifiers are retained for compatibility. Updating names or artwork preserves the identifier; saving equipment as a new item creates a separate identifier. Project files reference these IDs and load current library artwork rather than embedded copies.
-
-## Docker deployment
-
-The production stack contains a public Stageplot site, a private Shape Studio site, and an internal library API. Equipment and stage JSON remain in the repository folders and are mounted into the API container, so rebuilding does not erase them.
-
-On the server, copy the example settings and start the stack:
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
-
-- Stageplot: `http://SERVER_ADDRESS:8088`
-- Shape Studio: `http://SERVER_ADDRESS:8089` on the local network
-- Library API: internal only; it has no published host port
-
-To inspect it:
-
-```bash
-docker compose ps
-docker compose logs -f
-```
-
-To deploy an update:
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-Stageplot permits read-only library requests. Studio permits library changes and is available on the server's LAN address by default. Do not forward port 8089 through the router or public tunnel. If Studio is ever made remotely accessible, put it behind HTTPS and authentication first.
-
-Back up `equipment-library/` and `stage-library/` regularly. Container replacement leaves these bind-mounted directories intact, but it does not protect against disk failure or accidental deletion from Studio.
-
-For an Unraid deployment, set `LIBRARY_DATA_PATH=/mnt/user/appdata/stage-layout-app-data` in `.env` and copy the initial `equipment-library/` and `stage-library/` into that directory. This keeps live Studio data separate from application source uploads and prevents a later source copy from replacing the server's current library.
-
-### GitHub-built deployment
-
-Pushing `main` runs `.github/workflows/publish-containers.yml`. It verifies the code and publishes three images to GitHub Container Registry: Stageplot, Studio, and the library API. The images deliberately exclude `equipment-library/` and `stage-library/`.
-
-The Unraid server only needs a Git checkout containing `docker-compose.prod.yml` and its local `.env`. Deploy or update without Buildx or a server-side source build:
-
-```bash
-git pull
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-```
-
-After initial setup, the same update can be run with one command:
-
-```bash
-sh deploy-unraid.sh
-```
-
-The script fast-forwards the checkout, pulls the latest images, recreates changed containers, and displays their status. It does not modify the mounted library directories.
-
-Set `LIBRARY_DATA_PATH` to the permanent external Unraid data directory. Compose recreates application containers from the new images while mounting the same library folders back into the API container. Never store the live library beneath the disposable application checkout.
-
-Run both apps and the repository-backed equipment library together:
+Run Stageplot, Shape Studio and the library API together:
 
 ```powershell
 npm.cmd run dev:all
 ```
 
-- Stageplot: http://localhost:5173
-- Shape Studio: http://localhost:5174
-- Equipment files: `equipment-library/*.stageplot-item.json`
+- Stageplot: `http://localhost:5173`
+- Shape Studio: `http://localhost:5174`
+- Library API: `http://localhost:8787`
 
-To reuse your own artwork, build it in Shape Studio and click **Save as custom shape** in the toolbar. Saved designs appear under **Custom shapes** and return when you reopen Shape Studio. Clicking a preset inserts a fresh group of layers; **Ungroup layers** lets you edit individual shapes and vector points. Reference images stay with the saved design for editing and are not inserted with the artwork.
+Run verification:
 
-Drag the round rotation handle above an object or selected group to rotate it. Hold **Shift** for 15-degree steps. Use **Manage custom shapes** beneath the custom palette to remove entries from the pool; placed copies and saved equipment artwork remain available.
+```powershell
+npm.cmd run lint
+node --test --test-isolation=none src/*.test.js tools/svg-shape-studio/src/*.test.js
+npm.cmd run build
+npm.cmd run build --prefix tools/svg-shape-studio
+```
 
-Custom shapes stay in Shape Studio until you explicitly click **Add item to Stageplot**. **Manage Stageplot items** lists published equipment and lets you remove entries from the Stageplot pool while keeping saved designs and custom presets. Use **Load existing** to reopen an unpublished design and publish it again. After updating the library server code, restart `npm run dev:all` to enable the updated library API.
+## Local production build
+
+The default Compose file builds all three images from local source:
+
+```powershell
+docker compose up -d --build
+```
+
+- Stageplot: `http://localhost:8088`
+- Shape Studio: `http://localhost:8089`
+
+For local repository-backed library data, set this in `.env`:
+
+```env
+LIBRARY_DATA_PATH=.
+```
+
+Use Docker for production-style testing because the Nginx frontends proxy `/api` to the internal library service.
+
+## Production and Unraid
+
+Pushing `main` runs `.github/workflows/publish-containers.yml`, verifies the code and publishes:
+
+```text
+ghcr.io/staljabro/stage-layout-app-stageplot:latest
+ghcr.io/staljabro/stage-layout-app-studio:latest
+ghcr.io/staljabro/stage-layout-app-library-api:latest
+```
+
+`docker-compose.prod.yml` pulls these completed images. A typical Unraid `.env` is:
+
+```env
+STAGEPLOT_PORT=8088
+STUDIO_BIND=0.0.0.0
+STUDIO_PORT=8089
+LIBRARY_DATA_PATH=/mnt/user/appdata/stage-layout-app-data
+IMAGE_PREFIX=ghcr.io/staljabro/stage-layout-app
+IMAGE_TAG=latest
+```
+
+Deploy or update from the checked-out repository:
+
+```bash
+sh deploy-unraid.sh
+```
+
+The script fast-forwards Git, pulls current images, recreates changed containers and displays their status. It does not modify library data.
+
+The same stack can be managed through Unraid Compose Manager. For individual WebGUI containers, place all three on one custom Docker network, name the API container `library-api`, map Stageplot `8088:80`, Studio `8089:80`, and mount:
+
+```text
+/mnt/user/appdata/stage-layout-app-data/equipment-library -> /data/equipment-library
+/mnt/user/appdata/stage-layout-app-data/stage-library     -> /data/stage-library
+```
+
+## Data persistence and backups
+
+Production images deliberately exclude `equipment-library/` and `stage-library/`. Live data resides in `LIBRARY_DATA_PATH`, outside the application checkout, so Git pulls and container replacements cannot overwrite it.
+
+Back up these directories regularly:
+
+```text
+equipment-library/
+stage-library/
+```
+
+A separate private Git repository is suitable for manual data backups. Do not routinely pull into the live data directory unless intentionally restoring a backup.
+
+## Security notes
+
+- Stageplot exposes only approved read-only library endpoints through its Nginx proxy.
+- Shape Studio can create, update and delete library data. Keep port 8089 private or protect it with authenticated HTTPS access.
+- A stage-locked query parameter is a workflow restriction, not an authorization boundary; a user can remove it from the URL.
+- Public GHCR images contain application code only, not the mounted equipment or stage library.

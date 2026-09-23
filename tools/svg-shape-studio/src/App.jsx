@@ -12,6 +12,7 @@ import { selectionBox, enclosedItems, containsBounds } from "../../../src/marque
 import { stageControlPoints, nearestControl } from "./stage-controls.js";
 import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
+import { StudioHelp } from "../../../src/help-dialog.jsx";
 
 const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:8787/api" : "/api")).replace(/\/$/, "");
 const LIBRARY_API = `${API_BASE}/items`;
@@ -854,6 +855,7 @@ function App() {
   const [groupId, setGroupId] = useState(session.groupId ?? "");
   const [items, setItems] = useDimensionState(session.items ?? []);
   const [rotationParts, setRotationParts] = useState(session.rotationParts ?? []);
+  const [cornerSnapping, setCornerSnapping] = useState(session.cornerSnapping ?? false);
   const [selectedId, setSelectedId] = useState(null);
   const [vectorNodeIndex, setVectorNodeIndex] = useState(null);
   const [vectorDrawing, setVectorDrawing] = useState(session.vectorDrawing ?? null);
@@ -864,6 +866,7 @@ function App() {
   const [snapMode, setSnapMode] = useState(session.snapMode ?? "standard");
   const [grid, setGrid] = useState(session.grid ?? true);
   const [toast, setToast] = useState("");
+  const [helpOpen,setHelpOpen]=useState(false);
   const [library, setLibrary] = useState([]);
   const [advancedShapeRole, setAdvancedShapeRole] = useState(session.advancedShapeRole ?? null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -925,7 +928,7 @@ function App() {
   const imageFileRef = useRef(null);
   const assetDragRef = useRef(null);
   const projectSnapshot = JSON.stringify(documentMode === "item"
-    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,rotationParts,referenceImages,advancedShapeRole}
+    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,rotationParts,cornerSnapping,referenceImages,advancedShapeRole}
     : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,zones,textItems,referenceImages});
   useEffect(() => {
     if (savedProject.current === null || resetProjectBaseline.current) {
@@ -934,7 +937,7 @@ function App() {
     }
   });
   const sessionError = useSessionDraft("shape-studio:draft", {
-    documentMode, shapeName, realWidth, realDepth, groupId, items, rotationParts, referenceImages,
+    documentMode, shapeName, realWidth, realDepth, groupId, items, rotationParts, cornerSnapping, referenceImages,
     advancedShapeRole, stageNodes, zones, textItems, stageBoundaryLocked, activeLibraryId, draftAssetId, snapMode, grid,
     zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
     savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
@@ -1027,6 +1030,7 @@ function App() {
       dimensions: { widthMeters: realWidth, depthMeters: realDepth },
       shapes: vectorShapes,
       collisionShapes,
+      snapPoints: cornerSnapping ? [{x:0,y:0},{x:realWidth,y:0},{x:realWidth,y:realDepth},{x:0,y:realDepth}] : [],
       rotationParts: effectiveRotationParts,
       editor: { layers: items, referenceImages, ...(advancedShapeRole ? {advancedShapeRole} : {}), ...(library.find(item=>item.id===activeLibraryId)?.editor?.placementMode ? {placementMode:library.find(item=>item.id===activeLibraryId).editor.placementMode} : {}) },
     }),
@@ -1040,6 +1044,7 @@ function App() {
       realDepth,
       vectorShapes,
       collisionShapes,
+      cornerSnapping,
       effectiveRotationParts,
       items,
       referenceImages,
@@ -1106,6 +1111,7 @@ function App() {
       {
         items: structuredClone(items),
         rotationParts: structuredClone(rotationParts),
+        cornerSnapping,
         referenceImages: structuredClone(referenceImages),
         stageNodes: structuredClone(stageNodes),
         stageBoundaryLocked,
@@ -1122,6 +1128,7 @@ function App() {
     if (!previous) return;
     setItems(previous.items);
     setRotationParts(previous.rotationParts || []);
+    setCornerSnapping(previous.cornerSnapping ?? false);
     setReferenceImages(previous.referenceImages || []);
     if (previous.stageNodes) setStageNodes(previous.stageNodes);
     if (previous.stageBoundaryLocked !== undefined) setStageBoundaryLocked(previous.stageBoundaryLocked);
@@ -1226,6 +1233,7 @@ function App() {
       stroke: "#25261f",
       strokeWidth: 2,
       rotation: 0,
+      toggleable: false,
       collision: type !== "line" && type !== "arc" && type !== "text",
     };
     setItems((old) => [...old, type === "text" ? sizeText({...item, fill:"#25261f", stroke:"none", strokeWidth:0}) : item]);
@@ -1899,16 +1907,6 @@ function App() {
     [copy[index], copy[target]] = [copy[target], copy[index]];
     setItems(copy);
   };
-  const download = () => {
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(
-      new Blob([svgMarkup], { type: "image/svg+xml" }),
-    );
-    link.download = `${slug(shapeName).toLowerCase()}.svg`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    flash("SVG downloaded");
-  };
   const saveToLibrary = async () => {
     if (shapeSaving) return;
     if (documentMode === "stage") {
@@ -1999,6 +1997,7 @@ function App() {
     setRealDepth(item.dimensions.depthMeters);
     setItems(item.editor?.layers || []);
     setRotationParts(item.rotationParts || []);
+    setCornerSnapping(Boolean(item.snapPoints?.length));
     setReferenceImages(item.editor?.referenceImages || []);
     setSelectedReferenceId(null);
     setSelectedId(null);
@@ -2070,6 +2069,7 @@ function App() {
     setGroupId("");
     setItems([]);
     setRotationParts([]);
+    setCornerSnapping(false);
     setSelectedId(null);
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
@@ -2150,11 +2150,6 @@ function App() {
     } catch {
       flash("Could not create group");
     }
-  };
-  const copyReact = async () => {
-    const component = `export default function ${slug(shapeName)}Shape() {\n  return (\n    ${svgMarkup.replaceAll("stroke-width", "strokeWidth").replaceAll("vector-effect", "vectorEffect").replace("aria-label", "aria-label")}\n  )\n}\n`;
-    await navigator.clipboard.writeText(component);
-    flash("React component copied");
   };
   const zoomViewport = (event) => {
     event.preventDefault();
@@ -2322,6 +2317,7 @@ function App() {
           aria-label="Shape name"
         />
         <div className="actions">
+          <button onClick={()=>setHelpOpen(true)}>Help</button>
           <button onClick={() => setNewItemOpen(true)}>New item</button>
           <button
             onClick={() => {
@@ -2331,21 +2327,6 @@ function App() {
           >
             Library
           </button>
-          {documentMode === "item" && (
-            <>
-              <button
-                onClick={() =>
-                  navigator.clipboard
-                    .writeText(svgMarkup)
-                    .then(() => flash("SVG copied"))
-                }
-              >
-                Copy SVG
-              </button>
-              <button onClick={copyReact}>Copy React</button>
-              <button onClick={download}>SVG only</button>
-            </>
-          )}
           {documentMode === "stage" && activeLibraryId && <button disabled={shapeSaving} onClick={()=>{setStageSaveAsName(`${shapeName} Copy`);setStageSaveAsOpen(true);}}>Save stage as</button>}
           <button className="accent" disabled={shapeSaving} onClick={saveToLibrary}>
             {shapeSaving ? "Saving..." : documentMode === "item" ? "Save shape" : activeLibraryId ? "Update stage" : "Add stage to Stageplot"}
@@ -3003,6 +2984,7 @@ function App() {
                         vectorEditor={item.id === selectedId && item.type === "vector" ? <VectorEditor item={item} index={vectorNodeIndex} onSelect={setVectorNodeIndex} onDrag={startHandleDrag} onCurve={(index)=>update({nodes:item.nodes.map((node,i)=>i===index?{...node,curveMode:"pointArc",arcDepth:0}:node)})} onInsert={(index)=>{const nodes=[...item.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index);}} /> : null}
                       />
                     ))}
+                    {cornerSnapping && [{x:0,y:0},{x:realWidth,y:0},{x:realWidth,y:realDepth},{x:0,y:realDepth}].map((point,index)=><circle key={`snap-${index}`} className="snap-point-guide" cx={point.x} cy={point.y} r=".025" pointerEvents="none"><title>Stageplot snap point</title></circle>)}
                     {items
                       .filter((item) => item.collision)
                       .map((item) => (
@@ -3517,6 +3499,10 @@ function App() {
               <button className="add-group" onClick={addGroup}>
                 + Create group
               </button>
+              <label className="collision-toggle">
+                <input type="checkbox" checked={cornerSnapping} onChange={(event)=>{checkpoint();setCornerSnapping(event.target.checked);}} />
+                <span><b>Corner snapping in Stageplot</b><small>Adds snap points to all four item-canvas corners. Off by default.</small></span>
+              </label>
               <div className="canvas-summary">
                 <b>{items.length}</b>
                 <span>vector layers</span>
@@ -3730,6 +3716,10 @@ function App() {
                 </span>
               </label>
               </>}
+              <label className="collision-toggle">
+                <input type="checkbox" checked={selected.toggleable ?? false} onChange={(e)=>update({toggleable:e.target.checked})} />
+                <span><b>Toggleable in Stageplot</b><small>Adds a per-placement show/hide control for this item part.</small></span>
+              </label>
               <div className="layer-actions">
                 <button onClick={() => reorder(-1)}>Send back</button>
                 <button onClick={() => reorder(1)}>Bring forward</button>
@@ -3920,6 +3910,7 @@ function App() {
       </div>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {toast && <div className="toast">{toast}</div>}
+      {helpOpen&&<StudioHelp onClose={()=>setHelpOpen(false)}/>} 
     </div>
     </MeasurementUnit.Provider>
   );

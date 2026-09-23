@@ -12,6 +12,33 @@ test('downloads contain references and placement data, never equipment or stage 
   const json=JSON.stringify(file);
   for(const property of ['shapes','collisionShapes','boundary','zones','dimensions'])assert.ok(!json.includes('"'+property+'"'));
 });
+test('collision movement preferences are saved and default on for older files',()=>{
+  const disabled=projectFile('Concert',stageSpace(stage),[placement],'',{equipment:false,zone:false});
+  assert.deepEqual(resolveProject(disabled,[asset],[stage]).collisionSettings,{equipment:false,zone:false,snapping:true});
+  const legacy={...disabled};delete legacy.collisionSettings;
+  assert.deepEqual(resolveProject(legacy,[asset],[stage]).collisionSettings,{equipment:true,zone:true,snapping:true});
+});
+test('per-placement collision overrides survive project files and default on',()=>{
+  const file=projectFile('Concert',stageSpace(stage),[{...placement,collisionEnabled:false}]);
+  assert.equal(file.items[0].collisionEnabled,false);
+  assert.equal(resolveProject(file,[asset],[stage]).items[0].collisionEnabled,false);
+  delete file.items[0].collisionEnabled;
+  assert.equal(resolveProject(file,[asset],[stage]).items[0].collisionEnabled,true);
+});
+test('layer folders and visibility survive project files',()=>{
+  const hidden={...placement,visible:false};
+  const file=projectFile('Concert',stageSpace(stage),[hidden],'',{},[{id:'risers',name:'Risers',collapsed:true,visible:false,itemIds:[hidden.id]}]);
+  const result=resolveProject(file,[asset],[stage]);
+  assert.equal(result.items[0].visible,false);
+  assert.deepEqual(result.layerFolders,[{id:'risers',name:'Risers',collapsed:true,visible:false,itemIds:[hidden.id]}]);
+});
+test('toggleable part visibility is saved per placement and filtered against current artwork',()=>{
+  const configurable={...asset,shapes:[{id:'label',name:'Deck label',type:'text',toggleable:true},{id:'deck',name:'Deck',type:'rect'}]};
+  const file=projectFile('Concert',stageSpace(stage),[{...placement,assetId:asset.id,partVisibility:{label:false,obsolete:false}}]);
+  assert.deepEqual(file.items[0].partVisibility,{label:false,obsolete:false});
+  const restored=resolveProject(file,[configurable],[stage]).items[0];
+  assert.deepEqual(restored.partVisibility,{label:false});
+});
 test('adjustable part rotations survive project files and ignore removed controls',()=>{
   const articulated={...asset,rotationParts:[{id:'tray',name:'Tray',pivotX:.25,pivotY:.3,defaultRotation:0}]};
   const file=projectFile('Concert',stageSpace(stage),[{...placement,assetId:asset.id,controls:{tray:{rotation:42},obsolete:{rotation:90}}}]);

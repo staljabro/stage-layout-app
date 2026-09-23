@@ -2,7 +2,7 @@
   "schema": "stageplot-item@3",
   "stageplotPublished": true,
   "id": "item-92041571-999b-4552-9dc3-5a2bf30bd103",
-  "label": "1x1 Stage Deck",
+  "label": "1x1 Stage Deck @ 200",
   "groupId": "staging",
   "dimensions": {
     "widthMeters": 1,
@@ -15,7 +15,7 @@
       "y": 0,
       "width": 1,
       "height": 1,
-      "fill": "#454642",
+      "fill": "#ff8080",
       "stroke": "#25261f",
       "strokeWidth": 6,
       "rotation": 0,
@@ -24,6 +24,26 @@
       "slew": 0,
       "id": "38",
       "name": "Rectangle"
+    },
+    {
+      "type": "text",
+      "x": 0.2,
+      "y": 0.4,
+      "width": 0.66689453125,
+      "height": 0.146,
+      "text": "200mm",
+      "fontSize": 0.2,
+      "bold": false,
+      "italic": false,
+      "textAlign": "left",
+      "lineSpacing": 1.2,
+      "fill": "#25261f",
+      "stroke": "none",
+      "strokeWidth": 0,
+      "rotation": 0,
+      "toggleable": true,
+      "id": "39",
+      "name": "Height Label"
     }
   ],
   "collisionShapes": [
@@ -36,6 +56,25 @@
       "rotation": 0
     }
   ],
+  "snapPoints": [
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 1,
+      "y": 0
+    },
+    {
+      "x": 1,
+      "y": 1
+    },
+    {
+      "x": 0,
+      "y": 1
+    }
+  ],
+  "rotationParts": [],
   "editor": {
     "layers": [
       {
@@ -46,7 +85,7 @@
         "y": 0,
         "width": 1,
         "height": 1,
-        "fill": "#454642",
+        "fill": "#ff8080",
         "stroke": "#25261f",
         "strokeWidth": 6,
         "rotation": 0,
@@ -54,6 +93,27 @@
         "leftInset": 0,
         "rightInset": 0,
         "slew": 0
+      },
+      {
+        "id": 39,
+        "type": "text",
+        "name": "Height Label",
+        "x": 0.2,
+        "y": 0.4,
+        "width": 0.66689453125,
+        "height": 0.146,
+        "text": "200mm",
+        "fontSize": 0.2,
+        "bold": false,
+        "italic": false,
+        "textAlign": "left",
+        "lineSpacing": 1.2,
+        "fill": "#25261f",
+        "stroke": "none",
+        "strokeWidth": 0,
+        "rotation": 0,
+        "collision": false,
+        "toggleable": true
       }
     ],
     "referenceImages": []

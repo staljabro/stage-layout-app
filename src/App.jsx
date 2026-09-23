@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { stagePath as zonePath } from './stage-geometry.js'
+import { sampleStageBoundary, stagePath as zonePath } from './stage-geometry.js'
 import { TextArtwork } from './text-shape.jsx'
 import { readSessionDraft, useSessionDraft } from './session-draft.js'
 import { selectionBox, enclosedItems } from './marquee.js'
+import { insertAtDefaultLayer } from './layer-order.js'
+import { folderForItem, layerRows, moveFolderBlock, putItemInFolder } from './layer-folders.js'
 import { rotatedBounds } from '../tools/svg-shape-studio/src/rotation.js'
 import { isPublishedItem, isEquipmentItem } from '../tools/library-membership.mjs'
-import { footprintPoints, isItemInsideSpace, pointInPolygon, rectangleBoundary } from './geometry.js'
+import { collisionPolygons, isItemInsideSpace, itemsCollide, nearestSnapOffset, polygonsIntersect, rectangleBoundary } from './geometry.js'
 import { projectFile, resolveProject, stageSpace } from './project-file.js'
+import { StageplotHelp } from './help-dialog.jsx'
+import { APP_VERSION } from './version.js'
 
 const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8787/api' : '/api')).replace(/\/$/, '')
 const LIBRARY_API = `${API_BASE}/items`
@@ -16,8 +20,8 @@ const STAGES_API = `${API_BASE}/stages`
 const boundaryForSpace = (space) => space.collisionBoundary?.length >= 3 ? space.collisionBoundary : rectangleBoundary(space.width, space.depth)
 const stageClipPath = (space) => `polygon(${boundaryForSpace(space).map((point) => `${point.x / space.width * 100}% ${point.y / space.depth * 100}%`).join(',')})`
 const itemAvoidsSolidZones = (item, zones = []) => {
-  const footprint = footprintPoints(item)
-  return zones.filter((zone) => zone.solid && zone.collisionBoundary?.length >= 3).every((zone) => !footprint.some((point) => pointInPolygon(point, zone.collisionBoundary)) && !zone.collisionBoundary.some((point) => pointInPolygon(point, footprint)))
+  const footprints = collisionPolygons(item)
+  return zones.filter((zone) => zone.solid && zone.collisionBoundary?.length >= 3).every((zone) => footprints.every(footprint => !polygonsIntersect(footprint, zone.collisionBoundary)))
 }
 
 const regularPolygonPoints = (width, height, sides = 6) => Array.from({ length: Math.max(3, sides) }, (_, index) => {
@@ -82,9 +86,9 @@ function VectorShape({ shape }) {
   return <g transform={transform}>{node}</g>
 }
 
-function VectorArtwork({ shapes, width, depth, rotationParts = [], controls = {} }) {
+function VectorArtwork({ shapes, width, depth, rotationParts = [], controls = {}, partVisibility = {} }) {
   const parts = new Map(rotationParts.map(part=>[part.id,part]))
-  return <svg viewBox={`0 0 ${width} ${depth}`} aria-hidden="true">{(shapes || []).map((shape) => {const part=parts.get(shape.rotationPartId);const angle=part ? controls[part.id]?.rotation ?? part.defaultRotation ?? 0 : 0;return <g key={shape.id} transform={part?`rotate(${angle} ${part.pivotX} ${part.pivotY})`:undefined}><VectorShape shape={shape} /></g>})}</svg>
+  return <svg viewBox={`0 0 ${width} ${depth}`} aria-hidden="true">{(shapes || []).map((shape) => {if(shape.toggleable&&partVisibility[shape.id]===false)return null;const part=parts.get(shape.rotationPartId);const angle=part ? controls[part.id]?.rotation ?? part.defaultRotation ?? 0 : 0;return <g key={shape.id} transform={part?`rotate(${angle} ${part.pivotX} ${part.pivotY})`:undefined}><VectorShape shape={shape} /></g>})}</svg>
 }
 
 const Icon = ({ name }) => {
@@ -111,12 +115,18 @@ function App() {
   const [customWidth,setCustomWidth]=useState(10)
   const [customDepth,setCustomDepth]=useState(5)
   const [items, setItems] = useState(session.items ?? [])
+  const [layerFolders,setLayerFolders]=useState(session.layerFolders ?? [])
+  const [equipmentCollisionEnabled, setEquipmentCollisionEnabled] = useState(session.equipmentCollisionEnabled !== false)
+  const [zoneCollisionEnabled, setZoneCollisionEnabled] = useState(session.zoneCollisionEnabled !== false)
+  const [snappingEnabled, setSnappingEnabled] = useState(session.snappingEnabled !== false)
   const [selected, setSelected] = useState(null)
   const [multiSelected, setMultiSelected] = useState([])
   const [marquee, setMarquee] = useState(null)
   const [equipmentDrawerOpen, setEquipmentDrawerOpen] = useState(true)
   const [history, setHistory] = useState([])
   const [notice, setNotice] = useState('')
+  const [helpOpen,setHelpOpen]=useState(false)
+  const [printTimestamp,setPrintTimestamp]=useState(()=>new Date().toLocaleString())
   const [library, setLibrary] = useState([])
   const [groups, setGroups] = useState([])
   const [equipmentSearch, setEquipmentSearch] = useState('')
@@ -141,13 +151,29 @@ function App() {
   const fileRef = useRef(null)
   const dragRef = useRef(null)
   const layerDragRef = useRef(null)
+  const nextFolderIdRef=useRef(1)
   const rotateRef = useRef(null)
   const panRef = useRef(null)
   const marqueeRef = useRef(null)
   const bootedRef = useRef(false)
   const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
-  const sessionError = useSessionDraft(draftKey, {project,space,preset,items,zoom,pan})
+  const sessionError = useSessionDraft(draftKey, {project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled})
+
+  const printLayout=(()=>{
+    if(!space)return {scale:1,x:0,y:0}
+    const points=[{x:0,y:0},{x:space.width,y:space.depth}]
+    for(const item of items.filter(item=>item.visible!==false&&folderForItem(layerFolders,item.id)?.visible!==false)){
+      const bounds=rotatedBounds([{x:item.xMeters-item.widthMeters/2,y:item.yMeters-item.depthMeters/2,width:item.widthMeters,height:item.depthMeters,rotation:item.rotation||0}])
+      if(bounds)points.push({x:bounds.x,y:bounds.y},{x:bounds.right,y:bounds.bottom})
+    }
+    for(const zone of space.zones||[])for(const point of zone.nodes?.length?sampleStageBoundary(zone.nodes):[])points.push({x:point.x,y:point.y})
+    for(const textItem of space.textItems||[])points.push({x:textItem.x,y:textItem.y})
+    const minX=Math.min(...points.map(point=>point.x)),minY=Math.min(...points.map(point=>point.y)),maxX=Math.max(...points.map(point=>point.x)),maxY=Math.max(...points.map(point=>point.y))
+    const width=Math.max(.01,maxX-minX)*100,height=Math.max(.01,maxY-minY)*100
+    const scale=Math.min(1470/width,912/height)
+    return {scale,x:(1512-width*scale)/2-minX*100*scale,y:(945-height*scale)/2-minY*100*scale}
+  })()
 
   useEffect(() => {
     if (!notice) return
@@ -166,10 +192,11 @@ function App() {
           const equipment=data.filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
           setLibrary(equipment);setGroups(groupData);setStages(stageData);setLibraryOnline(true);setLibraryLoading(false)
           if(!bootedRef.current) {
-            const saved=projectFile(session.project || 'Untitled stageplot',session.space || null,session.items || [],session.preset || '')
+            const saved=projectFile(session.project || 'Untitled stageplot',session.space || null,session.items || [],session.preset || '',{equipment:session.equipmentCollisionEnabled,zone:session.zoneCollisionEnabled,snapping:session.snappingEnabled},session.layerFolders || [])
             if(lockedStageId!==null)saved.stage={kind:'library',id:lockedStageId}
             const restored=resolveProject(saved,equipment,stageData,lockedStageId)
-            setSpace(restored.space);setPreset(restored.preset);setItems(restored.items)
+            setSpace(restored.space);setPreset(restored.preset);setItems(restored.items);setLayerFolders(restored.layerFolders)
+            setEquipmentCollisionEnabled(restored.collisionSettings.equipment);setZoneCollisionEnabled(restored.collisionSettings.zone);setSnappingEnabled(restored.collisionSettings.snapping)
             nextIdRef.current=Math.max(100,...restored.items.map(item=>item.id+1))
             bootedRef.current=true
             if(restored.dropped)setNotice(`${restored.dropped} unavailable equipment items removed`)
@@ -183,7 +210,44 @@ function App() {
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh) }
   }, [session,lockedStageId])
 
-  const checkpoint = () => setHistory((h) => [...h.slice(-19), items])
+  const checkpoint = () => setHistory((h) => [...h.slice(-19), {items,layerFolders}])
+
+  const avoidsZones = item => !zoneCollisionEnabled || (isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones))
+  const avoidsEquipment = (item, ignoredIds = []) => !equipmentCollisionEnabled || item.collisionEnabled===false || items.every(other => other.id === item.id || ignoredIds.includes(other.id) || other.collisionEnabled===false || !itemsCollide(item,other))
+  const canPlace = (item, ignoredIds = []) => avoidsZones(item) && avoidsEquipment(item,ignoredIds)
+  const canPlaceSet = candidates => {
+    const movingIds=candidates.map(item=>item.id)
+    return candidates.every(item=>canPlace(item,movingIds))
+      && (!equipmentCollisionEnabled || candidates.every((item,index)=>item.collisionEnabled===false || candidates.slice(index+1).every(other=>other.collisionEnabled===false || !itemsCollide(item,other))))
+  }
+  const translateItems = (source,dx,dy) => source.map(item=>({...item,xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}))
+  const advanceUntilCollision = (source,dx,dy) => {
+    const destination=translateItems(source,dx,dy)
+    if(canPlaceSet(destination))return destination
+    if(!canPlaceSet(source))return source
+    let low=0,high=1
+    for(let step=0;step<14;step+=1){const middle=(low+high)/2;if(canPlaceSet(translateItems(source,dx*middle,dy*middle)))low=middle;else high=middle}
+    return translateItems(source,dx*low,dy*low)
+  }
+  const constrainDrag = (source,target) => {
+    const requested={x:target[0].xMeters-source[0].xMeters,y:target[0].yMeters-source[0].yMeters}
+    const direct=advanceUntilCollision(source,requested.x,requested.y)
+    const remaining={x:target[0].xMeters-direct[0].xMeters,y:target[0].yMeters-direct[0].yMeters}
+    const slide=(first,second)=>{
+      let result=advanceUntilCollision(direct,first==='x'?remaining.x:0,first==='y'?remaining.y:0)
+      result=advanceUntilCollision(result,second==='x'?target[0].xMeters-result[0].xMeters:0,second==='y'?target[0].yMeters-result[0].yMeters:0)
+      return result
+    }
+    const xThenY=slide('x','y'),yThenX=slide('y','x')
+    const error=result=>(target[0].xMeters-result[0].xMeters)**2+(target[0].yMeters-result[0].yMeters)**2
+    const constrained=error(xThenY)<=error(yThenX)?xThenY:yThenX
+    if(!snappingEnabled)return constrained
+    const movingIds=new Set(constrained.map(item=>item.id))
+    const snap=nearestSnapOffset(constrained,items.filter(item=>!movingIds.has(item.id)),.3)
+    if(!snap)return constrained
+    const snapped=translateItems(constrained,snap.dx,snap.dy)
+    return canPlaceSet(snapped)?snapped:constrained
+  }
 
   const viewportPointInStage = (clientX, clientY) => {
     const rect = viewportRef.current?.getBoundingClientRect()
@@ -199,12 +263,13 @@ function App() {
     const viewport = viewportRef.current
     const centre = position || (viewport ? viewportPointInStage(viewport.getBoundingClientRect().left + viewport.clientWidth / 2, viewport.getBoundingClientRect().top + viewport.clientHeight / 2) : { x: space.width / 2, y: space.depth / 2 })
     const item = { ...tool, id: nextIdRef.current++, assetId:tool.id,
-      widthMeters, depthMeters, showLabel: false,
+      widthMeters, depthMeters, showLabel: false, collisionEnabled: true,
       shapes: tool.shapes, collisionShapes: tool.collisionShapes || [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
       xMeters: Math.max(widthMeters / 2, Math.min(space.width - widthMeters / 2, centre.x)),
       yMeters: Math.max(depthMeters / 2, Math.min(space.depth - depthMeters / 2, centre.y)), rotation: 0,
-      controls:Object.fromEntries((tool.rotationParts || []).map(part=>[part.id,{rotation:part.defaultRotation || 0}])) }
-    setItems((old) => [...old, item])
+      controls:Object.fromEntries((tool.rotationParts || []).map(part=>[part.id,{rotation:part.defaultRotation || 0}])),
+      partVisibility:Object.fromEntries((tool.shapes || []).filter(shape=>shape.toggleable).map(shape=>[shape.id,true])) }
+    setItems((old) => insertAtDefaultLayer(old,item,groups))
     setSelected(item.id)
     setMultiSelected([])
   }
@@ -214,10 +279,11 @@ function App() {
     event.currentTarget.setPointerCapture(event.pointerId)
     checkpoint()
     if (multiSelected.includes(item.id)) {
-      dragRef.current = { members: items.filter(member=>multiSelected.includes(member.id)).map(member=>({...member})), startX: event.clientX, startY: event.clientY }
+      const members=items.filter(member=>multiSelected.includes(member.id)).map(member=>({...member}))
+      dragRef.current = { members, currentMembers:members, startX: event.clientX, startY: event.clientY }
       return
     }
-    dragRef.current = { id: item.id, startX: event.clientX, startY: event.clientY, xMeters: item.xMeters, yMeters: item.yMeters }
+    dragRef.current = { id: item.id, item:{...item}, currentItem:{...item}, startX: event.clientX, startY: event.clientY, xMeters: item.xMeters, yMeters: item.yMeters }
     setSelected(item.id)
     setMultiSelected([])
   }
@@ -241,17 +307,17 @@ function App() {
     if (!current || !board) return
     if (current.members) {
       const dx = (event.clientX-current.startX)/(100*zoom), dy = (event.clientY-current.startY)/(100*zoom)
-      const candidates = current.members.map(item=>({...item,xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}))
-      if(candidates.every(item=>isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones))) {
-        const moved=new Map(candidates.map(item=>[item.id,item]))
-        setItems(old=>old.map(item=>moved.get(item.id)||item))
-      }
+      const target = current.members.map(item=>({...item,xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}))
+      const candidates=constrainDrag(current.currentMembers,target)
+      current.currentMembers=candidates
+      const moved=new Map(candidates.map(item=>[item.id,item]))
+      setItems(old=>old.map(item=>moved.get(item.id)||item))
       return
     }
-    const target = items.find((item) => item.id === current.id)
-    if (!target) return
-    const candidate = { ...target, xMeters: current.xMeters + (event.clientX - current.startX) / (100 * zoom), yMeters: current.yMeters + (event.clientY - current.startY) / (100 * zoom) }
-    if (isItemInsideSpace(candidate, boundaryForSpace(space)) && itemAvoidsSolidZones(candidate, space.zones)) setItems((old) => old.map((item) => item.id === current.id ? candidate : item))
+    const target = [{ ...current.item, xMeters: current.xMeters + (event.clientX - current.startX) / (100 * zoom), yMeters: current.yMeters + (event.clientY - current.startY) / (100 * zoom) }]
+    const [candidate]=constrainDrag([current.currentItem],target)
+    current.currentItem=candidate
+    setItems((old) => old.map((item) => item.id === current.id ? candidate : item))
   }
 
   const startPan = (event) => {
@@ -288,7 +354,8 @@ function App() {
     if(marqueeRef.current) {
       const drag=marqueeRef.current
       const box=selectionBox(drag.worldStart,viewportPointInStage(event.clientX,event.clientY))
-      const ids=[...new Set([...drag.additive,...enclosedItems(items,box,item=>rotatedBounds([{x:item.xMeters-item.widthMeters/2,y:item.yMeters-item.depthMeters/2,width:item.widthMeters,height:item.depthMeters,rotation:item.rotation}]))])]
+      const visibleItems=items.filter(item=>item.visible!==false&&folderForItem(layerFolders,item.id)?.visible!==false)
+      const ids=[...new Set([...drag.additive,...enclosedItems(visibleItems,box,item=>rotatedBounds([{x:item.xMeters-item.widthMeters/2,y:item.yMeters-item.depthMeters/2,width:item.widthMeters,height:item.depthMeters,rotation:item.rotation}]))])]
       setSelected(ids.length===1?ids[0]:null)
       setMultiSelected(ids.length>1?ids:[])
       setMarquee(null)
@@ -310,7 +377,7 @@ function App() {
       setItems((old) => old.map((item) => {
         if (item.id !== current.id) return item
         const candidate = current.partId ? {...item,controls:{...item.controls,[current.partId]:{rotation}}} : { ...item, rotation: Math.round(rotation) }
-        return isItemInsideSpace(candidate, boundaryForSpace(space)) && itemAvoidsSolidZones(candidate, space.zones) ? candidate : item
+        return canPlace(candidate) ? candidate : item
       }))
       return
     }
@@ -346,10 +413,14 @@ function App() {
   }
 
   const save = () => {
-    const data = JSON.stringify(projectFile(project,space,items,preset), null, 2)
+    const zoneConflicts=space ? items.filter(item=>!isItemInsideSpace(item,boundaryForSpace(space)) || !itemAvoidsSolidZones(item,space.zones)) : []
+    const equipmentConflicts=[]
+    items.forEach((item,index)=>items.slice(index+1).forEach(other=>{if(item.collisionEnabled!==false && other.collisionEnabled!==false && itemsCollide(item,other))equipmentConflicts.push([item,other])}))
+    if((zoneConflicts.length || equipmentConflicts.length) && !window.confirm(`This layout has ${zoneConflicts.length} item${zoneConflicts.length===1?'':'s'} outside the usable stage or intersecting a solid zone, and ${equipmentConflicts.length} equipment collision${equipmentConflicts.length===1?'':'s'}.\n\nA saved stageplot may not be true to real life. Save anyway?`))return
+    const data = JSON.stringify(projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders), null, 2)
     const link = document.createElement('a')
     link.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }))
-    link.download = `${project.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'stageplot'}.stageplot.json`
+    link.download = `${project.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'stageplot'}.stageplot`
     link.click()
     URL.revokeObjectURL(link.href)
     setNotice('Project saved')
@@ -367,7 +438,8 @@ function App() {
       const [latestEquipment,latestStages]=await Promise.all(responses.map(response=>response.json()))
       const equipment=latestEquipment.filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
       const restored=resolveProject(data,equipment,latestStages,lockedStageId)
-      setProject(restored.project);setSpace(restored.space);setPreset(restored.preset);setItems(restored.items)
+      setProject(restored.project);setSpace(restored.space);setPreset(restored.preset);setItems(restored.items);setLayerFolders(restored.layerFolders)
+      setEquipmentCollisionEnabled(restored.collisionSettings.equipment);setZoneCollisionEnabled(restored.collisionSettings.zone);setSnappingEnabled(restored.collisionSettings.snapping)
       setLibrary(equipment);setStages(latestStages);setLibraryOnline(true)
       setSelected(null);setMultiSelected([]);setHistory([]);setStagePickerOpen(!restored.space)
       nextIdRef.current=Math.max(100,...restored.items.map(item=>item.id+1))
@@ -384,7 +456,7 @@ function App() {
   }
   const newProject = () => {
     if(!window.confirm('Create a new project? This clears all placed equipment and the selected stage. Save first to keep a copy.'))return
-    setProject('Untitled stageplot');setSpace(null);setPreset('');setItems([]);setHistory([])
+    setProject('Untitled stageplot');setSpace(null);setPreset('');setItems([]);setLayerFolders([]);setHistory([]);setEquipmentCollisionEnabled(true);setZoneCollisionEnabled(true);setSnappingEnabled(true)
     setSelected(null);setMultiSelected([]);setStagePickerOpen(true);setZoom(1);setPan({x:56,y:56})
     dragRef.current=null;rotateRef.current=null;panRef.current=null;marqueeRef.current=null;setMarquee(null)
   }
@@ -394,6 +466,7 @@ function App() {
     try {await navigator.clipboard.writeText(url.href);setNotice('Stage-locked link copied')}
     catch {window.prompt('Copy this stage-locked link:',url.href)}
   }
+  const exportPdf=()=>{setPrintTimestamp(new Date().toLocaleString());window.setTimeout(()=>window.print(),0)}
 
   const reorderLayer = (id, targetId) => {
     const from = items.findIndex(item => item.id === id), to = items.findIndex(item => item.id === targetId)
@@ -402,7 +475,16 @@ function App() {
     const copy = [...items]
     copy.splice(to, 0, copy.splice(from, 1)[0])
     setItems(copy)
+    const targetFolder=folderForItem(layerFolders,targetId)
+    setLayerFolders(old=>old.map(folder=>({...folder,itemIds:folder.id===targetFolder?.id?[...folder.itemIds.filter(itemId=>itemId!==id),id]:folder.itemIds.filter(itemId=>itemId!==id)})))
   }
+  const addLayerFolder=()=>{const name=window.prompt('Folder name','New folder')?.trim();if(!name)return;checkpoint();setLayerFolders(old=>[...old,{id:`folder-${Date.now()}-${nextFolderIdRef.current++}`,name,collapsed:false,visible:true,itemIds:[]}])}
+  const dropItemOnFolder=(itemId,folderId)=>{checkpoint();const result=putItemInFolder(items,layerFolders,itemId,folderId);setItems(result.items);setLayerFolders(result.folders)}
+  const dropFolderOnTarget=(folderId,targetId)=>{checkpoint();setItems(moveFolderBlock(items,layerFolders,folderId,targetId))}
+  const toggleItemVisibility=item=>{checkpoint();setItems(old=>old.map(candidate=>candidate.id===item.id?{...candidate,visible:candidate.visible===false}:candidate));if(selected===item.id){setSelected(null);setMultiSelected([])}}
+  const toggleFolderVisibility=folder=>{checkpoint();setLayerFolders(old=>old.map(candidate=>candidate.id===folder.id?{...candidate,visible:candidate.visible===false}:candidate));if(folder.visible!==false){setSelected(null);setMultiSelected([])}}
+  const changeLayerSelection=(ids,additive=false)=>{const current=[...new Set([...(selected!==null?[selected]:[]),...multiSelected])];let next=ids;if(additive){const removing=ids.every(id=>current.includes(id));next=removing?current.filter(id=>!ids.includes(id)):[...new Set([...current,...ids])]}setSelected(next.length===1?next[0]:null);setMultiSelected(next.length>1?next:[])}
+  const selectLayerFolder=(folder,additive=false)=>changeLayerSelection(items.filter(item=>folder.itemIds.includes(item.id)).map(item=>item.id),additive)
   const moveSelectedLayer = direction => {
     const index = items.findIndex(item => item.id === selected)
     const target = items[index + direction]
@@ -413,6 +495,7 @@ function App() {
     if (!ids.length) return
     checkpoint()
     setItems((old) => old.filter((item) => !ids.includes(item.id)))
+    setLayerFolders(old=>old.map(folder=>({...folder,itemIds:folder.itemIds.filter(id=>!ids.includes(id))})))
     setSelected(null)
     setMultiSelected([])
   }
@@ -425,22 +508,34 @@ function App() {
       const ids=multiSelected.length?multiSelected:[selected]
       if (!items.some(item => ids.includes(item.id))) return
       event.preventDefault()
-      setHistory(previous => [...previous.slice(-19), items])
+      setHistory(previous => [...previous.slice(-19), {items,layerFolders}])
       setItems(previous => previous.filter(item => !ids.includes(item.id)))
+      setLayerFolders(previous=>previous.map(folder=>({...folder,itemIds:folder.itemIds.filter(id=>!ids.includes(id))})))
       setSelected(null)
       setMultiSelected([])
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [items, selected, multiSelected])
+  }, [items, layerFolders, selected, multiSelected])
 
   const undo = () => {
     if (!history.length) return
-    setItems(history[history.length - 1])
+    setItems(history[history.length - 1].items || history[history.length - 1])
+    setLayerFolders(history[history.length - 1].layerFolders || [])
     setHistory((h) => h.slice(0, -1))
     setSelected(null)
     setMultiSelected([])
   }
+  const clearStage=()=>{
+    if(!items.length)return
+    if(!window.confirm('Clear this stage? This removes all placed equipment and layer folders, but keeps the selected stage.'))return
+    checkpoint();setItems([]);setLayerFolders([]);setSelected(null);setMultiSelected([])
+  }
+
+  const layerTree=layerRows(items,layerFolders)
+  const layerRow=(item,nested=false)=><div key={item.id} className={`stage-layer ${nested?'nested ':''}${item.id===selected||multiSelected.includes(item.id)?'active':''}`} draggable onDragStart={event=>{event.stopPropagation();layerDragRef.current={type:'item',id:item.id};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-layer',String(item.id))}} onDragEnd={event=>{event.stopPropagation();layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')reorderLayer(source.id,item.id);else if(source?.type==='folder')dropFolderOnTarget(source.id,item.id);layerDragRef.current=null}}>
+    <span className="layer-grip" aria-hidden="true">&#9776;</span><button className="layer-name" onClick={event=>changeLayerSelection([item.id],event.shiftKey)}>{item.label}</button><small>{item.collisionEnabled===false?'collision off':item.showLabel?'label':''}</small><button className="layer-visibility" title={item.visible===false?'Show layer':'Hide layer'} aria-label={item.visible===false?`Show ${item.label}`:`Hide ${item.label}`} onClick={()=>toggleItemVisibility(item)}>{item.visible===false?'○':'●'}</button>
+  </div>
 
   return (
     <div className="app-shell">
@@ -448,21 +543,26 @@ function App() {
         <div className="brand"><span className="brand-mark">S</span><span>STAGEPLOT</span></div>
         <input className="project-name" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
         <div className="top-actions">
+          <button className="btn ghost" onClick={()=>setHelpOpen(true)}>Help</button>
           <button className="btn ghost" onClick={newProject}><Icon name="plus" /> New project</button>
           <button className="btn ghost" onClick={save}><Icon name="save" /> Save</button>
           <button className="btn ghost" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Open</button>
-          <button className="btn primary" disabled={!space} onClick={() => window.print()}><Icon name="print" /> Export PDF</button>
-          <input ref={fileRef} type="file" accept=".json,.stageplot" onChange={load} hidden />
+          <button className="btn primary" disabled={!space} onClick={exportPdf}><Icon name="print" /> Export PDF</button>
+          <input ref={fileRef} type="file" accept=".stageplot,.stageplot.json,.json,application/json" onChange={load} hidden />
         </div>
       </header>
 
       <main className="workspace">
               <section className="sidebar stage-layer-panel" aria-label="Placed item layers">
                 <p className="eyebrow">LAYERS <small>{items.length}</small></p>
-                <p className="helper">Drag to reorder. Top row is in front.</p>
-                <div className="stage-layer-list">{[...items].reverse().map(item => <button key={item.id} className={(item.id === selected || multiSelected.includes(item.id)) ? 'stage-layer active' : 'stage-layer'} aria-pressed={(item.id === selected || multiSelected.includes(item.id))} draggable onDragStart={event => { layerDragRef.current = item.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-stageplot-layer', String(item.id)) }} onDragEnd={() => { layerDragRef.current = null }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={event => { event.preventDefault(); event.stopPropagation(); if (layerDragRef.current !== null) reorderLayer(layerDragRef.current, item.id); layerDragRef.current = null }} onClick={() => {setSelected(item.id);setMultiSelected([])}}><span aria-hidden="true">&#9776;</span><span>{item.label}</span><small>{item.showLabel ? 'label' : ''}</small></button>)}</div>
+                <p className="helper">Drag layers to reorder or drop them onto folders. Top row is in front.</p>
+                <div className="stage-layer-list">{layerTree.map(row=>row.type==='item'?layerRow(row.item):<div className={`layer-folder ${row.items.length>0&&row.items.every(item=>item.id===selected||multiSelected.includes(item.id))?'selected':''}`} key={row.folder.id} draggable onDragStart={event=>{layerDragRef.current={type:'folder',id:row.folder.id};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-folder',row.folder.id)}} onDragEnd={()=>{layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')dropItemOnFolder(source.id,row.folder.id);else if(source?.type==='folder'&&source.id!==row.folder.id&&row.items.length)dropFolderOnTarget(source.id,row.items.at(-1).id);layerDragRef.current=null}}>
+                  <div className="layer-folder-header"><button className="folder-collapse" aria-label={row.folder.collapsed?'Expand folder':'Collapse folder'} onClick={()=>setLayerFolders(old=>old.map(folder=>folder.id===row.folder.id?{...folder,collapsed:!folder.collapsed}:folder))}>{row.folder.collapsed?'▸':'▾'}</button><span className="folder-icon">▰</span><button className="folder-name" title="Click to select contents · Shift-click to add/remove · Double-click to rename" onClick={event=>selectLayerFolder(row.folder,event.shiftKey)} onDoubleClick={()=>{const name=window.prompt('Folder name',row.folder.name)?.trim();if(name){checkpoint();setLayerFolders(old=>old.map(folder=>folder.id===row.folder.id?{...folder,name}:folder))}}}>{row.folder.name}</button><small>{row.items.length}</small><button className="layer-visibility" title={row.folder.visible===false?'Show folder':'Hide folder'} onClick={()=>toggleFolderVisibility(row.folder)}>{row.folder.visible===false?'○':'●'}</button><button className="folder-remove" title="Remove folder (keeps layers)" onClick={()=>{checkpoint();setLayerFolders(old=>old.filter(folder=>folder.id!==row.folder.id))}}>×</button></div>
+                  {!row.folder.collapsed&&<div className="layer-folder-children">{row.items.map(item=>layerRow(item,true))}</div>}
+                </div>)}</div>
                 {!items.length && <p className="helper">Add equipment to see its layers here.</p>}
                 <div className="layer-order-actions"><button disabled={!selected || items[items.length - 1]?.id === selected} onClick={() => moveSelectedLayer(1)}>Bring forward</button><button disabled={!selected || items[0]?.id === selected} onClick={() => moveSelectedLayer(-1)}>Send back</button></div>
+                <button className="new-layer-folder" onClick={addLayerFolder}>+ New folder</button>
               </section>
 
         <section className="canvas-area">
@@ -475,14 +575,15 @@ function App() {
               <button title="Delete selected" onClick={removeSelected} disabled={selected===null && !multiSelected.length}><Icon name="trash" /></button>
             </div>
           </div>
+          <header className="print-header">{project.trim() || 'Untitled stageplot'}</header>
 
-          <div className="stage-viewport" ref={viewportRef} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;setMarquee(null) }}>
+          <div className="stage-viewport" ref={viewportRef} style={{'--print-scale':printLayout.scale,'--print-x':`${printLayout.x}px`,'--print-y':`${printLayout.y}px`}} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;setMarquee(null) }}>
             {space ? <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
               <div className="stage-boundary-surface" style={{ clipPath: stageClipPath(space) }} />
               {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => !zone.solid && !zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill || "#faf9f4"} fillOpacity={zone.fillOpacity ?? 1} stroke={zone.stroke || "#71851f"} strokeOpacity={zone.strokeOpacity ?? 1} strokeWidth={zone.strokeWidth ?? 2} />)}</svg>}
               {((space.zones || []).some((zone) => zone.label) || space.textItems?.length > 0) && <svg className="stage-label-assets" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{(space.textItems || []).map((item) => <text key={item.id} x={item.x} y={item.y} fill={item.color} fillOpacity={item.opacity} stroke="none" fontSize={item.fontSize} textAnchor="middle" dominantBaseline="middle">{item.text}</text>)}</svg>}
               <div className="stage-title"><span>UPSTAGE</span><b>{space.name}</b><span>{space.width} × {space.depth} m</span></div>
-              {items.map((item) => (
+              {items.filter(item=>item.visible!==false && folderForItem(layerFolders,item.id)?.visible!==false).map((item) => (
                 <button
                   key={item.id}
                   className={`placed-item ${selected === item.id || multiSelected.includes(item.id) ? 'selected' : ''}`}
@@ -493,7 +594,7 @@ function App() {
                     if (label?.trim()) setItems((old) => old.map((x) => x.id === item.id ? { ...x, label: label.trim() } : x))
                   }}
                 >
-                  {item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
+                  {item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
                   {item.showLabel === true && <span className="placed-label">{item.label}</span>}
                   {selected === item.id && <span className="rotation-stem"><span className="rotation-handle" onPointerDown={(event) => startRotation(event, item)} /></span>}
                   {selected === item.id && (item.rotationParts || []).map(part=><span key={part.id} className="part-rotation-handle" title={`Rotate ${part.name}`} style={{left:`${part.pivotX/item.widthMeters*100}%`,top:`${part.pivotY/item.depthMeters*100}%`}} onPointerDown={event=>startPartRotation(event,item,part)} />)}
@@ -504,13 +605,9 @@ function App() {
             {marquee && <div className="selection-marquee" style={{left:marquee.x,top:marquee.y,width:marquee.right-marquee.x,height:marquee.bottom-marquee.y}} />}
           </div>
           <div className="viewport-drawer">
-            <button className="drawer-toggle" aria-expanded={equipmentDrawerOpen} aria-controls="equipment-drawer-content" onClick={() => setEquipmentDrawerOpen(open => !open)}><span>{equipmentDrawerOpen ? '\u25be' : '\u25b8'} Equipment library</span><small>Click or drag equipment onto the stage</small></button>
+            <div className="drawer-header"><button className="drawer-toggle" aria-expanded={equipmentDrawerOpen} aria-controls="equipment-drawer-content" onClick={() => setEquipmentDrawerOpen(open => !open)}><span>{equipmentDrawerOpen ? '\u25be' : '\u25b8'} Equipment library</span></button>{equipmentDrawerOpen&&<label className="equipment-search drawer-search"><span className="sr-only">Search equipment by name</span><input type="search" placeholder="Search equipment..." value={equipmentSearch} onChange={event=>setEquipmentSearch(event.target.value)} /></label>}</div>
             <div id="equipment-drawer-content" className="drawer-content equipment-drawer-content" hidden={!equipmentDrawerOpen}>
           <section className="library bottom-library">
-            <div className="equipment-library-header"><p className="eyebrow">EQUIPMENT</p>            <label className="equipment-search">
-              <span className="sr-only">Search equipment by name</span>
-              <input type="search" placeholder="Search equipment..." value={equipmentSearch} onChange={event => setEquipmentSearch(event.target.value)} />
-            </label></div>
             {!libraryOnline && <p className="library-warning">Library offline — run <code>npm run dev:all</code></p>}
 
             <div className="equipment-tabs" role="tablist" aria-label="Equipment groups" onKeyDown={event => {
@@ -531,6 +628,7 @@ function App() {
             </div>
           </div>
           <footer className="canvas-footer"><span>{items.length} items placed</span><span>Middle-drag to pan · Left-drag empty space to select</span></footer>
+          <footer className="print-footer">Created in Stageplot stage drawing app Version {APP_VERSION} - {printTimestamp}</footer>
         </section>
 
         <aside className="inspector">
@@ -545,16 +643,25 @@ function App() {
             </div>
             <label className="field">ROTATION<input type="number" step="1" value={selectedItem.rotation || 0} onChange={(e) => updateSelected({ rotation: +e.target.value })} /></label>
             {(selectedItem.rotationParts || []).map(part=><label className="field" key={part.id}>{part.name.toUpperCase()} ROTATION<input type="number" step="1" min={part.minRotation??-180} max={part.maxRotation??180} value={selectedItem.controls?.[part.id]?.rotation ?? part.defaultRotation ?? 0} onChange={event=>updateSelected({controls:{...selectedItem.controls,[part.id]:{rotation:Math.max(part.minRotation??-180,Math.min(part.maxRotation??180,+event.target.value))}}})}/></label>)}
+            {(selectedItem.shapes || []).some(shape=>shape.toggleable) && <section className="toggleable-parts"><h3>Toggleable parts</h3><p>Choose which optional parts appear on this item.</p><div className="toggleable-part-list">{selectedItem.shapes.filter(shape=>shape.toggleable).map(shape=><label className="toggleable-part-option" key={shape.id}><input type="checkbox" checked={selectedItem.partVisibility?.[shape.id]!==false} onChange={event=>{checkpoint();updateSelected({partVisibility:{...selectedItem.partVisibility,[shape.id]:event.target.checked}})}} /><span>{shape.name || 'Item part'}</span></label>)}</div></section>}
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.showLabel === true} onChange={event => { checkpoint(); updateSelected({ showLabel: event.target.checked }) }} /> Show label</label>
+            <label className="label-toggle"><input type="checkbox" checked={selectedItem.collisionEnabled !== false} onChange={event => { checkpoint(); updateSelected({ collisionEnabled: event.target.checked }) }} /> Equipment collision</label>
+            <p className="inspector-hint">Turn this off to allow other equipment to overlap this item. Stage and solid-zone collision still applies.</p>
             <button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete item</button>
           </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Drag a selected item to move the selection.</p><button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
             <p className="inspector-hint">{space ? space.name : 'No stage selected.'}{lockedStageId!==null && ' · Stage locked by this link'}</p>
+            <h3>Movement collision</h3>
+            <label className="label-toggle"><input type="checkbox" checked={equipmentCollisionEnabled} onChange={event=>setEquipmentCollisionEnabled(event.target.checked)} /> Equipment collision</label>
+            <label className="label-toggle"><input type="checkbox" checked={zoneCollisionEnabled} onChange={event=>setZoneCollisionEnabled(event.target.checked)} /> Stage and zone collision</label>
+            <label className="label-toggle"><input type="checkbox" checked={snappingEnabled} onChange={event=>setSnappingEnabled(event.target.checked)} /> Corner snapping</label>
+            <p className="inspector-hint">Turn constraints off temporarily to arrange equipment in narrow areas. Saving still checks the complete layout.</p>
             {lockedStageId===null && <button className="fit-stage" onClick={()=>setStagePickerOpen(true)}>Choose stage</button>}
             {space && <><div className="inspector-grid">
               <label className="field">WIDTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.width} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,width:+e.target.value})}}} /></label>
               <label className="field">DEPTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.depth} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,depth:+e.target.value})}}} /></label>
             </div><button className="fit-stage" onClick={fitStage}>Fit stage to viewport</button>
             {space.stageId && <button className="fit-stage" onClick={copyStageLink}>Copy stage-locked link</button>}</>}
+            {space && <button className="inspector-delete clear-stage" disabled={!items.length} onClick={clearStage}><Icon name="trash" /> Clear stage</button>}
           </>}</div>
         </aside>
       </main>
@@ -574,6 +681,7 @@ function App() {
       </div>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {notice && <div className="toast">{notice}</div>}
+      {helpOpen&&<StageplotHelp onClose={()=>setHelpOpen(false)}/>} 
     </div>
   )
 }
