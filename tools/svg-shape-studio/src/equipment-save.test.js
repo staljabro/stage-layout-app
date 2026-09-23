@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { equipmentSaveChoice, uniqueItemId, newAssetId } from './equipment-save.js';
+import { equipmentSaveChoice, uniqueItemId, newAssetId, assetUuid } from './equipment-save.js';
 test('new asset IDs are unique and independent of names', () => {
   const first = newAssetId('stage');
   assert.match(first, /^stage-[a-f0-9-]{36}$/);
   assert.notEqual(first, newAssetId('stage'));
   assert.match(newAssetId(), /^item-[a-f0-9-]{36}$/);
+});
+test('asset IDs work when randomUUID is unavailable on plain HTTP', () => {
+  const fallback=assetUuid({getRandomValues(bytes){bytes.fill(7);return bytes;}});
+  assert.equal(fallback,'07070707-0707-4707-8707-070707070707');
 });
 test('legacy IDs do not create name conflicts after a rename', () => {
   assert.equal(equipmentSaveChoice([{id:'chair',label:'Bench'}],null,'Chair','chair'),null);
