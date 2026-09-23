@@ -64,7 +64,29 @@ Stageplot permits read-only library requests. Studio permits library changes and
 
 Back up `equipment-library/` and `stage-library/` regularly. Container replacement leaves these bind-mounted directories intact, but it does not protect against disk failure or accidental deletion from Studio.
 
-For an Unraid deployment, set `LIBRARY_DATA_PATH=/mnt/user/appdata/empire-band-layout-data` in `.env` and copy the initial `equipment-library/` and `stage-library/` into that directory. This keeps live Studio data separate from application source uploads and prevents a later source copy from replacing the server's current library.
+For an Unraid deployment, set `LIBRARY_DATA_PATH=/mnt/user/appdata/stage-layout-app-data` in `.env` and copy the initial `equipment-library/` and `stage-library/` into that directory. This keeps live Studio data separate from application source uploads and prevents a later source copy from replacing the server's current library.
+
+### GitHub-built deployment
+
+Pushing `main` runs `.github/workflows/publish-containers.yml`. It verifies the code and publishes three images to GitHub Container Registry: Stageplot, Studio, and the library API. The images deliberately exclude `equipment-library/` and `stage-library/`.
+
+The Unraid server only needs a Git checkout containing `docker-compose.prod.yml` and its local `.env`. Deploy or update without Buildx or a server-side source build:
+
+```bash
+git pull
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+After initial setup, the same update can be run with one command:
+
+```bash
+sh deploy-unraid.sh
+```
+
+The script fast-forwards the checkout, pulls the latest images, recreates changed containers, and displays their status. It does not modify the mounted library directories.
+
+Set `LIBRARY_DATA_PATH` to the permanent external Unraid data directory. Compose recreates application containers from the new images while mounting the same library folders back into the API container. Never store the live library beneath the disposable application checkout.
 
 Run both apps and the repository-backed equipment library together:
 
