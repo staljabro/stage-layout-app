@@ -91,9 +91,21 @@ export function itemSnapPoints(item) {
 }
 
 export function nearestSnapOffset(moving,stationary,radius=.3) {
+  if(radius<=0)return null
   let nearest=null
   const fixed=stationary.flatMap(itemSnapPoints)
-  for(const point of moving.flatMap(itemSnapPoints))for(const target of fixed){const dx=target.x-point.x,dy=target.y-point.y,distance=Math.hypot(dx,dy);if(distance<=radius&&(!nearest||distance<nearest.distance))nearest={dx,dy,distance}}
+  const key=(x,y)=>`${x},${y}`
+  const buckets=new Map()
+  for(const point of fixed){const bucketKey=key(Math.floor(point.x/radius),Math.floor(point.y/radius));const bucket=buckets.get(bucketKey);if(bucket)bucket.push(point);else buckets.set(bucketKey,[point])}
+  for(const point of moving.flatMap(itemSnapPoints)){
+    const cellX=Math.floor(point.x/radius),cellY=Math.floor(point.y/radius)
+    for(let y=cellY-1;y<=cellY+1;y+=1)for(let x=cellX-1;x<=cellX+1;x+=1)for(const target of buckets.get(key(x,y))||[]){
+      const dx=target.x-point.x,dy=target.y-point.y
+      if(Math.abs(dx)>radius||Math.abs(dy)>radius)continue
+      const distance=Math.hypot(dx,dy)
+      if(distance<=radius&&(!nearest||distance<nearest.distance))nearest={dx,dy,distance}
+    }
+  }
   return nearest
 }
 

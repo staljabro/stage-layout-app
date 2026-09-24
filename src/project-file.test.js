@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { projectFile, resolveProject, stageSpace } from './project-file.js';
+import { customStagingItem, customTextItem, stagingSnapPoints } from './custom-items.js';
 const stage={id:'pit',label:'Orchestra Pit',dimensions:{widthMeters:10,depthMeters:5},boundary:{nodes:[{x:0,y:0},{x:10,y:0},{x:0,y:5}]},zones:[]};
 const asset={id:'chair',label:'Chair',dimensions:{widthMeters:.5,depthMeters:.6},shapes:[{type:'rect',fill:'#ffffff'}],collisionShapes:[]};
 const placement={...asset,id:123,type:'library:chair',assetId:'chair',xMeters:2,yMeters:3,rotation:35,label:'First violin',showLabel:true};
@@ -80,4 +81,25 @@ test('legacy equipment and stage references resolve to current assets',()=>{
   const file={version:1,project:'Old',space:{name:stage.label,width:9,depth:4,boundary:stage.boundary},items:[{...placement,assetId:undefined,shapes:[{type:'obsolete'}]}]};
   const result=resolveProject(file,[asset],[stage],'pit');
   assert.equal(result.space.stageId,'pit');assert.deepEqual(result.items[0].shapes,asset.shapes);
+});
+test('project-created staging and text survive without library assets',()=>{
+  const staging=customStagingItem({id:201,xMeters:3,yMeters:2,widthMeters:3.2,depthMeters:1.7,heightMm:400,showHeight:false,fill:'#123456',line:'#abcdef',textColor:'#ffffff'});
+  const text=customTextItem({id:202,xMeters:5,yMeters:4,text:'Stage\nleft',fontSize:.25,bold:true,italic:true,fill:'#ff0000',widthMeters:.8,depthMeters:.5});
+  const file=projectFile('Custom',stageSpace(stage),[staging,text]);
+  assert.equal(file.items[0].assetId,undefined);assert.equal(file.items[0].custom.type,'staging');
+  const result=resolveProject(file,[],[stage]);
+  assert.equal(result.dropped,0);assert.equal(result.items.length,2);
+  assert.equal(result.items[0].widthMeters,3);assert.equal(result.items[0].depthMeters,2);
+  assert.equal(result.items[0].heightMm,400);assert.equal(result.items[0].showHeight,false);
+  assert.equal(result.items[1].text,'Stage\nleft');assert.equal(result.items[1].bold,true);
+});
+test('custom staging creates snap points at every metre-grid intersection',()=>{
+  assert.deepEqual(stagingSnapPoints(2,2),[{x:0,y:0},{x:1,y:0},{x:2,y:0},{x:0,y:1},{x:1,y:1},{x:2,y:1},{x:0,y:2},{x:1,y:2},{x:2,y:2}]);
+});
+test('toggleable stage-part visibility is saved per project and filtered against the current stage',()=>{
+  const configurable={...stage,zones:[{id:'warning',name:'Warning zone',toggleable:true,nodes:[]},{id:'fixed',name:'Fixed zone',nodes:[]}],textItems:[{id:'caption',name:'Caption',toggleable:true}]};
+  const space={...stageSpace(configurable),partVisibility:{warning:false,caption:true,removed:false}};
+  const file=projectFile('Concert',space,[],'stage:pit');
+  const result=resolveProject(file,[],[configurable]);
+  assert.deepEqual(result.space.partVisibility,{warning:false,caption:true});
 });

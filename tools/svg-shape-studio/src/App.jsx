@@ -2348,7 +2348,7 @@ function App() {
                 className="group-button"
                 onClick={() => {
                   const id = `text-${Date.now()}`;
-                  setTextItems((old) => [...old, { id, name: `Text ${old.length + 1}`, text: "Stage label", x: realWidth / 2, y: realDepth / 2, fontSize: 0.3, color: "#25261f", opacity: 1, locked: false, zOrder: orderedAssets.length }]);
+                  setTextItems((old) => [...old, { id, name: `Text ${old.length + 1}`, text: "Stage label", x: realWidth / 2, y: realDepth / 2, fontSize: 0.3, color: "#25261f", opacity: 1, locked: false, toggleable: false, zOrder: orderedAssets.length }]);
                   setSelectedTextId(id);
                   setSelectedZoneId(null);
                   setSelectedReferenceId(null);
@@ -2430,7 +2430,11 @@ function App() {
                       solid: false,
                       label: false,
                       locked: false,
+                      toggleable: false,
                       fill: "#8eb6d8",
+                      fillMode: "single",
+                      fill2: "#25261f",
+                      stripeSpacing: 0.5,
                       fillOpacity: 0.25,
                       stroke: "#447799",
                       strokeWidth: 2,
@@ -2642,6 +2646,7 @@ function App() {
                       strokeWidth=".006"
                     />
                   </pattern>
+                  {zones.filter(zone=>zone.fillMode==="multicolour").map(zone=>{const spacing=Math.max(.05,zone.stripeSpacing||.5);return <pattern key={zone.id} id={`zone-stripes-${zone.id}`} width={spacing*2} height={spacing*2} patternUnits="userSpaceOnUse" patternTransform="rotate(135)"><rect width={spacing} height={spacing*2} fill={zone.fill||"#8eb6d8"}/><rect x={spacing} width={spacing} height={spacing*2} fill={zone.fill2||"#25261f"}/></pattern>})}
                 </defs>
                 {grid && (
                   <rect
@@ -2663,7 +2668,7 @@ function App() {
                       ) : asset.assetType === "text" ? (
                         <text key={asset.id} x={asset.x} y={asset.y} fill={asset.color} fillOpacity={asset.opacity} fontSize={asset.fontSize} textAnchor="middle" dominantBaseline="middle" className={asset.locked ? "stage-text locked" : "stage-text"} onPointerDown={(event) => startAssetMove(event, asset, "text")}>{asset.text}</text>
                       ) : (
-                        <path pointerEvents="none" key={asset.id} d={stagePath(asset.nodes)} fill={asset.fill || "#f7f6ef"} fillOpacity={asset.fillOpacity ?? 1} stroke={asset.stroke || "#71851f"} strokeOpacity={asset.strokeOpacity ?? 1} strokeWidth={asset.strokeWidth ?? 2} vectorEffect="non-scaling-stroke" />
+                        <path pointerEvents="none" key={asset.id} d={stagePath(asset.nodes)} fill={asset.fillMode === "multicolour" ? `url(#zone-stripes-${asset.id})` : asset.fill || "#f7f6ef"} fillOpacity={asset.fillOpacity ?? 1} stroke={asset.stroke || "#71851f"} strokeOpacity={asset.strokeOpacity ?? 1} strokeWidth={asset.strokeWidth ?? 2} vectorEffect="non-scaling-stroke" />
                       ),
                     )}
                   </g>
@@ -3113,6 +3118,8 @@ function App() {
                     />
                   </label>
                   <label className="field">ZONE TYPE<select value={selectedZone.label ? "label" : selectedZone.solid ? "solid" : "aesthetic"} onChange={(e) => updateSelectedZone({ solid: e.target.value === "solid", label: e.target.value === "label" })}><option value="aesthetic">Aesthetic</option><option value="solid">Solid (collision)</option><option value="label">Label (outside stage)</option></select></label>
+                  <label className="collision-toggle"><input type="checkbox" checked={selectedZone.toggleable===true} onChange={event=>updateSelectedZone({toggleable:event.target.checked})}/><span><b>Toggleable in Stageplot</b><small>Adds a per-project show/hide control for this stage part.</small></span></label>
+                  <label className="field">COLOUR MODE<select value={selectedZone.fillMode||"single"} onChange={event=>updateSelectedZone({fillMode:event.target.value})}><option value="single">Single colour</option><option value="multicolour">Multicoloured</option></select></label>
                   {(
                     <>
                       <div className="field-row colors">
@@ -3125,6 +3132,10 @@ function App() {
                             }
                           />
                         </label>
+                        {selectedZone.fillMode === "multicolour" && <label className="field">
+                          SECOND COLOUR
+                          <ColourPicker value={selectedZone.fill2||"#25261f"} onChange={(e)=>updateSelectedZone({fill2:e.target.value})}/>
+                        </label>}
                         <label className="field">
                           LINE
                           <ColourPicker
@@ -3135,6 +3146,7 @@ function App() {
                           />
                         </label>
                       </div>
+                      {selectedZone.fillMode === "multicolour" && <label className="field">STRIPE WIDTH <span>{(selectedZone.stripeSpacing||.5).toFixed(2)}m</span><input type="range" min=".05" max="2" step=".05" value={selectedZone.stripeSpacing||.5} onChange={event=>updateSelectedZone({stripeSpacing:+event.target.value})}/></label>}
                       <label className="field">
                         FILL TRANSPARENCY{" "}
                         <span>
@@ -3204,6 +3216,7 @@ function App() {
                 <>
                   <p className="eyebrow advanced-title">TEXT</p>
                   <label className="field">NAME<input value={selectedText.name} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, name: e.target.value } : item))} /></label>
+                  <label className="collision-toggle"><input type="checkbox" checked={selectedText.toggleable===true} onChange={event=>setTextItems(old=>old.map(item=>item.id===selectedText.id?{...item,toggleable:event.target.checked}:item))}/><span><b>Toggleable in Stageplot</b><small>Adds a per-project show/hide control for this stage part.</small></span></label>
                   <label className="field">TEXT<input value={selectedText.text} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, text: e.target.value } : item))} /></label>
                   <label className="field">SIZE ({documentMode === "stage" ? "M" : "CM"})<CommittedNumberInput type="number" min="0.05" step="0.05" value={selectedText.fontSize} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, fontSize: Math.max(.05, +e.target.value) } : item))} /></label>
                   <label className="field">COLOUR<ColourPicker value={selectedText.color} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, color: e.target.value } : item))} /></label>

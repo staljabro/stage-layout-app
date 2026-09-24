@@ -11,19 +11,22 @@ export function layerRows(items,folders){
   return rows
 }
 
-export function putItemInFolder(items,folders,itemId,folderId){
+export function putItemsInFolder(items,folders,itemIds,folderId){
   const target=folders.find(folder=>folder.id===folderId)
   if(!target)return {items,folders}
-  const memberIds=new Set(target.itemIds.filter(id=>id!==itemId)),moving=items.find(item=>item.id===itemId)
-  if(!moving)return {items,folders}
+  const movingIds=new Set(itemIds),memberIds=new Set(target.itemIds.filter(id=>!movingIds.has(id)))
+  const moving=items.filter(item=>movingIds.has(item.id))
+  if(!moving.length)return {items,folders}
   const members=items.filter(item=>memberIds.has(item.id)),positions=items.map((item,index)=>memberIds.has(item.id)?index:null).filter(index=>index!==null)
-  const remaining=items.filter(item=>item.id!==itemId&&!memberIds.has(item.id))
-  const originalAnchor=positions.length?Math.min(...positions):items.findIndex(item=>item.id===itemId)
-  const removedBefore=items.slice(0,originalAnchor).filter(item=>item.id===itemId||memberIds.has(item.id)).length
+  const remaining=items.filter(item=>!movingIds.has(item.id)&&!memberIds.has(item.id))
+  const originalAnchor=positions.length?Math.min(...positions):Math.min(...items.map((item,index)=>movingIds.has(item.id)?index:Infinity))
+  const removedBefore=items.slice(0,originalAnchor).filter(item=>movingIds.has(item.id)||memberIds.has(item.id)).length
   const anchor=Math.max(0,originalAnchor-removedBefore)
-  remaining.splice(anchor,0,...members,moving)
-  return {items:remaining,folders:folders.map(folder=>({...folder,itemIds:folder.id===folderId?[...members.map(item=>item.id),itemId]:folder.itemIds.filter(id=>id!==itemId)}))}
+  remaining.splice(anchor,0,...members,...moving)
+  return {items:remaining,folders:folders.map(folder=>({...folder,itemIds:folder.id===folderId?[...members,...moving].map(item=>item.id):folder.itemIds.filter(id=>!movingIds.has(id))}))}
 }
+
+export function putItemInFolder(items,folders,itemId,folderId){return putItemsInFolder(items,folders,[itemId],folderId)}
 
 export function removeItemFromFolders(folders,itemId){return folders.map(folder=>({...folder,itemIds:folder.itemIds.filter(id=>id!==itemId)}))}
 

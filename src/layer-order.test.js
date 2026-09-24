@@ -8,6 +8,7 @@ const groups=[{id:'decking',label:'Staging'},{id:'chairs',label:'Seating'}]
 test('staging equipment is inserted behind the existing layer stack',()=>{
   assert.deepEqual(insertAtDefaultLayer(existing,{id:3,groupId:'decking'},groups).map(item=>item.id),[3,1,2])
   assert.deepEqual(insertAtDefaultLayer(existing,{id:3,groupId:'staging'},[]).map(item=>item.id),[3,1,2])
+  assert.deepEqual(insertAtDefaultLayer(existing,{id:3,customType:'staging'},[]).map(item=>item.id),[3,1,2])
 })
 
 test('other equipment remains at the front of the layer stack',()=>{

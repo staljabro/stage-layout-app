@@ -76,7 +76,9 @@ Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing releas
 
 The top Layers row renders in front. Drag layers to reorder them. Use **New folder** to create an organisational folder, then drag layers onto it. Children can be reordered inside the folder, and the complete folder can be moved through the stack.
 
-Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Visibility controls hide layers or folders from the canvas and PDF but deliberately retain collision.
+Folders are created immediately with an automatic name; double-click the name to rename it inline. Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Dragging any member of a multi-selection onto a folder moves the complete selection. Eye controls hide layers or folders from the canvas and PDF but deliberately retain collision.
+
+When multiple items are selected, the inspector exposes settings shared by the selection, including label display, equipment collision, visibility and compatible toggleable parts. A mixed checkbox displays an X; clicking it enables the setting for every selected item before normal on/off toggling resumes.
 
 ### Collision and snapping
 

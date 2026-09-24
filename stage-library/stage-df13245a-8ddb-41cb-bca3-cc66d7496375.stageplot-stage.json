@@ -212,7 +212,7 @@
       "stroke": "#191919",
       "strokeWidth": 2,
       "strokeOpacity": 0,
-      "zOrder": 0,
+      "zOrder": 2,
       "nodes": [
         {
           "x": 1.4000000000000012,
@@ -287,7 +287,7 @@
       "stroke": "#191919",
       "strokeWidth": 2,
       "strokeOpacity": 1,
-      "zOrder": 6,
+      "zOrder": 8,
       "nodes": [
         {
           "x": 11.450000000000003,
@@ -340,7 +340,7 @@
       "stroke": "#447799",
       "strokeWidth": 2,
       "strokeOpacity": 0,
-      "zOrder": 2,
+      "zOrder": 4,
       "nodes": [
         {
           "x": 1.1,
@@ -415,7 +415,7 @@
       "stroke": "#191919",
       "strokeWidth": 2,
       "strokeOpacity": 1,
-      "zOrder": 5,
+      "zOrder": 7,
       "nodes": [
         {
           "x": 3.7,
@@ -464,11 +464,11 @@
       "label": false,
       "locked": true,
       "fill": "#ff0000",
-      "fillOpacity": 0.25,
+      "fillOpacity": 0.5,
       "stroke": "#447799",
       "strokeWidth": 2,
       "strokeOpacity": 0,
-      "zOrder": 7,
+      "zOrder": 9,
       "nodes": [
         {
           "x": 2,
@@ -571,11 +571,11 @@
       "label": false,
       "locked": true,
       "fill": "#ff0000",
-      "fillOpacity": 0.25,
+      "fillOpacity": 0.5,
       "stroke": "#447799",
       "strokeWidth": 2,
       "strokeOpacity": 0,
-      "zOrder": 8,
+      "zOrder": 10,
       "nodes": [
         {
           "x": 3.7000000000000006,
@@ -676,11 +676,11 @@
       "label": false,
       "locked": true,
       "fill": "#ff0000",
-      "fillOpacity": 0.25,
+      "fillOpacity": 0.5,
       "stroke": "#191919",
       "strokeWidth": 2,
       "strokeOpacity": 0,
-      "zOrder": 9,
+      "zOrder": 11,
       "nodes": [
         {
           "x": 11.1,
@@ -785,7 +785,7 @@
       "stroke": "#447799",
       "strokeWidth": 2,
       "strokeOpacity": 0,
-      "zOrder": 4,
+      "zOrder": 6,
       "nodes": [
         {
           "x": 3.7,
@@ -825,6 +825,121 @@
           "x": 3.7,
           "y": 2.9995
         }
+      ],
+      "toggleable": true
+    },
+    {
+      "id": "zone-1790293768039",
+      "name": "OP Door Clearway",
+      "solid": true,
+      "label": false,
+      "locked": false,
+      "toggleable": true,
+      "fill": "#ffa000",
+      "fillMode": "multicolour",
+      "fill2": "#25261f",
+      "stripeSpacing": 0.5,
+      "fillOpacity": 0.5,
+      "stroke": "#447799",
+      "strokeWidth": 2,
+      "strokeOpacity": 0,
+      "zOrder": 1,
+      "nodes": [
+        {
+          "x": 2,
+          "y": 1.5,
+          "curveMode": "line"
+        },
+        {
+          "x": 3.7,
+          "y": 1.5,
+          "curveMode": "line"
+        },
+        {
+          "x": 3.7,
+          "y": 4.15,
+          "curveMode": "line"
+        },
+        {
+          "x": 2,
+          "y": 4.15,
+          "curveMode": "line"
+        }
+      ],
+      "collisionBoundary": [
+        {
+          "x": 2,
+          "y": 1.5
+        },
+        {
+          "x": 3.7,
+          "y": 1.5
+        },
+        {
+          "x": 3.7,
+          "y": 4.15
+        },
+        {
+          "x": 2,
+          "y": 4.15
+        }
+      ]
+    },
+    {
+      "id": "zone-1790293902725",
+      "name": "PS Door Clearway",
+      "solid": true,
+      "label": false,
+      "locked": false,
+      "toggleable": true,
+      "fill": "#ffa000",
+      "fillMode": "multicolour",
+      "fill2": "#25261f",
+      "stripeSpacing": 0.5,
+      "fillOpacity": 0.5,
+      "stroke": "#447799",
+      "strokeWidth": 2,
+      "strokeOpacity": 0,
+      "zOrder": 0,
+      "nodes": [
+        {
+          "x": 10.3,
+          "y": 1.5,
+          "curveMode": "line"
+        },
+        {
+          "x": 11.1,
+          "y": 1.5,
+          "curveMode": "line"
+        },
+        {
+          "x": 11.100000000000001,
+          "y": 4.147499999999999,
+          "curveMode": "line"
+        },
+        {
+          "x": 10.3,
+          "y": 4.15,
+          "curveMode": "line"
+        }
+      ],
+      "collisionBoundary": [
+        {
+          "x": 10.3,
+          "y": 1.5
+        },
+        {
+          "x": 11.1,
+          "y": 1.5
+        },
+        {
+          "x": 11.100000000000001,
+          "y": 4.147499999999999
+        },
+        {
+          "x": 10.3,
+          "y": 4.15
+        }
       ]
     }
   ],
@@ -839,11 +954,11 @@
       "color": "#25261f",
       "opacity": 1,
       "locked": true,
-      "zOrder": 1
+      "zOrder": 3
     },
     {
       "id": "text-1789963710602",
-      "name": "UNDER STAGE LIP",
+      "name": "UNDER STAGE TEXT",
       "text": "UNDER STAGE",
       "x": 6.79,
       "y": 3.73,
@@ -851,7 +966,8 @@
       "color": "#25261f",
       "opacity": 1,
       "locked": false,
-      "zOrder": 3
+      "zOrder": 5,
+      "toggleable": true
     },
     {
       "id": "text-1789970389295",
@@ -863,7 +979,8 @@
       "color": "#25261f",
       "opacity": 1,
       "locked": true,
-      "zOrder": 10
+      "zOrder": 12,
+      "toggleable": true
     }
   ],
   "details": [],

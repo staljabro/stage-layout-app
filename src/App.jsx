@@ -3,14 +3,16 @@ import { sampleStageBoundary, stagePath as zonePath } from './stage-geometry.js'
 import { TextArtwork } from './text-shape.jsx'
 import { readSessionDraft, useSessionDraft } from './session-draft.js'
 import { selectionBox, enclosedItems } from './marquee.js'
-import { insertAtDefaultLayer } from './layer-order.js'
-import { folderForItem, layerRows, moveFolderBlock, putItemInFolder } from './layer-folders.js'
+import { belongsToStagingGroup, insertAtDefaultLayer } from './layer-order.js'
+import { folderForItem, layerRows, moveFolderBlock, putItemsInFolder } from './layer-folders.js'
 import { rotatedBounds } from '../tools/svg-shape-studio/src/rotation.js'
 import { isPublishedItem, isEquipmentItem } from '../tools/library-membership.mjs'
 import { collisionPolygons, isItemInsideSpace, itemsCollide, nearestSnapOffset, polygonsIntersect, rectangleBoundary } from './geometry.js'
 import { projectFile, resolveProject, stageSpace } from './project-file.js'
 import { StageplotHelp } from './help-dialog.jsx'
 import { APP_VERSION } from './version.js'
+import { customStagingItem, customTextItem } from './custom-items.js'
+import { sizeText } from './text-layout.js'
 
 const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8787/api' : '/api')).replace(/\/$/, '')
 const LIBRARY_API = `${API_BASE}/items`
@@ -19,9 +21,14 @@ const STAGES_API = `${API_BASE}/stages`
 
 const boundaryForSpace = (space) => space.collisionBoundary?.length >= 3 ? space.collisionBoundary : rectangleBoundary(space.width, space.depth)
 const stageClipPath = (space) => `polygon(${boundaryForSpace(space).map((point) => `${point.x / space.width * 100}% ${point.y / space.depth * 100}%`).join(',')})`
-const itemAvoidsSolidZones = (item, zones = []) => {
+const zonePatternId = (prefix, id) => `${prefix}-${String(id).replace(/[^a-zA-Z0-9_-]/g,'-')}`
+function ZonePatterns({ zones, prefix }) {
+  return <defs>{zones.filter(zone=>zone.fillMode==='multicolour').map(zone=>{const spacing=Math.max(.05,zone.stripeSpacing||.5);return <pattern key={zone.id} id={zonePatternId(prefix,zone.id)} width={spacing*2} height={spacing*2} patternUnits="userSpaceOnUse" patternTransform="rotate(135)"><rect width={spacing} height={spacing*2} fill={zone.fill||'#8eb6d8'} stroke="none"/><rect x={spacing} width={spacing} height={spacing*2} fill={zone.fill2||'#25261f'} stroke="none"/></pattern>})}</defs>
+}
+const zoneFill = (zone,prefix) => zone.fillMode==='multicolour' ? `url(#${zonePatternId(prefix,zone.id)})` : zone.fill
+const itemAvoidsSolidZones = (item, zones = [], partVisibility = {}) => {
   const footprints = collisionPolygons(item)
-  return zones.filter((zone) => zone.solid && zone.collisionBoundary?.length >= 3).every((zone) => footprints.every(footprint => !polygonsIntersect(footprint, zone.collisionBoundary)))
+  return zones.filter((zone) => zone.solid && zone.collisionBoundary?.length >= 3 && (!zone.toggleable || partVisibility[zone.id] !== false)).every((zone) => footprints.every(footprint => !polygonsIntersect(footprint, zone.collisionBoundary)))
 }
 
 const regularPolygonPoints = (width, height, sides = 6) => Array.from({ length: Math.max(3, sides) }, (_, index) => {
@@ -99,8 +106,27 @@ const Icon = ({ name }) => {
     undo: <><path d="M9 7 4 12l5 5"/><path d="M4 12h9a7 7 0 0 1 7 7"/></>,
     trash: <><path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7"/></>,
     plus: <path d="M12 5v14M5 12h14"/>,
+    eye: <path className="mdi-fill" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5m0 13c-3.88 0-7.17-2.34-8.82-5.5C4.83 8.84 8.12 6.5 12 6.5s7.17 2.34 8.82 5.5c-1.65 3.16-4.94 5.5-8.82 5.5m0-8.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/>,
+    eyeOff: <path className="mdi-fill" d="M2 5.27 3.28 4 20 20.72 18.73 22l-3.08-3.08c-1.15.38-2.39.58-3.65.58-5 0-9.27-3.11-11-7.5.69-1.76 1.79-3.31 3.19-4.54L2 5.27M12 4.5c5 0 9.27 3.11 11 7.5-.82 2.08-2.21 3.88-4 5.19l-1.42-1.43c1.36-.94 2.42-2.26 3.24-3.76C19.17 8.84 15.88 6.5 12 6.5c-1.09 0-2.13.18-3.1.5L7.35 5.44A12 12 0 0 1 12 4.5M3.18 12C4.83 15.16 8.12 17.5 12 17.5c.69 0 1.36-.08 2-.23L11.72 15A3 3 0 0 1 9 12.28l-3.4-3.41A9.5 9.5 0 0 0 3.18 12M12 9a3 3 0 0 1 3 3c0 .35-.06.69-.17 1L11 9.17c.31-.11.65-.17 1-.17"/>,
   }
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
+}
+
+function CustomItemArtwork({ item }) {
+  if (item.customType === 'staging') return <svg viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true">
+    <rect width={item.widthMeters} height={item.depthMeters} fill={item.fill} fillOpacity={item.fillOpacity} stroke="none" />
+    {Array.from({length:Math.max(0,item.widthMeters-1)},(_,index)=><line key={`x-${index}`} x1={index+1} y1="0" x2={index+1} y2={item.depthMeters} stroke={item.sublineColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+    {Array.from({length:Math.max(0,item.depthMeters-1)},(_,index)=><line key={`y-${index}`} x1="0" y1={index+1} x2={item.widthMeters} y2={index+1} stroke={item.sublineColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+    <rect width={item.widthMeters} height={item.depthMeters} fill="none" stroke={item.line} strokeOpacity={item.lineOpacity} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    {item.showHeight !== false && <text x={item.widthMeters / 2} y={item.depthMeters / 2} fill={item.textColor} stroke="none" fontSize={Math.min(.28, item.depthMeters * .32)} fontWeight="700" textAnchor="middle" dominantBaseline="middle">{item.heightMm}mm</text>}
+  </svg>
+  if (item.customType === 'text') return <svg viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><TextArtwork item={{ ...item, width: item.widthMeters, height: item.depthMeters }} /></svg>
+  return null
+}
+
+function TriStateToggle({ value, label, description, onChange }) {
+  const mixed=value==='mixed'
+  return <button type="button" className="tri-state-option" role="checkbox" aria-checked={mixed?'mixed':value} onClick={()=>onChange(value!==true)}><span className={`tri-state-box ${mixed?'mixed':value?'checked':''}`}>{mixed?'×':value?'✓':''}</span><span><b>{label}</b>{description&&<small>{description}</small>}</span></button>
 }
 
 function App() {
@@ -116,6 +142,8 @@ function App() {
   const [customDepth,setCustomDepth]=useState(5)
   const [items, setItems] = useState(session.items ?? [])
   const [layerFolders,setLayerFolders]=useState(session.layerFolders ?? [])
+  const [editingFolderId,setEditingFolderId]=useState(null)
+  const [folderNameDraft,setFolderNameDraft]=useState('')
   const [equipmentCollisionEnabled, setEquipmentCollisionEnabled] = useState(session.equipmentCollisionEnabled !== false)
   const [zoneCollisionEnabled, setZoneCollisionEnabled] = useState(session.zoneCollisionEnabled !== false)
   const [snappingEnabled, setSnappingEnabled] = useState(session.snappingEnabled !== false)
@@ -131,16 +159,19 @@ function App() {
   const [groups, setGroups] = useState([])
   const [equipmentSearch, setEquipmentSearch] = useState('')
   const [selectedEquipmentTab, setSelectedEquipmentTab] = useState('all')
+  const [customToolMode, setCustomToolMode] = useState(null)
+  const [customStagingPreview, setCustomStagingPreview] = useState(null)
   const [stages, setStages] = useState([])
   const equipmentTabs = [
     { id: 'all', label: 'All equipment' },
     ...groups.filter(group => library.some(tool => tool.groupId === group.id)).map(group => ({ id: 'group:' + group.id, label: group.label })),
     ...(library.some(tool => !groups.some(group => group.id === tool.groupId)) ? [{ id: 'uncategorised', label: 'Uncategorised' }] : []),
+    { id: 'custom', label: 'Custom' },
   ]
   const activeEquipmentTab = equipmentTabs.some(tab => tab.id === selectedEquipmentTab) ? selectedEquipmentTab : 'all'
   const visibleEquipment = library.filter(tool => {
     const tabId = groups.some(group => group.id === tool.groupId) ? 'group:' + tool.groupId : 'uncategorised'
-    return (activeEquipmentTab === 'all' || activeEquipmentTab === tabId) && tool.label.toLowerCase().includes(equipmentSearch.trim().toLowerCase())
+    return activeEquipmentTab !== 'custom' && (activeEquipmentTab === 'all' || activeEquipmentTab === tabId) && tool.label.toLowerCase().includes(equipmentSearch.trim().toLowerCase())
   }).sort((a,b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id))
 
   const [libraryOnline, setLibraryOnline] = useState(true)
@@ -155,6 +186,7 @@ function App() {
   const rotateRef = useRef(null)
   const panRef = useRef(null)
   const marqueeRef = useRef(null)
+  const customDrawRef = useRef(null)
   const bootedRef = useRef(false)
   const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
@@ -212,7 +244,7 @@ function App() {
 
   const checkpoint = () => setHistory((h) => [...h.slice(-19), {items,layerFolders}])
 
-  const avoidsZones = item => !zoneCollisionEnabled || (isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones))
+  const avoidsZones = item => !zoneCollisionEnabled || (isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones,space.partVisibility))
   const avoidsEquipment = (item, ignoredIds = []) => !equipmentCollisionEnabled || item.collisionEnabled===false || items.every(other => other.id === item.id || ignoredIds.includes(other.id) || other.collisionEnabled===false || !itemsCollide(item,other))
   const canPlace = (item, ignoredIds = []) => avoidsZones(item) && avoidsEquipment(item,ignoredIds)
   const canPlaceSet = candidates => {
@@ -263,7 +295,7 @@ function App() {
     const viewport = viewportRef.current
     const centre = position || (viewport ? viewportPointInStage(viewport.getBoundingClientRect().left + viewport.clientWidth / 2, viewport.getBoundingClientRect().top + viewport.clientHeight / 2) : { x: space.width / 2, y: space.depth / 2 })
     const item = { ...tool, id: nextIdRef.current++, assetId:tool.id,
-      widthMeters, depthMeters, showLabel: false, collisionEnabled: true,
+      widthMeters, depthMeters, showLabel: false, collisionEnabled: !belongsToStagingGroup(tool,groups),
       shapes: tool.shapes, collisionShapes: tool.collisionShapes || [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
       xMeters: Math.max(widthMeters / 2, Math.min(space.width - widthMeters / 2, centre.x)),
       yMeters: Math.max(depthMeters / 2, Math.min(space.depth - depthMeters / 2, centre.y)), rotation: 0,
@@ -324,6 +356,12 @@ function App() {
     if (event.button === 0 && !event.target.closest?.('.placed-item')) {
       event.preventDefault()
       event.currentTarget.setPointerCapture(event.pointerId)
+      if (customToolMode === 'staging') {
+        const start = viewportPointInStage(event.clientX, event.clientY)
+        customDrawRef.current = { start }
+        setCustomStagingPreview(customStagingBounds(start, start))
+        return
+      }
       const rect=viewportRef.current.getBoundingClientRect()
       const start={x:event.clientX-rect.left,y:event.clientY-rect.top}
       marqueeRef.current={start,worldStart:viewportPointInStage(event.clientX,event.clientY),additive:event.shiftKey?[...multiSelected,...(selected!==null?[selected]:[])]:[]}
@@ -351,6 +389,15 @@ function App() {
   }
 
   const finishViewportDrag = event => {
+    if (customDrawRef.current) {
+      const bounds = customStagingBounds(customDrawRef.current.start, viewportPointInStage(event.clientX, event.clientY))
+      const item = customStagingItem({ id: nextIdRef.current++, ...bounds, rotation: 0 })
+      checkpoint()
+      setItems(old => insertAtDefaultLayer(old,item,groups))
+      setSelected(item.id); setMultiSelected([])
+      setCustomStagingPreview(null); customDrawRef.current = null; setCustomToolMode(null)
+      setNotice('Custom staging added')
+    }
     if(marqueeRef.current) {
       const drag=marqueeRef.current
       const box=selectionBox(drag.worldStart,viewportPointInStage(event.clientX,event.clientY))
@@ -365,6 +412,10 @@ function App() {
   }
 
   const moveViewport = (event) => {
+    if (customDrawRef.current) {
+      setCustomStagingPreview(customStagingBounds(customDrawRef.current.start, viewportPointInStage(event.clientX, event.clientY)))
+      return
+    }
     if(marqueeRef.current) {
       const rect=viewportRef.current.getBoundingClientRect()
       setMarquee(selectionBox(marqueeRef.current.start,{x:event.clientX-rect.left,y:event.clientY-rect.top}))
@@ -405,15 +456,29 @@ function App() {
   const fitStage = () => fitToSpace(space)
 
   const updateSelected = (changes) => setItems((old) => old.map((item) => item.id === selected ? { ...item, ...changes } : item))
+  const updateCustomStaging = changes => setItems(old => old.map(item => item.id === selected ? customStagingItem({ ...item, ...changes }) : item))
+  const updateCustomText = changes => setItems(old => old.map(item => {
+    if (item.id !== selected) return item
+    const updated = { ...item, ...changes }
+    const measured = sizeText(updated)
+    return customTextItem({ ...updated, widthMeters: measured.width, depthMeters: measured.height })
+  }))
 
   const dropLibraryItem = (event) => {
     event.preventDefault()
+    const custom = event.dataTransfer.getData('application/x-stageplot-custom')
+    if (custom === 'text') return addCustomText(viewportPointInStage(event.clientX, event.clientY))
+    if (custom === 'staging') {
+      setSelectedEquipmentTab('custom'); setCustomToolMode('staging')
+      setNotice('Drag across the canvas to draw staging')
+      return
+    }
     const tool = library.find((candidate) => candidate.id === event.dataTransfer.getData('application/x-stageplot-item'))
     if (tool) addItem({ ...tool, type: `library:${tool.id}`, tone: 'custom' }, viewportPointInStage(event.clientX, event.clientY))
   }
 
   const save = () => {
-    const zoneConflicts=space ? items.filter(item=>!isItemInsideSpace(item,boundaryForSpace(space)) || !itemAvoidsSolidZones(item,space.zones)) : []
+    const zoneConflicts=space ? items.filter(item=>!isItemInsideSpace(item,boundaryForSpace(space)) || !itemAvoidsSolidZones(item,space.zones,space.partVisibility)) : []
     const equipmentConflicts=[]
     items.forEach((item,index)=>items.slice(index+1).forEach(other=>{if(item.collisionEnabled!==false && other.collisionEnabled!==false && itemsCollide(item,other))equipmentConflicts.push([item,other])}))
     if((zoneConflicts.length || equipmentConflicts.length) && !window.confirm(`This layout has ${zoneConflicts.length} item${zoneConflicts.length===1?'':'s'} outside the usable stage or intersecting a solid zone, and ${equipmentConflicts.length} equipment collision${equipmentConflicts.length===1?'':'s'}.\n\nA saved stageplot may not be true to real life. Save anyway?`))return
@@ -478,8 +543,8 @@ function App() {
     const targetFolder=folderForItem(layerFolders,targetId)
     setLayerFolders(old=>old.map(folder=>({...folder,itemIds:folder.id===targetFolder?.id?[...folder.itemIds.filter(itemId=>itemId!==id),id]:folder.itemIds.filter(itemId=>itemId!==id)})))
   }
-  const addLayerFolder=()=>{const name=window.prompt('Folder name','New folder')?.trim();if(!name)return;checkpoint();setLayerFolders(old=>[...old,{id:`folder-${Date.now()}-${nextFolderIdRef.current++}`,name,collapsed:false,visible:true,itemIds:[]}])}
-  const dropItemOnFolder=(itemId,folderId)=>{checkpoint();const result=putItemInFolder(items,layerFolders,itemId,folderId);setItems(result.items);setLayerFolders(result.folders)}
+  const addLayerFolder=()=>{checkpoint();const used=new Set(layerFolders.map(folder=>folder.name));let number=1,name='New folder';while(used.has(name)){number+=1;name=`New folder ${number}`}setLayerFolders(old=>[...old,{id:`folder-${Date.now()}-${nextFolderIdRef.current++}`,name,collapsed:false,visible:true,itemIds:[]}])}
+  const dropItemsOnFolder=(itemIds,folderId)=>{checkpoint();const result=putItemsInFolder(items,layerFolders,itemIds,folderId);setItems(result.items);setLayerFolders(result.folders)}
   const dropFolderOnTarget=(folderId,targetId)=>{checkpoint();setItems(moveFolderBlock(items,layerFolders,folderId,targetId))}
   const toggleItemVisibility=item=>{checkpoint();setItems(old=>old.map(candidate=>candidate.id===item.id?{...candidate,visible:candidate.visible===false}:candidate));if(selected===item.id){setSelected(null);setMultiSelected([])}}
   const toggleFolderVisibility=folder=>{checkpoint();setLayerFolders(old=>old.map(candidate=>candidate.id===folder.id?{...candidate,visible:candidate.visible===false}:candidate));if(folder.visible!==false){setSelected(null);setMultiSelected([])}}
@@ -502,6 +567,10 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = event => {
+      if (event.key === 'Escape' && customToolMode) {
+        customDrawRef.current = null; setCustomStagingPreview(null); setCustomToolMode(null)
+        return
+      }
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
       if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
       if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select') || event.target.isContentEditable)) return
@@ -516,7 +585,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [items, layerFolders, selected, multiSelected])
+  }, [items, layerFolders, selected, multiSelected, customToolMode])
 
   const undo = () => {
     if (!history.length) return
@@ -526,15 +595,46 @@ function App() {
     setSelected(null)
     setMultiSelected([])
   }
+
+  const viewportCentre = () => {
+    const viewport = viewportRef.current
+    return viewport ? viewportPointInStage(viewport.getBoundingClientRect().left + viewport.clientWidth / 2, viewport.getBoundingClientRect().top + viewport.clientHeight / 2) : { x: (space?.width || 0) / 2, y: (space?.depth || 0) / 2 }
+  }
+
+  const addCustomText = (position = viewportCentre()) => {
+    if (!space) return setStagePickerOpen(true)
+    checkpoint()
+    const measured = sizeText({ text: 'Custom Text', fontSize: .3, bold: false, italic: false, fill: '#25261f', lineSpacing: 1.2, textAlign: 'left' })
+    const item = customTextItem({ id: nextIdRef.current++, xMeters: position.x, yMeters: position.y, widthMeters: measured.width, depthMeters: measured.height, rotation: 0 })
+    setItems(old => [...old, item])
+    setSelected(item.id); setMultiSelected([])
+  }
+
+  const customStagingBounds = (start, point) => {
+    const widthMeters = Math.max(1, Math.round(Math.abs(point.x - start.x)))
+    const depthMeters = Math.max(1, Math.round(Math.abs(point.y - start.y)))
+    const left = point.x < start.x ? start.x - widthMeters : start.x
+    const top = point.y < start.y ? start.y - depthMeters : start.y
+    return { left, top, widthMeters, depthMeters, xMeters: left + widthMeters / 2, yMeters: top + depthMeters / 2 }
+  }
   const clearStage=()=>{
     if(!items.length)return
     if(!window.confirm('Clear this stage? This removes all placed equipment and layer folders, but keeps the selected stage.'))return
     checkpoint();setItems([]);setLayerFolders([]);setSelected(null);setMultiSelected([])
   }
 
+  const multiSelectedItems=items.filter(item=>multiSelected.includes(item.id))
+  const triState=getValue=>{const values=multiSelectedItems.map(getValue);return values.every(Boolean)?true:values.every(value=>!value)?false:'mixed'}
+  const updateMultiple=(updater)=>{checkpoint();const ids=new Set(multiSelected);setItems(old=>old.map(item=>ids.has(item.id)?updater(item):item))}
+  const sharedToggleableParts=multiSelectedItems.length&&multiSelectedItems.every(item=>item.assetId===multiSelectedItems[0].assetId)
+    ? (multiSelectedItems[0].shapes||[]).filter(shape=>shape.toggleable)
+    : []
+  const toggleableStageParts=space ? [...(space.zones||[]),...(space.textItems||[])].filter(part=>part.toggleable) : []
+  const finishFolderRename=(folder,name)=>{const trimmed=name.trim();setEditingFolderId(null);if(!trimmed||trimmed===folder.name)return;checkpoint();setLayerFolders(old=>old.map(candidate=>candidate.id===folder.id?{...candidate,name:trimmed}:candidate))}
+  const folderNameControl=folder=>editingFolderId===folder.id?<input className="folder-name-input" autoFocus value={folderNameDraft} onPointerDown={event=>event.stopPropagation()} onChange={event=>setFolderNameDraft(event.target.value)} onBlur={event=>finishFolderRename(folder,event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}if(event.key==='Escape'){event.preventDefault();event.currentTarget.value=folder.name;event.currentTarget.blur()}}}/>:<button className="folder-name" title="Click to select contents · Shift-click to add/remove · Double-click to rename" onClick={event=>selectLayerFolder(folder,event.shiftKey)} onDoubleClick={event=>{event.stopPropagation();setEditingFolderId(folder.id);setFolderNameDraft(folder.name)}}>{folder.name}</button>
   const layerTree=layerRows(items,layerFolders)
-  const layerRow=(item,nested=false)=><div key={item.id} className={`stage-layer ${nested?'nested ':''}${item.id===selected||multiSelected.includes(item.id)?'active':''}`} draggable onDragStart={event=>{event.stopPropagation();layerDragRef.current={type:'item',id:item.id};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-layer',String(item.id))}} onDragEnd={event=>{event.stopPropagation();layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')reorderLayer(source.id,item.id);else if(source?.type==='folder')dropFolderOnTarget(source.id,item.id);layerDragRef.current=null}}>
-    <span className="layer-grip" aria-hidden="true">&#9776;</span><button className="layer-name" onClick={event=>changeLayerSelection([item.id],event.shiftKey)}>{item.label}</button><small>{item.collisionEnabled===false?'collision off':item.showLabel?'label':''}</small><button className="layer-visibility" title={item.visible===false?'Show layer':'Hide layer'} aria-label={item.visible===false?`Show ${item.label}`:`Hide ${item.label}`} onClick={()=>toggleItemVisibility(item)}>{item.visible===false?'○':'●'}</button>
+  const layerRow=(item,nested=false)=><div key={item.id} className={`stage-layer ${nested?'nested ':''}${item.id===selected||multiSelected.includes(item.id)?'active':''}`} draggable onDragStart={event=>{event.stopPropagation();const ids=multiSelected.includes(item.id)?multiSelected:[item.id];layerDragRef.current={type:ids.length>1?'items':'item',id:item.id,ids};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-layer',String(item.id))}} onDragEnd={event=>{event.stopPropagation();layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')reorderLayer(source.id,item.id);else if(source?.type==='items'){const folder=folderForItem(layerFolders,item.id);if(folder)dropItemsOnFolder(source.ids,folder.id)}else if(source?.type==='folder')dropFolderOnTarget(source.id,item.id);layerDragRef.current=null}}>
+    <span className="layer-grip" aria-hidden="true">&#9776;</span><button className="layer-name" onClick={event=>changeLayerSelection([item.id],event.shiftKey)}>{item.label}</button><small>{item.collisionEnabled===false?'collision off':item.showLabel?'label':''}</small><button className="layer-visibility" title={item.visible===false?'Show layer':'Hide layer'} aria-label={item.visible===false?`Show ${item.label}`:`Hide ${item.label}`} onClick={()=>toggleItemVisibility(item)}><Icon name={item.visible===false?'eyeOff':'eye'} /></button>
   </div>
 
   return (
@@ -556,8 +656,8 @@ function App() {
               <section className="sidebar stage-layer-panel" aria-label="Placed item layers">
                 <p className="eyebrow">LAYERS <small>{items.length}</small></p>
                 <p className="helper">Drag layers to reorder or drop them onto folders. Top row is in front.</p>
-                <div className="stage-layer-list">{layerTree.map(row=>row.type==='item'?layerRow(row.item):<div className={`layer-folder ${row.items.length>0&&row.items.every(item=>item.id===selected||multiSelected.includes(item.id))?'selected':''}`} key={row.folder.id} draggable onDragStart={event=>{layerDragRef.current={type:'folder',id:row.folder.id};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-folder',row.folder.id)}} onDragEnd={()=>{layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')dropItemOnFolder(source.id,row.folder.id);else if(source?.type==='folder'&&source.id!==row.folder.id&&row.items.length)dropFolderOnTarget(source.id,row.items.at(-1).id);layerDragRef.current=null}}>
-                  <div className="layer-folder-header"><button className="folder-collapse" aria-label={row.folder.collapsed?'Expand folder':'Collapse folder'} onClick={()=>setLayerFolders(old=>old.map(folder=>folder.id===row.folder.id?{...folder,collapsed:!folder.collapsed}:folder))}>{row.folder.collapsed?'▸':'▾'}</button><span className="folder-icon">▰</span><button className="folder-name" title="Click to select contents · Shift-click to add/remove · Double-click to rename" onClick={event=>selectLayerFolder(row.folder,event.shiftKey)} onDoubleClick={()=>{const name=window.prompt('Folder name',row.folder.name)?.trim();if(name){checkpoint();setLayerFolders(old=>old.map(folder=>folder.id===row.folder.id?{...folder,name}:folder))}}}>{row.folder.name}</button><small>{row.items.length}</small><button className="layer-visibility" title={row.folder.visible===false?'Show folder':'Hide folder'} onClick={()=>toggleFolderVisibility(row.folder)}>{row.folder.visible===false?'○':'●'}</button><button className="folder-remove" title="Remove folder (keeps layers)" onClick={()=>{checkpoint();setLayerFolders(old=>old.filter(folder=>folder.id!==row.folder.id))}}>×</button></div>
+                <div className="stage-layer-list">{layerTree.map(row=>row.type==='item'?layerRow(row.item):<div className={`layer-folder ${row.items.length>0&&row.items.every(item=>item.id===selected||multiSelected.includes(item.id))?'selected':''}`} key={row.folder.id} draggable onDragStart={event=>{layerDragRef.current={type:'folder',id:row.folder.id};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-folder',row.folder.id)}} onDragEnd={()=>{layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item'||source?.type==='items')dropItemsOnFolder(source.ids||[source.id],row.folder.id);else if(source?.type==='folder'&&source.id!==row.folder.id&&row.items.length)dropFolderOnTarget(source.id,row.items.at(-1).id);layerDragRef.current=null}}>
+                  <div className="layer-folder-header"><button className="folder-collapse" aria-label={row.folder.collapsed?'Expand folder':'Collapse folder'} onClick={()=>setLayerFolders(old=>old.map(folder=>folder.id===row.folder.id?{...folder,collapsed:!folder.collapsed}:folder))}>{row.folder.collapsed?'▸':'▾'}</button><span className="folder-icon">▰</span>{folderNameControl(row.folder)}<small>{row.items.length}</small><button className="layer-visibility" title={row.folder.visible===false?'Show folder':'Hide folder'} aria-label={row.folder.visible===false?`Show ${row.folder.name}`:`Hide ${row.folder.name}`} onClick={()=>toggleFolderVisibility(row.folder)}><Icon name={row.folder.visible===false?'eyeOff':'eye'} /></button><button className="folder-remove" title="Remove folder (keeps layers)" onClick={()=>{checkpoint();setLayerFolders(old=>old.filter(folder=>folder.id!==row.folder.id))}}>×</button></div>
                   {!row.folder.collapsed&&<div className="layer-folder-children">{row.items.map(item=>layerRow(item,true))}</div>}
                 </div>)}</div>
                 {!items.length && <p className="helper">Add equipment to see its layers here.</p>}
@@ -577,16 +677,16 @@ function App() {
           </div>
           <header className="print-header">{project.trim() || 'Untitled stageplot'}</header>
 
-          <div className="stage-viewport" ref={viewportRef} style={{'--print-scale':printLayout.scale,'--print-x':`${printLayout.x}px`,'--print-y':`${printLayout.y}px`}} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;setMarquee(null) }}>
+          <div className={`stage-viewport ${customToolMode ? 'custom-tool-active' : ''}`} ref={viewportRef} style={{'--print-scale':printLayout.scale,'--print-x':`${printLayout.x}px`,'--print-y':`${printLayout.y}px`}} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;customDrawRef.current=null;setCustomStagingPreview(null);setMarquee(null) }}>
             {space ? <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
               <div className="stage-boundary-surface" style={{ clipPath: stageClipPath(space) }} />
-              {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => !zone.solid && !zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill || "#faf9f4"} fillOpacity={zone.fillOpacity ?? 1} stroke={zone.stroke || "#71851f"} strokeOpacity={zone.strokeOpacity ?? 1} strokeWidth={zone.strokeWidth ?? 2} />)}</svg>}
-              {((space.zones || []).some((zone) => zone.label) || space.textItems?.length > 0) && <svg className="stage-label-assets" viewBox={`0 0 ${space.width} ${space.depth}`}>{(space.zones || []).filter((zone) => zone.label).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zone.fill} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{(space.textItems || []).map((item) => <text key={item.id} x={item.x} y={item.y} fill={item.color} fillOpacity={item.opacity} stroke="none" fontSize={item.fontSize} textAnchor="middle" dominantBaseline="middle">{item.text}</text>)}</svg>}
+              {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}><ZonePatterns zones={space.zones||[]} prefix="stage-zone-pattern"/>{(space.zones || []).filter((zone) => !zone.solid && !zone.label && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-zone-pattern')} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-zone-pattern') || "#faf9f4"} fillOpacity={zone.fillOpacity ?? 1} stroke={zone.stroke || "#71851f"} strokeOpacity={zone.strokeOpacity ?? 1} strokeWidth={zone.strokeWidth ?? 2} />)}</svg>}
+              {((space.zones || []).some((zone) => zone.label) || space.textItems?.length > 0) && <svg className="stage-label-assets" viewBox={`0 0 ${space.width} ${space.depth}`}><ZonePatterns zones={(space.zones||[]).filter(zone=>zone.label)} prefix="stage-label-pattern"/>{(space.zones || []).filter((zone) => zone.label && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-label-pattern')} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{(space.textItems || []).filter(item=>!item.toggleable || space.partVisibility?.[item.id]!==false).map((item) => <text key={item.id} x={item.x} y={item.y} fill={item.color} fillOpacity={item.opacity} stroke="none" fontSize={item.fontSize} textAnchor="middle" dominantBaseline="middle">{item.text}</text>)}</svg>}
               <div className="stage-title"><span>UPSTAGE</span><b>{space.name}</b><span>{space.width} × {space.depth} m</span></div>
               {items.filter(item=>item.visible!==false && folderForItem(layerFolders,item.id)?.visible!==false).map((item) => (
                 <button
                   key={item.id}
-                  className={`placed-item ${selected === item.id || multiSelected.includes(item.id) ? 'selected' : ''}`}
+                  className={`placed-item ${selected === item.id || multiSelected.includes(item.id) ? 'selected' : ''} ${item.collisionEnabled===false?'collision-disabled':''}`}
                   style={{ left: `${(item.xMeters - item.widthMeters / 2) * 100}px`, top: `${(item.yMeters - item.depthMeters / 2) * 100}px`, width: `${item.widthMeters * 100}px`, height: `${item.depthMeters * 100}px`, transform: `rotate(${item.rotation || 0}deg)` }}
                   onPointerDown={(e) => startDrag(e, item)}
                   onDoubleClick={() => {
@@ -594,12 +694,13 @@ function App() {
                     if (label?.trim()) setItems((old) => old.map((x) => x.id === item.id ? { ...x, label: label.trim() } : x))
                   }}
                 >
-                  {item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
+                  {item.customType ? <span className="placed-artwork"><CustomItemArtwork item={item} /></span> : item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
                   {item.showLabel === true && <span className="placed-label">{item.label}</span>}
                   {selected === item.id && <span className="rotation-stem"><span className="rotation-handle" onPointerDown={(event) => startRotation(event, item)} /></span>}
                   {selected === item.id && (item.rotationParts || []).map(part=><span key={part.id} className="part-rotation-handle" title={`Rotate ${part.name}`} style={{left:`${part.pivotX/item.widthMeters*100}%`,top:`${part.pivotY/item.depthMeters*100}%`}} onPointerDown={event=>startPartRotation(event,item,part)} />)}
                 </button>
               ))}
+              {customStagingPreview && <div className="custom-staging-preview" style={{left:`${customStagingPreview.left*100}px`,top:`${customStagingPreview.top*100}px`,width:`${customStagingPreview.widthMeters*100}px`,height:`${customStagingPreview.depthMeters*100}px`}}><span>{customStagingPreview.widthMeters} × {customStagingPreview.depthMeters}m</span></div>}
               {!space.collisionBoundary && <div className="stage-front">AUDIENCE</div>}
             </div> : <div className="blank-stage-message">Choose a stage to start your plot.</div>}
             {marquee && <div className="selection-marquee" style={{left:marquee.x,top:marquee.y,width:marquee.right-marquee.x,height:marquee.bottom-marquee.y}} />}
@@ -619,10 +720,14 @@ function App() {
               {equipmentTabs.map(tab => <button key={tab.id} id={'equipment-tab-' + tab.id} role="tab" aria-selected={activeEquipmentTab === tab.id} aria-controls="equipment-tab-panel" tabIndex={activeEquipmentTab === tab.id ? 0 : -1} onClick={() => setSelectedEquipmentTab(tab.id)}>{tab.label}</button>)}
             </div>
             <div id="equipment-tab-panel" className="grouped-library" role="tabpanel" aria-labelledby={'equipment-tab-' + activeEquipmentTab} tabIndex={0}>
-              <div className="custom-tools">{visibleEquipment.map(tool => <button className="custom-tool" key={tool.id} draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-stageplot-item', tool.id) }} onClick={() => addItem({ ...tool, type: 'library:' + tool.id, tone: 'custom' })}>
+              {activeEquipmentTab === 'custom' ? <div className="custom-tools">
+                {['Custom staging - Prostage','Custom Text'].filter(label=>label.toLowerCase().includes(equipmentSearch.trim().toLowerCase())).map((label,index)=><button className="custom-tool" key={label} draggable onDragStart={event=>{event.dataTransfer.effectAllowed='copy';event.dataTransfer.setData('application/x-stageplot-custom',index===0?'staging':'text')}} onClick={()=>{if(index===0){if(!space)return setStagePickerOpen(true);setCustomToolMode('staging');setNotice('Drag across the canvas to draw staging')}else addCustomText()}}>
+                  <span>{index===0?<svg viewBox="0 0 100 70" aria-hidden="true"><rect x="5" y="8" width="90" height="54" fill="#d6d2c5" stroke="#25261f" strokeWidth="4"/><text x="50" y="36" textAnchor="middle" dominantBaseline="middle" fontSize="16" stroke="none" fill="#25261f">200mm</text></svg>:<svg viewBox="0 0 100 70" aria-hidden="true"><text x="50" y="38" textAnchor="middle" fontSize="34" fontWeight="700" stroke="none" fill="#25261f">T</text></svg>}</span><span className="equipment-tile-name">{label}</span>
+                </button>)}
+              </div> : <div className="custom-tools">{visibleEquipment.map(tool => <button className="custom-tool" key={tool.id} draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-stageplot-item', tool.id) }} onClick={() => addItem({ ...tool, type: 'library:' + tool.id, tone: 'custom' })}>
                 <span><VectorArtwork shapes={tool.shapes} width={tool.dimensions.widthMeters} depth={tool.dimensions.depthMeters} /></span><span className="equipment-tile-name">{tool.label}</span>
-              </button>)}</div>
-              {!visibleEquipment.length && <p className="helper" role="status">{equipmentSearch.trim() ? 'No equipment matches your search in this tab.' : activeEquipmentTab !== 'all' ? 'No equipment in this group.' : libraryOnline ? 'No equipment published yet.' : 'Equipment library unavailable.'}</p>}
+              </button>)}</div>}
+              {activeEquipmentTab !== 'custom' && !visibleEquipment.length && <p className="helper" role="status">{equipmentSearch.trim() ? 'No equipment matches your search in this tab.' : activeEquipmentTab !== 'all' ? 'No equipment in this group.' : libraryOnline ? 'No equipment published yet.' : 'Equipment library unavailable.'}</p>}
             </div>
           </section>
             </div>
@@ -633,7 +738,33 @@ function App() {
 
         <aside className="inspector">
           <p className="eyebrow">INSPECTOR</p>
-          <div className="inspector-fields">{selectedItem ? <>
+          <div className="inspector-fields">{selectedItem ? selectedItem.customType === 'staging' ? <>
+            <label className="field">NAME<input value={selectedItem.label} onChange={event=>updateCustomStaging({label:event.target.value})}/></label>
+            <div className="inspector-grid">
+              <label className="field">WIDTH (m)<input type="number" min="1" step="1" value={selectedItem.widthMeters} onChange={event=>updateCustomStaging({widthMeters:+event.target.value})}/></label>
+              <label className="field">DEPTH (m)<input type="number" min="1" step="1" value={selectedItem.depthMeters} onChange={event=>updateCustomStaging({depthMeters:+event.target.value})}/></label>
+            </div>
+            <label className="field">HEIGHT (mm)<input type="number" min="0" step="1" value={selectedItem.heightMm} onChange={event=>updateCustomStaging({heightMm:+event.target.value})}/></label>
+            <label className="label-toggle"><input type="checkbox" checked={selectedItem.showHeight!==false} onChange={event=>updateCustomStaging({showHeight:event.target.checked})}/> Show height text</label>
+            <div className="inspector-grid colour-grid">
+              <label className="field">FILL<input type="color" value={selectedItem.fill} onChange={event=>updateCustomStaging({fill:event.target.value})}/></label>
+              <label className="field">FILL OPACITY<input type="number" min="0" max="100" step="1" value={Math.round(selectedItem.fillOpacity*100)} onChange={event=>updateCustomStaging({fillOpacity:+event.target.value/100})}/></label>
+              <label className="field">LINE<input type="color" value={selectedItem.line} onChange={event=>updateCustomStaging({line:event.target.value})}/></label>
+              <label className="field">LINE OPACITY<input type="number" min="0" max="100" step="1" value={Math.round(selectedItem.lineOpacity*100)} onChange={event=>updateCustomStaging({lineOpacity:+event.target.value/100})}/></label>
+              <label className="field">METRE LINES<input type="color" value={selectedItem.sublineColor} onChange={event=>updateCustomStaging({sublineColor:event.target.value})}/></label>
+              <label className="field">TEXT<input type="color" value={selectedItem.textColor} onChange={event=>updateCustomStaging({textColor:event.target.value})}/></label>
+            </div>
+            <label className="field">ROTATION<input type="number" step="1" value={selectedItem.rotation||0} onChange={event=>updateCustomStaging({rotation:+event.target.value})}/></label>
+            <button className="inspector-delete" onClick={removeSelected}><Icon name="trash"/> Delete item</button>
+          </> : selectedItem.customType === 'text' ? <>
+            <label className="field">TEXT<textarea rows="4" value={selectedItem.text} onChange={event=>updateCustomText({text:event.target.value})}/></label>
+            <label className="field">SIZE (cm)<input type="number" min="1" step="1" value={Math.round(selectedItem.fontSize*100)} onChange={event=>updateCustomText({fontSize:+event.target.value/100})}/></label>
+            <label className="label-toggle"><input type="checkbox" checked={selectedItem.bold===true} onChange={event=>updateCustomText({bold:event.target.checked})}/> Bold</label>
+            <label className="label-toggle"><input type="checkbox" checked={selectedItem.italic===true} onChange={event=>updateCustomText({italic:event.target.checked})}/> Italic</label>
+            <label className="field">COLOUR<input type="color" value={selectedItem.fill} onChange={event=>updateCustomText({fill:event.target.value})}/></label>
+            <label className="field">ROTATION<input type="number" step="1" value={selectedItem.rotation||0} onChange={event=>updateCustomText({rotation:+event.target.value})}/></label>
+            <button className="inspector-delete" onClick={removeSelected}><Icon name="trash"/> Delete item</button>
+          </> : <>
             <label className="field">NAME<input value={selectedItem.label} onChange={(e) => updateSelected({ label: e.target.value })} /></label>
             <div className="inspector-grid">
               <label className="field">X (m)<input type="number" step="0.1" value={selectedItem.xMeters.toFixed(2)} onChange={(e) => updateSelected({ xMeters: +e.target.value })} /></label>
@@ -648,8 +779,9 @@ function App() {
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.collisionEnabled !== false} onChange={event => { checkpoint(); updateSelected({ collisionEnabled: event.target.checked }) }} /> Equipment collision</label>
             <p className="inspector-hint">Turn this off to allow other equipment to overlap this item. Stage and solid-zone collision still applies.</p>
             <button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete item</button>
-          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Drag a selected item to move the selection.</p><button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
+          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Changes below apply to the entire selection.</p><section className="multi-item-settings"><h3>Common settings</h3><TriStateToggle value={triState(item=>item.showLabel===true)} label="Show label" onChange={value=>updateMultiple(item=>({...item,showLabel:value}))}/><TriStateToggle value={triState(item=>item.collisionEnabled!==false)} label="Equipment collision" description="Stage and solid-zone collision remain separate." onChange={value=>updateMultiple(item=>({...item,collisionEnabled:value}))}/><TriStateToggle value={triState(item=>item.visible!==false)} label="Visible on canvas" onChange={value=>updateMultiple(item=>({...item,visible:value}))}/></section>{sharedToggleableParts.length>0&&<section className="toggleable-parts"><h3>Toggleable parts</h3><p>Mixed values show an X. Clicking applies On to every selected item.</p><div className="toggleable-part-list">{sharedToggleableParts.map(shape=><TriStateToggle key={shape.id} value={triState(item=>item.partVisibility?.[shape.id]!==false)} label={shape.name||'Item part'} onChange={value=>updateMultiple(item=>({...item,partVisibility:{...item.partVisibility,[shape.id]:value}}))}/>)}</div></section>}<button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
             <p className="inspector-hint">{space ? space.name : 'No stage selected.'}{lockedStageId!==null && ' · Stage locked by this link'}</p>
+            {toggleableStageParts.length>0&&<section className="toggleable-parts"><h3>Toggleable stage parts</h3><p>Choose which optional parts appear in this project. Hiding a solid zone also disables its collision.</p><div className="toggleable-part-list">{toggleableStageParts.map(part=><label className="toggleable-part-option" key={part.id}><input type="checkbox" checked={space.partVisibility?.[part.id]!==false} onChange={event=>setSpace(current=>({...current,partVisibility:{...current.partVisibility,[part.id]:event.target.checked}}))}/><span>{part.name||'Stage part'}</span></label>)}</div></section>}
             <h3>Movement collision</h3>
             <label className="label-toggle"><input type="checkbox" checked={equipmentCollisionEnabled} onChange={event=>setEquipmentCollisionEnabled(event.target.checked)} /> Equipment collision</label>
             <label className="label-toggle"><input type="checkbox" checked={zoneCollisionEnabled} onChange={event=>setZoneCollisionEnabled(event.target.checked)} /> Stage and zone collision</label>

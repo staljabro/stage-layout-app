@@ -33,3 +33,9 @@ test('corner snapping finds the closest transformed points within 30 cm',()=>{
   assert.equal(nearestSnapOffset([snapping(1,1,1)],[snapping(2,2.31,1)],.3),null)
   assert.ok(nearestSnapOffset([snapping(1,1,1,90)],[snapping(2,1.25,1.75)],.3))
 })
+
+test('dense staging grids use the same nearest snap result',()=>{
+  const grid=(id,xMeters,yMeters,size)=>({id,xMeters,yMeters,widthMeters:size,depthMeters:size,snapPoints:Array.from({length:size+1},(_,y)=>Array.from({length:size+1},(_,x)=>({x,y}))).flat()})
+  const nearby=nearestSnapOffset([grid(1,0,0,20)],[grid(2,20.2,0,20)],.3)
+  assert.ok(nearby);assert.ok(Math.abs(nearby.dx-.2)<1e-9);assert.ok(Math.abs(nearby.dy)<1e-9)
+})
