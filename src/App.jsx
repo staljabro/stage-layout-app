@@ -249,27 +249,27 @@ function App() {
   const avoidsZones = item => !zoneCollisionEnabled || (isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones,space.partVisibility))
   const avoidsEquipment = (item, ignoredIds = []) => !equipmentCollisionEnabled || item.collisionEnabled===false || items.every(other => other.id === item.id || ignoredIds.includes(other.id) || other.collisionEnabled===false || !itemsCollide(item,other))
   const canPlace = (item, ignoredIds = []) => avoidsZones(item) && avoidsEquipment(item,ignoredIds)
-  const canPlaceSet = candidates => {
-    const movingIds=candidates.map(item=>item.id)
+  const canPlaceSet = (candidates, ignoredIds = []) => {
+    const movingIds=[...candidates.map(item=>item.id),...ignoredIds]
     return candidates.every(item=>canPlace(item,movingIds))
       && (!equipmentCollisionEnabled || candidates.every((item,index)=>item.collisionEnabled===false || candidates.slice(index+1).every(other=>other.collisionEnabled===false || !itemsCollide(item,other))))
   }
   const translateItems = (source,dx,dy) => source.map(item=>({...item,xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}))
-  const advanceUntilCollision = (source,dx,dy) => {
+  const advanceUntilCollision = (source,dx,dy,ignoredIds=[]) => {
     const destination=translateItems(source,dx,dy)
-    if(canPlaceSet(destination))return destination
-    if(!canPlaceSet(source))return source
+    if(canPlaceSet(destination,ignoredIds))return destination
+    if(!canPlaceSet(source,ignoredIds))return source
     let low=0,high=1
-    for(let step=0;step<14;step+=1){const middle=(low+high)/2;if(canPlaceSet(translateItems(source,dx*middle,dy*middle)))low=middle;else high=middle}
+    for(let step=0;step<14;step+=1){const middle=(low+high)/2;if(canPlaceSet(translateItems(source,dx*middle,dy*middle),ignoredIds))low=middle;else high=middle}
     return translateItems(source,dx*low,dy*low)
   }
-  const constrainDrag = (source,target) => {
+  const constrainDrag = (source,target,ignoredIds=[]) => {
     const requested={x:target[0].xMeters-source[0].xMeters,y:target[0].yMeters-source[0].yMeters}
-    const direct=advanceUntilCollision(source,requested.x,requested.y)
+    const direct=advanceUntilCollision(source,requested.x,requested.y,ignoredIds)
     const remaining={x:target[0].xMeters-direct[0].xMeters,y:target[0].yMeters-direct[0].yMeters}
     const slide=(first,second)=>{
-      let result=advanceUntilCollision(direct,first==='x'?remaining.x:0,first==='y'?remaining.y:0)
-      result=advanceUntilCollision(result,second==='x'?target[0].xMeters-result[0].xMeters:0,second==='y'?target[0].yMeters-result[0].yMeters:0)
+      let result=advanceUntilCollision(direct,first==='x'?remaining.x:0,first==='y'?remaining.y:0,ignoredIds)
+      result=advanceUntilCollision(result,second==='x'?target[0].xMeters-result[0].xMeters:0,second==='y'?target[0].yMeters-result[0].yMeters:0,ignoredIds)
       return result
     }
     const xThenY=slide('x','y'),yThenX=slide('y','x')
@@ -277,10 +277,10 @@ function App() {
     const constrained=error(xThenY)<=error(yThenX)?xThenY:yThenX
     if(!snappingEnabled)return constrained
     const movingIds=new Set(constrained.map(item=>item.id))
-    const snap=nearestSnapOffset(constrained,items.filter(item=>!movingIds.has(item.id)),.3)
+    const ignored=new Set(ignoredIds),snap=nearestSnapOffset(constrained,items.filter(item=>!movingIds.has(item.id)&&!ignored.has(item.id)),.3)
     if(!snap)return constrained
     const snapped=translateItems(constrained,snap.dx,snap.dy)
-    return canPlaceSet(snapped)?snapped:constrained
+    return canPlaceSet(snapped,ignoredIds)?snapped:constrained
   }
 
   const viewportPointInStage = (clientX, clientY) => {
@@ -317,6 +317,18 @@ function App() {
     }
     event.currentTarget.setPointerCapture(event.pointerId)
     checkpoint()
+    if(event.altKey){
+      event.preventDefault()
+      const sourceIds=multiSelected.includes(item.id)?multiSelected:[item.id]
+      const sourceItems=items.filter(candidate=>sourceIds.includes(candidate.id))
+      const copies=sourceItems.map(source=>({...structuredClone(source),id:nextIdRef.current++}))
+      const copyIds=copies.map(copy=>copy.id)
+      setItems(old=>[...old,...copies])
+      setLayerFolders(old=>old.map(folder=>({...folder,itemIds:[...folder.itemIds,...copies.filter((_,index)=>folder.itemIds.includes(sourceItems[index].id)).map(copy=>copy.id)]})))
+      setSelected(copyIds.length===1?copyIds[0]:null);setMultiSelected(copyIds.length>1?copyIds:[])
+      dragRef.current={members:copies,currentMembers:copies,startX:event.clientX,startY:event.clientY,ignoredIds:sourceIds}
+      return
+    }
     if (multiSelected.includes(item.id)) {
       const members=items.filter(member=>multiSelected.includes(member.id)).map(member=>({...member}))
       dragRef.current = { members, currentMembers:members, startX: event.clientX, startY: event.clientY }
@@ -347,14 +359,15 @@ function App() {
     if (current.members) {
       const dx = (event.clientX-current.startX)/(100*zoom), dy = (event.clientY-current.startY)/(100*zoom)
       const target = current.members.map(item=>({...item,xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}))
-      const candidates=constrainDrag(current.currentMembers,target)
+      const candidates=constrainDrag(current.currentMembers,target,current.ignoredIds||[])
       current.currentMembers=candidates
+      if(current.ignoredIds?.length){const sources=items.filter(item=>current.ignoredIds.includes(item.id));if(candidates.every(candidate=>sources.every(source=>candidate.collisionEnabled===false||source.collisionEnabled===false||!itemsCollide(candidate,source))))current.ignoredIds=[]}
       const moved=new Map(candidates.map(item=>[item.id,item]))
       setItems(old=>old.map(item=>moved.get(item.id)||item))
       return
     }
     const target = [{ ...current.item, xMeters: current.xMeters + (event.clientX - current.startX) / (100 * zoom), yMeters: current.yMeters + (event.clientY - current.startY) / (100 * zoom) }]
-    const [candidate]=constrainDrag([current.currentItem],target)
+    const [candidate]=constrainDrag([current.currentItem],target,current.ignoredIds||[])
     current.currentItem=candidate
     setItems((old) => old.map((item) => item.id === current.id ? candidate : item))
   }

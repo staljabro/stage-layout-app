@@ -25,7 +25,7 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Show or hide artwork parts marked toggleable in Shape Studio.
 - Show or hide toggleable stage zones and text per project. Hiding a solid zone also disables its collision.
 - Marquee-select objects or Shift-click layers for additive selection.
-- Shift-click items directly on the canvas for additive selection, and copy/paste complete selections with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`.
+- Shift-click items directly on the canvas for additive selection, copy/paste complete selections with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`, or hold Alt while dragging to duplicate and position them in one action.
 - Organise the draw stack with collapsible, reorderable layer folders.
 - Hide individual layers or folders without changing their physical collision behaviour.
 - Automatically place equipment in the `Staging` group and custom staging behind other layers, with equipment collision off by default.
@@ -82,6 +82,7 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Drag the lower handle to rotate an item. Additional handles control articulated parts.
 - Press **Delete** or **Backspace** to remove the current selection.
 - Press **Ctrl/Cmd+C** and **Ctrl/Cmd+V** to copy and paste selected items. Copies retain library references, custom-item definitions, controls, visibility and folder membership.
+- Hold **Alt** while beginning a drag to duplicate the clicked item, or the complete selection when dragging a selected item.
 - Press **Escape** to cancel an active custom-staging drawing operation.
 
 ### Layers and folders
@@ -126,6 +127,16 @@ Use **Refresh items** beside the canvas dimensions to reload the latest artwork,
 Use **New item** to choose equipment or stage mode. The right inspector shows canvas settings when nothing is selected and selected-layer properties otherwise.
 
 Shift-click equipment layers or stage assets on the canvas or in their layer list for additive selection. **Ctrl/Cmd+C** copies the complete selected objects and **Ctrl/Cmd+V** pastes independent duplicates with geometry, styling, collision flags, toggle settings, group relationships and library-building metadata intact.
+
+Hold **Alt** while dragging an equipment layer or stage asset to create the same complete duplicate and immediately position it. Alt-dragging one member of a selected set duplicates the whole selection. The main stage boundary itself is not duplicated because a stage document has only one primary boundary.
+
+In stage mode, press **M** to activate the dedicated Move tool. Node, curve, crop, resize and canvas-size handles are temporarily suppressed, and the visible topmost asset under the pointer is dragged as one object. This is especially useful for small assets on large stages. Press **Escape** or click **Move (M)** again to return to normal geometry editing.
+
+The stage inspector is contextual: stage name, canvas dimensions and canvas-resize settings appear only when nothing is selected. A selected zone instead shows its own geometry and appearance controls. Each zone can use either its curve-aware **Top-left extremity** or **Bounds centre** as a positioning anchor; enter exact X/Y coordinates in metres to translate the complete zone without reshaping it. The inspector also reports the zone’s overall bounds width and depth, and a blue crosshair identifies the active anchor on the canvas.
+
+Use **Add dimension line** for Studio-only measurements. A dimension has an exact anchor X/Y position, length and rotation; its line extends from the anchor and rotates around that point. Dimension lines show metre labels and endpoint ticks, can be locked, layered, copied, Alt-dragged and moved with the Move tool, but are stored only in the stage’s editor data and never render in Stageplot.
+
+In stage mode, **Delete** or **Backspace** removes selected zones, text, dimensions or background-image layers. When a boundary node is selected, it removes that node instead; closed boundaries retain a minimum of three nodes.
 
 For a boolean subtraction, arrange the target below the cutter and select exactly those two equipment layers. Choose **Cut upper layer from lower layer** to consume the cutter, or **Cut and retain upper layer** to keep it. Closed primitives and vectors are supported. Curved cut boundaries are fitted back into editable Bezier segments, while genuine straight edges and hard corners remain straight. If subtraction separates the target, Studio creates multiple result layers. A fully enclosed cut that would require a vector hole is rejected because the current editable-vector model supports one outline per layer.
 
