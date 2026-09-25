@@ -15,10 +15,10 @@ test('finishing a point-by-point vector preserves positions and normalizes dimen
   });
   assert.ok(!vectorPath(result).includes('Z'));
 });
-test('closing needs three points and generates a filled collision perimeter', () => {
+test('closing needs three points and generates a filled vector without enabling collision', () => {
   const closed=finishDrawnVector(draft,true);
   assert.equal(closed.open,false);
-  assert.equal(closed.collision,true);
+  assert.equal(closed.collision,false);
   assert.equal(closed.fill,'#e9f5bc');
   assert.ok(vectorPath(closed).endsWith('Z'));
   const single=finishDrawnVector({...draft,nodes:[draft.nodes[0]]},true);

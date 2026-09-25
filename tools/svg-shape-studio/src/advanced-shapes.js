@@ -13,6 +13,7 @@ export function removeCustomShapeMembership(preset) {
 export function instantiateAdvancedShape(preset, canvas, firstId, groupId) {
   const layers = preset.editor?.layers;
   if (!layers?.length) throw new Error('This preset has no editable artwork');
+  const withoutCollision = layer => ({ ...structuredClone(layer), collision: layer.collisionOnly === true, ...(layer.children ? { children: layer.children.map(withoutCollision) } : {}) });
   const x = (canvas.width - preset.dimensions.widthMeters) / 2;
   const y = (canvas.depth - preset.dimensions.depthMeters) / 2;
   if (preset.editor.placementMode === 'single') {
@@ -20,14 +21,14 @@ export function instantiateAdvancedShape(preset, canvas, firstId, groupId) {
       id: firstId, name: preset.label, type: 'compound', x, y,
       width: preset.dimensions.widthMeters, height: preset.dimensions.depthMeters,
       artworkWidth: preset.dimensions.widthMeters, artworkHeight: preset.dimensions.depthMeters,
-      rotation: 0, collision: false, children: structuredClone(layers),
+      rotation: 0, collision: false, children: layers.map(withoutCollision),
     }];
   }
-  return structuredClone(layers).map((layer, index) => ({
-    ...layer,
+  return layers.map((source, index) => ({
+    ...withoutCollision(source),
     id: firstId + index,
-    x: layer.x + x,
-    y: layer.y + y,
+    x: source.x + x,
+    y: source.y + y,
     editorGroupId: groupId,
     editorGroupName: preset.label,
   }));

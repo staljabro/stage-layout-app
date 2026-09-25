@@ -25,10 +25,12 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Show or hide artwork parts marked toggleable in Shape Studio.
 - Show or hide toggleable stage zones and text per project. Hiding a solid zone also disables its collision.
 - Marquee-select objects or Shift-click layers for additive selection.
+- Shift-click items directly on the canvas for additive selection, and copy/paste complete selections with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`.
 - Organise the draw stack with collapsible, reorderable layer folders.
 - Hide individual layers or folders without changing their physical collision behaviour.
 - Automatically place equipment in the `Staging` group and custom staging behind other layers, with equipment collision off by default.
 - Recover unsaved work after an accidental refresh in the same browser tab.
+- Refresh placed library equipment from the canvas toolbar while preserving placement-specific settings and stable asset references.
 - Save reference-based `.stageplot` project files and open legacy `.stageplot.json`/JSON projects.
 - Warn before saving enabled collision objects that overlap, intersect solid zones or leave the usable stage.
 - Export the complete canvas, automatically fitted to one landscape A3 page with the project/show name as its header and a versioned creation footer.
@@ -40,8 +42,10 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Use standard 10 cm snapping, advanced 1 cm snapping or no grid snapping.
 - Build artwork from rectangles, rounded rectangles, circles, ellipses, triangles, lines, text, tripods, arcs, polygons, trapezoids, chairs and custom vectors.
 - Convert basic shapes into editable vector paths.
+- Boolean-cut one closed layer from another, either consuming or retaining the upper cutter; the lower result becomes editable vector geometry and split results become separate layers.
+- Add dedicated light-grey collision shapes as editable vector layers. They always contribute collision geometry but are omitted from published equipment artwork and Stageplot rendering.
 - Group layers, draw open or closed paths and configure Point on Arc, Smooth and Bezier curves.
-- Mark exact layers as physical collision geometry.
+- Mark only the required layers as physical collision geometry. All newly added layers default to collision off, and multi-selections or groups expose a tri-state control for changing collision together.
 - Mark layers as toggleable so each Stageplot placement can show or hide them.
 - Enable optional four-corner Stageplot snapping for rectangular equipment such as stage decks.
 - Add independent rotation parts with configurable pivots and angle limits.
@@ -73,9 +77,11 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Scroll to zoom toward the pointer.
 - Middle-drag to pan.
 - Left-drag empty canvas to select fully enclosed equipment.
+- Shift-click canvas items to add or remove them from the current selection.
 - Drag equipment to move it; collision-constrained movement stops at the nearest valid position and slides along obstacles.
 - Drag the lower handle to rotate an item. Additional handles control articulated parts.
 - Press **Delete** or **Backspace** to remove the current selection.
+- Press **Ctrl/Cmd+C** and **Ctrl/Cmd+V** to copy and paste selected items. Copies retain library references, custom-item definitions, controls, visibility and folder membership.
 - Press **Escape** to cancel an active custom-staging drawing operation.
 
 ### Layers and folders
@@ -113,11 +119,19 @@ These definitions are embedded in the `.stageplot` project because they do not h
 
 **New project** clears the selected stage and equipment. **Clear stage** removes equipment and folders but retains the selected stage. Browser session recovery is convenient but is not a replacement for downloading a project file.
 
+Use **Refresh items** beside the canvas dimensions to reload the latest artwork, dimensions, collision geometry, snapping points and articulated-part definitions for all placed library equipment. Placement transforms, custom labels, collision overrides and compatible part settings are retained; project-native custom staging and text are not altered.
+
 ## Shape Studio usage
 
 Use **New item** to choose equipment or stage mode. The right inspector shows canvas settings when nothing is selected and selected-layer properties otherwise.
 
-For equipment, keep the canvas tightly fitted to the physical item. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users.
+Shift-click equipment layers or stage assets on the canvas or in their layer list for additive selection. **Ctrl/Cmd+C** copies the complete selected objects and **Ctrl/Cmd+V** pastes independent duplicates with geometry, styling, collision flags, toggle settings, group relationships and library-building metadata intact.
+
+For a boolean subtraction, arrange the target below the cutter and select exactly those two equipment layers. Choose **Cut upper layer from lower layer** to consume the cutter, or **Cut and retain upper layer** to keep it. Closed primitives and vectors are supported. Curved cut boundaries are fitted back into editable Bezier segments, while genuine straight edges and hard corners remain straight. If subtraction separates the target, Studio creates multiple result layers. A fully enclosed cut that would require a vector hole is rejected because the current editable-vector model supports one outline per layer.
+
+Use **Collision shape** in Advanced Shapes for editable collision geometry that should not be visible to Stageplot users. It behaves like a normal closed vector in Studio, including node editing, curves, cuts, movement and layer ordering. Its light-grey Studio artwork is only an editing guide: the layer is excluded from equipment artwork but always saved in the item collision geometry.
+
+For equipment, keep the canvas tightly fitted to the physical item. New basic shapes, advanced presets and closed custom vectors all begin with **Physical collision shape** off, so enable collision only on the minimum layers that define the real footprint. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users.
 
 For stages, Shift-click a segment to insert a node and Ctrl-click a straight segment to convert it to a Point on Arc curve. Background images can extend beyond the stage and are editing references only. The main stage boundary clips normal stage assets in Stageplot; Label zones may render outside it, while visible Solid zones block equipment.
 

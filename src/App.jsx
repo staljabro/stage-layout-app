@@ -188,6 +188,7 @@ function App() {
   const panRef = useRef(null)
   const marqueeRef = useRef(null)
   const customDrawRef = useRef(null)
+  const clipboardRef = useRef(null)
   const bootedRef = useRef(false)
   const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
@@ -309,6 +310,11 @@ function App() {
 
   const startDrag = (event, item) => {
     if (event.button !== 0) return
+    event.stopPropagation()
+    if (event.shiftKey) {
+      changeLayerSelection([item.id],true)
+      return
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
     checkpoint()
     if (multiSelected.includes(item.id)) {
@@ -566,28 +572,6 @@ function App() {
     setMultiSelected([])
   }
 
-  useEffect(() => {
-    const onKeyDown = event => {
-      if (event.key === 'Escape' && customToolMode) {
-        customDrawRef.current = null; setCustomStagingPreview(null); setCustomToolMode(null)
-        return
-      }
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return
-      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
-      if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select') || event.target.isContentEditable)) return
-      const ids=multiSelected.length?multiSelected:[selected]
-      if (!items.some(item => ids.includes(item.id))) return
-      event.preventDefault()
-      setHistory(previous => [...previous.slice(-19), {items,layerFolders}])
-      setItems(previous => previous.filter(item => !ids.includes(item.id)))
-      setLayerFolders(previous=>previous.map(folder=>({...folder,itemIds:folder.itemIds.filter(id=>!ids.includes(id))})))
-      setSelected(null)
-      setMultiSelected([])
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [items, layerFolders, selected, multiSelected, customToolMode])
-
   const undo = () => {
     if (!history.length) return
     setItems(history[history.length - 1].items || history[history.length - 1])
@@ -596,6 +580,65 @@ function App() {
     setSelected(null)
     setMultiSelected([])
   }
+
+  const copySelected = () => {
+    const ids=multiSelected.length?multiSelected:selected!==null?[selected]:[]
+    if(!ids.length)return
+    clipboardRef.current={items:structuredClone(items.filter(item=>ids.includes(item.id))),folders:Object.fromEntries(ids.map(id=>[id,folderForItem(layerFolders,id)?.id||null])),pasteCount:0}
+    setNotice(`${ids.length} item${ids.length===1?'':'s'} copied`)
+  }
+
+  const pasteSelected = () => {
+    const clipboard=clipboardRef.current
+    if(!clipboard?.items.length)return
+    checkpoint();clipboard.pasteCount+=1
+    const offset=.2*clipboard.pasteCount
+    const copies=clipboard.items.map(item=>({...structuredClone(item),id:nextIdRef.current++,xMeters:item.xMeters+offset,yMeters:item.yMeters+offset}))
+    setItems(old=>[...old,...copies])
+    setLayerFolders(old=>old.map(folder=>({...folder,itemIds:[...folder.itemIds,...copies.filter((_,index)=>clipboard.folders[clipboard.items[index].id]===folder.id).map(item=>item.id)]})))
+    const ids=copies.map(item=>item.id);setSelected(ids.length===1?ids[0]:null);setMultiSelected(ids.length>1?ids:[])
+    setNotice(`${ids.length} item${ids.length===1?'':'s'} pasted`)
+  }
+
+  const refreshPlacedItems = async () => {
+    try {
+    const response=await fetch(LIBRARY_API,{cache:'no-store'})
+    if(!response.ok)throw new Error()
+    const latest=(await response.json()).filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
+    setLibrary(latest);setLibraryOnline(true)
+    const assets=new Map(latest.map(asset=>[asset.id,asset]));let refreshed=0,missing=0
+    checkpoint()
+    const next=items.map(item=>{
+      if(!item.assetId)return item
+      const asset=assets.get(item.assetId)
+      if(!asset){missing+=1;return item}
+      refreshed+=1
+      const validParts=new Set((asset.rotationParts||[]).map(part=>part.id))
+      const controls=Object.fromEntries(Object.entries(item.controls||{}).filter(([id])=>validParts.has(id)))
+      for(const part of asset.rotationParts||[])if(!controls[part.id])controls[part.id]={rotation:part.defaultRotation||0}
+      const partVisibility=Object.fromEntries((asset.shapes||[]).filter(shape=>shape.toggleable).map(shape=>[shape.id,item.partVisibility?.[shape.id]!==false]))
+      return {...item,...asset,id:item.id,assetId:item.assetId,type:`library:${item.assetId}`,widthMeters:asset.dimensions.widthMeters,depthMeters:asset.dimensions.depthMeters,xMeters:item.xMeters,yMeters:item.yMeters,rotation:item.rotation||0,label:item.label,showLabel:item.showLabel===true,collisionEnabled:item.collisionEnabled!==false,visible:item.visible!==false,controls,partVisibility}
+    })
+    setItems(next)
+    setNotice(`${refreshed} library item${refreshed===1?'':'s'} refreshed${missing?`; ${missing} unavailable unchanged`:''}`)
+    } catch {setLibraryOnline(false);setNotice('Equipment library could not be refreshed')}
+  }
+
+  useEffect(() => {
+    const onKeyDown = event => {
+      if (event.key === 'Escape' && customToolMode) {customDrawRef.current=null;setCustomStagingPreview(null);setCustomToolMode(null);return}
+      if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select') || event.target.isContentEditable)) return
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='c') {event.preventDefault();copySelected();return}
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='v') {event.preventDefault();pasteSelected();return}
+      if (event.key!=='Delete'&&event.key!=='Backspace')return
+      if(event.defaultPrevented||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return
+      const ids=multiSelected.length?multiSelected:[selected]
+      if(!items.some(item=>ids.includes(item.id)))return
+      event.preventDefault();setHistory(previous=>[...previous.slice(-19),{items,layerFolders}]);setItems(previous=>previous.filter(item=>!ids.includes(item.id)));setLayerFolders(previous=>previous.map(folder=>({...folder,itemIds:folder.itemIds.filter(id=>!ids.includes(id))})));setSelected(null);setMultiSelected([])
+    }
+    window.addEventListener('keydown',onKeyDown)
+    return()=>window.removeEventListener('keydown',onKeyDown)
+  })
 
   const viewportCentre = () => {
     const viewport = viewportRef.current
@@ -668,7 +711,7 @@ function App() {
 
         <section className="canvas-area">
           <div className="canvas-toolbar">
-            <div><span className="status-dot" /> Editing layout</div>
+            <div className="canvas-status"><span className="status-dot" /> Editing layout {space&&<><span className="canvas-size">{space.width} × {space.depth} m</span><button className="refresh-items" disabled={!items.some(item=>item.assetId)} onClick={refreshPlacedItems}>Refresh items</button></>}</div>
             <div className="history-actions">
               <span>{Math.round(zoom * 100)}%</span>
               <button className="fit-button" onClick={fitStage}>FIT</button>

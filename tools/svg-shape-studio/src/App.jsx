@@ -11,6 +11,7 @@ import { readSessionDraft, useSessionDraft } from "../../../src/session-draft.js
 import { selectionBox, enclosedItems, containsBounds } from "../../../src/marquee.js";
 import { stageControlPoints, nearestControl } from "./stage-controls.js";
 import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
+import { subtractLayers, vectorFromCutRing } from "./shape-cut.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
 import { StudioHelp } from "../../../src/help-dialog.jsx";
 import { APP_VERSION } from "../../../src/version.js";
@@ -21,6 +22,12 @@ const LIBRARY_API = `${API_BASE}/items`;
 const STAGES_API = `${API_BASE}/stages`;
 const GROUPS_API = `${API_BASE}/groups`;
 const MeasurementUnit = createContext("cm");
+
+function MultiCollisionControl({ layers, onChange }) {
+  const enabled=layers.filter(layer=>layer.collision===true).length;
+  const value=enabled===layers.length?true:enabled===0?false:"mixed";
+  return <button type="button" className="studio-tri-state" role="checkbox" aria-checked={value==="mixed"?"mixed":value} onClick={()=>onChange(value!==true)}><span className={`studio-tri-box ${value==="mixed"?"mixed":value?"checked":""}`}>{value==="mixed"?"×":value?"✓":""}</span><span><b>Physical collision shape</b><small>{value==="mixed"?"Mixed values — click to enable collision for every selected layer.":value?"All selected layers contribute to collision.":"Selected layers do not contribute to collision."}</small></span></button>;
+}
 
 const roundDimension = value => Number(value.toFixed(2));
 function useDimensionState(initialValue) {
@@ -98,6 +105,7 @@ const ADVANCED_PALETTE = [
   { type: "arc", label: "Arc", glyph: "\u2312" },
   { type: "vector", label: "Vector", glyph: "\u25c7" },
   { type: "drawVector", label: "Custom vector", glyph: "✎" },
+  { type: "collisionVector", label: "Collision shape", glyph: "◇" },
   { type: "trapezoid", label: "Trapezoid", glyph: "▱" },
   { type: "polygon", label: "Polygon", glyph: "⬠" },
 ];
@@ -105,6 +113,7 @@ const ADVANCED_PALETTE = [
 const DEFAULTS = {
   text: { width: .4, height: .2, text: "Text", fontSize: .2, bold: false, italic: false, textAlign: "left", lineSpacing: 1.2 },
   vector: { width: .6, height: .4 },
+  collisionVector: { width: .6, height: .4 },
   rect: { width: 0.6, height: 0.4 },
   roundRect: { width: 0.6, height: 0.4 },
   circle: { width: 0.4, height: 0.4 },
@@ -501,8 +510,8 @@ function Shape({
         vectorEffect: "non-scaling-stroke",
       }
     : {
-        fill: item.fill,
-        stroke: item.stroke,
+        fill: item.collisionOnly ? "#d7d9d6" : item.fill,
+        stroke: item.collisionOnly ? "#777b77" : item.stroke,
         strokeWidth: item.strokeWidth,
         vectorEffect: "non-scaling-stroke",
       };
@@ -699,7 +708,7 @@ function svgElement(item) {
       : { x: item.width / 2, y: item.height / 2 };
   const transform = `transform="translate(${item.x} ${item.y}) rotate(${item.rotation} ${pivot.x} ${pivot.y})"`;
   let node;
-  if (item.type === "compound") node = `<g transform="scale(${item.width / item.artworkWidth} ${item.height / item.artworkHeight})">${item.children.map(svgElement).join("\n")}</g>`;
+  if (item.type === "compound") node = `<g transform="scale(${item.width / item.artworkWidth} ${item.height / item.artworkHeight})">${item.children.filter(child=>!child.collisionOnly).map(svgElement).join("\n")}</g>`;
   else if (item.type === "path") node = `<path d="${item.d}" ${attrs} />`;
   else if (item.type === "text") node = textSvg(item);
   else if (item.type === "vector") node = `<path d="${vectorPath(item)}" ${attrs} />`;
@@ -855,7 +864,7 @@ function App() {
   const [realWidth, setRealWidth] = useDimensionState(session.realWidth ?? 1);
   const [realDepth, setRealDepth] = useDimensionState(session.realDepth ?? 1);
   const [groupId, setGroupId] = useState(session.groupId ?? "");
-  const [items, setItems] = useDimensionState(session.items ?? []);
+  const [items, setItems] = useDimensionState((session.items ?? []).map(layer=>layer.collisionOnly?{...layer,collision:true}:layer));
   const [rotationParts, setRotationParts] = useState(session.rotationParts ?? []);
   const [cornerSnapping, setCornerSnapping] = useState(session.cornerSnapping ?? false);
   const [selectedId, setSelectedId] = useState(null);
@@ -929,6 +938,8 @@ function App() {
   const stageDragRef = useRef(null);
   const imageFileRef = useRef(null);
   const assetDragRef = useRef(null);
+  const clipboardRef = useRef(null);
+  const clipboardId = useRef(1);
   const projectSnapshot = JSON.stringify(documentMode === "item"
     ? {documentMode,shapeName,realWidth,realDepth,groupId,items,rotationParts,cornerSnapping,referenceImages,advancedShapeRole}
     : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,zones,textItems,referenceImages});
@@ -1004,15 +1015,15 @@ function App() {
 
   const svgMarkup = useMemo(
     () =>
-      `<svg viewBox="0 0 ${realWidth} ${realDepth}" xmlns="http://www.w3.org/2000/svg" aria-label="${shapeName}">\n${items.map(svgElement).join("\n")}\n</svg>`,
+      `<svg viewBox="0 0 ${realWidth} ${realDepth}" xmlns="http://www.w3.org/2000/svg" aria-label="${shapeName}">\n${items.filter(item=>!item.collisionOnly).map(svgElement).join("\n")}\n</svg>`,
     [items, shapeName, realWidth, realDepth],
   );
   const vectorShapes = useMemo(
     () =>
-      items.map(function toVectorShape({ id, name, collision, ...shape }) { return ({
+      items.filter(item=>!item.collisionOnly).map(function toVectorShape({ id, name, collision, collisionOnly, ...shape }) { return ({
         ...shape,
         ...(shape.type === "vector" ? {type:"path",d:vectorPath(shape)} : {}),
-        ...(shape.type === "compound" ? {children:shape.children.map(toVectorShape)} : {}),
+        ...(shape.type === "compound" ? {children:shape.children.filter(child=>!child.collisionOnly).map(toVectorShape)} : {}),
         id: String(id),
         name,
       }); }),
@@ -1151,7 +1162,7 @@ function App() {
     checkpoint();
     setItems((old) =>
       old.map((item) =>
-        item.id === selectedId ? resizeShape(item,changes) : item,
+        item.id === selectedId ? resizeShape(item,item.collisionOnly?{...changes,collision:true}:changes) : item,
       ),
     );
   };
@@ -1223,20 +1234,22 @@ function App() {
     const definition = [...PALETTE, ...ADVANCED_PALETTE].find(
       (x) => x.type === type,
     );
+    const collisionOnly=type === "collisionVector";
     const item = {
       id: nextId.current++,
-      type,
+      type: collisionOnly ? "vector" : type,
       name: definition.label,
       x: realWidth / 2 - size.width / 2,
       y: realDepth / 2 - size.height / 2,
       ...size,
-      ...(type === "vector" ? {nodes:defaultStageNodes(size.width,size.height)} : {}),
-      fill: "#e9f5bc",
-      stroke: "#25261f",
+      ...(["vector","collisionVector"].includes(type) ? {nodes:defaultStageNodes(size.width,size.height)} : {}),
+      ...(collisionOnly ? {collisionOnly:true} : {}),
+      fill: collisionOnly ? "#d7d9d6" : "#e9f5bc",
+      stroke: collisionOnly ? "#777b77" : "#25261f",
       strokeWidth: 2,
       rotation: 0,
       toggleable: false,
-      collision: type !== "line" && type !== "arc" && type !== "text",
+      collision: collisionOnly,
     };
     setItems((old) => [...old, type === "text" ? sizeText({...item, fill:"#25261f", stroke:"none", strokeWidth:0}) : item]);
     setSelectedId(item.id);
@@ -1257,6 +1270,12 @@ function App() {
       const members = items.filter(
         (candidate) => candidate.editorGroupId === item.editorGroupId,
       );
+      if (event.shiftKey) {
+        const current=[...new Set([...multiSelectedIds,...(selectedId?[selectedId]:[]),...selectedGroupItems.map(member=>member.id)])];
+        const memberIds=members.map(member=>member.id),removing=memberIds.every(id=>current.includes(id));
+        const next=removing?current.filter(id=>!memberIds.includes(id)):[...new Set([...current,...memberIds])];
+        setSelectedGroupId(null);setSelectedId(next.length===1?next[0]:null);setMultiSelectedIds(next.length>1?next:[]);dragRef.current=null;return;
+      }
       setSelectedGroupId(item.editorGroupId);
       setSelectedId(null);
       setMultiSelectedIds([]);
@@ -1283,6 +1302,9 @@ function App() {
           : [...current, item.id];
         setMultiSelectedIds(next.length > 1 ? next : []);
         setSelectedId(next.length === 1 ? next[0] : null);
+        setSelectedGroupId(null);
+        dragRef.current=null;
+        return;
       } else {
         setSelectedId(item.id);
         setMultiSelectedIds([]);
@@ -1300,6 +1322,12 @@ function App() {
   const selectLayer = (event, item) => {
     setSelectedReferenceId(null);
     if (item.editorGroupId) {
+      if(event.shiftKey){
+        const members=items.filter(candidate=>candidate.editorGroupId===item.editorGroupId).map(candidate=>candidate.id);
+        const current=[...new Set([...multiSelectedIds,...(selectedId?[selectedId]:[]),...selectedGroupItems.map(member=>member.id)])];
+        const removing=members.every(id=>current.includes(id)),next=removing?current.filter(id=>!members.includes(id)):[...new Set([...current,...members])];
+        setSelectedGroupId(null);setSelectedId(next.length===1?next[0]:null);setMultiSelectedIds(next.length>1?next:[]);return;
+      }
       setSelectedGroupId(item.editorGroupId);
       setSelectedId(null);
       setMultiSelectedIds([]);
@@ -1793,7 +1821,8 @@ function App() {
   };
   const startAssetMove = (event, asset, assetType) => {
     if (event.button !== 0) return;
-    if (asset.locked || event.ctrlKey || event.shiftKey) return;
+    if (asset.locked || event.ctrlKey) return;
+    if(event.shiftKey){event.preventDefault();event.stopPropagation();const current=selectedStageAssetIds,next=current.includes(asset.id)?current.filter(id=>id!==asset.id):[...current,asset.id];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageNode(null);return;}
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); checkpoint();
     const moveIds = selectedStageAssetIds.includes(asset.id) ? selectedStageAssetIds : [asset.id];
     const selectedAssets = [{id:"stage-boundary",assetType:"stage",nodes:stageNodes,locked:stageBoundaryLocked}, ...orderedAssets].filter(candidate => moveIds.includes(candidate.id) && !candidate.locked);
@@ -1870,6 +1899,31 @@ function App() {
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
   };
+  const copySelected = () => {
+    if(documentMode==="stage"){
+      const assets=orderedAssets.filter(asset=>selectedStageAssetIds.includes(asset.id));
+      if(!assets.length)return;
+      clipboardRef.current={mode:"stage",assets:structuredClone(assets),pasteCount:0};flash(`${assets.length} stage part${assets.length===1?"":"s"} copied`);return;
+    }
+    const ids=selectedGroupId?selectedGroupItems.map(item=>item.id):multiSelectedIds.length?multiSelectedIds:selectedId?[selectedId]:[];
+    if(!ids.length)return;
+    clipboardRef.current={mode:"item",items:structuredClone(items.filter(item=>ids.includes(item.id))),pasteCount:0};flash(`${ids.length} layer${ids.length===1?"":"s"} copied`);
+  };
+  const pasteSelected = () => {
+    const clipboard=clipboardRef.current;
+    if(!clipboard||clipboard.mode!==documentMode)return;
+    checkpoint();clipboard.pasteCount+=1;const offset=.1*clipboard.pasteCount;
+    if(documentMode==="item"){
+      const groupMap=new Map();
+      const copies=clipboard.items.map(item=>{let editorGroupId=item.editorGroupId;if(editorGroupId){if(!groupMap.has(editorGroupId))groupMap.set(editorGroupId,`group-${nextGroupId.current++}`);editorGroupId=groupMap.get(editorGroupId);}return {...structuredClone(item),id:nextId.current++,x:item.x+offset,y:item.y+offset,editorGroupId};});
+      setItems(old=>[...old,...copies]);const ids=copies.map(item=>item.id);setSelectedGroupId(null);setSelectedId(ids.length===1?ids[0]:null);setMultiSelectedIds(ids.length>1?ids:[]);flash(`${ids.length} layer${ids.length===1?"":"s"} pasted`);return;
+    }
+    const copies=clipboard.assets.map(asset=>{const id=`copy-${Date.now()}-${clipboardId.current++}`,copy={...structuredClone(asset),id,zOrder:orderedAssets.length+clipboardId.current};if(copy.assetType==="zone")copy.nodes=copy.nodes.map(node=>({...node,x:node.x+offset,y:node.y+offset}));else {copy.x+=offset;copy.y+=offset;}return copy;});
+    setZones(old=>[...old,...copies.filter(asset=>asset.assetType==="zone").map(({assetType,...asset})=>asset)]);
+    setTextItems(old=>[...old,...copies.filter(asset=>asset.assetType==="text").map(({assetType,...asset})=>asset)]);
+    setReferenceImages(old=>[...old,...copies.filter(asset=>asset.assetType==="image").map(({assetType,...asset})=>asset)]);
+    setSelectedStageAssetIds(copies.map(asset=>asset.id));setSelectedZoneId(null);setSelectedTextId(null);setSelectedReferenceId(null);flash(`${copies.length} stage part${copies.length===1?"":"s"} pasted`);
+  };
   const groupSelected = () => {
     const ids = [
       ...new Set([...multiSelectedIds, ...(selectedId ? [selectedId] : [])]),
@@ -1923,6 +1977,21 @@ function App() {
       return;
     }
     await persistEquipment(itemData, projectSnapshot);
+  };
+  const cutSelected = (retainCutter=false) => {
+    if(multiSelectedIds.length!==2)return;
+    const selectedLayers=items.filter(item=>multiSelectedIds.includes(item.id));
+    if(selectedLayers.length!==2)return;
+    const [bottom,cutter]=selectedLayers;
+    try {
+      const rings=subtractLayers(bottom,cutter);
+      checkpoint();
+      const results=rings.map((ring,index)=>vectorFromCutRing(bottom,ring,index===0?bottom.id:nextId.current++));
+      const selectedSet=new Set(retainCutter?[bottom.id]:[bottom.id,cutter.id]),insertAt=items.findIndex(item=>item.id===bottom.id);
+      const remaining=items.filter(item=>!selectedSet.has(item.id));remaining.splice(Math.max(0,insertAt),0,...results);setItems(remaining);
+      const ids=results.map(item=>item.id);setSelectedId(ids.length===1?ids[0]:null);setMultiSelectedIds(ids.length>1?ids:[]);setSelectedGroupId(null);setVectorNodeIndex(null);
+      flash(results.length?`Cut created ${results.length} editable vector${results.length===1?'':'s'}${retainCutter?' and retained the cutter':''}`:'The cutter removed the entire lower layer');
+    } catch(error){flash(error.message||'These layers could not be cut');}
   };
   const createRotationPart = () => {
     const ids = selectedGroupId ? selectedGroupItems.map(item=>item.id) : [...new Set([...multiSelectedIds,...(selectedId ? [selectedId] : [])])];
@@ -1997,7 +2066,7 @@ function App() {
     setGroupId(item.groupId || "");
     setRealWidth(item.dimensions.widthMeters);
     setRealDepth(item.dimensions.depthMeters);
-    setItems(item.editor?.layers || []);
+    setItems((item.editor?.layers || []).map(layer=>layer.collisionOnly?{...layer,collision:true}:layer));
     setRotationParts(item.rotationParts || []);
     setCornerSnapping(Boolean(item.snapPoints?.length));
     setReferenceImages(item.editor?.referenceImages || []);
@@ -2293,6 +2362,8 @@ function App() {
         undo();
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") { event.preventDefault();copySelected();return; }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") { event.preventDefault();pasteSelected();return; }
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
         remove();
@@ -2375,7 +2446,8 @@ function App() {
                     onDragStart={() => { assetDragRef.current = asset.id; }}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => { if (assetDragRef.current) reorderAsset(assetDragRef.current, asset.id); assetDragRef.current = null; }}
-                    onClick={() => {
+                    onClick={(event) => {
+                      if(event.shiftKey){const current=selectedStageAssetIds,next=current.includes(asset.id)?current.filter(id=>id!==asset.id):[...current,asset.id];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageNode(null);return;}
                       if (asset.assetType === "image") { setSelectedReferenceId(asset.id); setSelectedZoneId(null); setSelectedTextId(null); }
                       else if (asset.assetType === "text") { setSelectedTextId(asset.id); setSelectedZoneId(null); setSelectedReferenceId(null); }
                       else { setSelectedZoneId(asset.id); setSelectedTextId(null); setSelectedReferenceId(null); }
@@ -2481,7 +2553,7 @@ function App() {
                 {ADVANCED_PALETTE.map(tool => <button key={tool.type} onClick={()=>add(tool.type)}><b>{tool.glyph}</b><span>{tool.label}</span></button>)}
               </div>
               <p className="eyebrow advanced-title">CUSTOM SHAPES</p>
-              <div className="shape-grid custom-grid">{advancedPresets.map(preset=><button key={preset.id} title={preset.label} onClick={()=>addAdvancedPreset(preset)}><b><svg className="advanced-preset-preview" viewBox={`0 0 ${preset.dimensions.widthMeters} ${preset.dimensions.depthMeters}`}>{preset.editor.layers.map(layer=><Shape key={layer.id} item={layer}/>)}</svg></b><span>{preset.label}</span></button>)}</div>
+              <div className="shape-grid custom-grid">{advancedPresets.map(preset=><button key={preset.id} title={preset.label} onClick={()=>addAdvancedPreset(preset)}><b><svg className="advanced-preset-preview" viewBox={`0 0 ${preset.dimensions.widthMeters} ${preset.dimensions.depthMeters}`}>{preset.editor.layers.filter(layer=>!layer.collisionOnly).map(layer=><Shape key={layer.id} item={layer}/>)}</svg></b><span>{preset.label}</span></button>)}</div>
               {!advancedPresets.length && <p className="handle-help">Save artwork as a custom shape to reuse it here.</p>}
               <button className="group-button manage-custom-button" onClick={()=>setManageCustomOpen(true)}>Manage custom shapes</button>
               <button className="group-button" onClick={()=>{refreshLibrary();setManageGroupsOpen(true);}}>Manage equipment groups</button>
@@ -2993,7 +3065,7 @@ function App() {
                     ))}
                     {cornerSnapping && [{x:0,y:0},{x:realWidth,y:0},{x:realWidth,y:realDepth},{x:0,y:realDepth}].map((point,index)=><circle key={`snap-${index}`} className="snap-point-guide" cx={point.x} cy={point.y} r=".025" pointerEvents="none"><title>Stageplot snap point</title></circle>)}
                     {items
-                      .filter((item) => item.collision)
+                      .filter((item) => item.collision && !item.collisionOnly)
                       .map((item) => (
                         <CollisionGuide
                           key={`collision-${item.id}`}
@@ -3435,6 +3507,7 @@ function App() {
                 together. Hold Shift for 15-degree steps. Ungroup to edit
                 individual layers.
               </p>
+              <MultiCollisionControl layers={selectedGroupItems} onChange={value=>{checkpoint();const ids=new Set(selectedGroupItems.map(item=>item.id));setItems(old=>old.map(item=>ids.has(item.id)?{...item,collision:item.collisionOnly?true:value}:item));}} />
               <button className="ungroup" onClick={ungroup}>
                 Ungroup layers
               </button>
@@ -3452,6 +3525,9 @@ function App() {
               <button className="group-button" onClick={groupSelected}>
                 Group selected layers
               </button>
+              <button className="group-button" onClick={()=>cutSelected(false)}>Cut upper layer from lower layer</button>
+              <button className="group-button" onClick={()=>cutSelected(true)}>Cut and retain upper layer</button>
+              <MultiCollisionControl layers={items.filter(item=>multiSelectedIds.includes(item.id))} onChange={value=>{checkpoint();const ids=new Set(multiSelectedIds);setItems(old=>old.map(item=>ids.has(item.id)?{...item,collision:item.collisionOnly?true:value}:item));}} />
               <p className="footprint-help">
                 Hold Shift while clicking shapes or layer names to change the
                 selection.
@@ -3532,7 +3608,7 @@ function App() {
             </>
           ) : (
             <>
-              <p className="inspector-context">{selected.type === "compound" ? "Custom shape ? artwork is not editable" : "Selected vector layer"}</p>
+              <p className="inspector-context">{selected.collisionOnly ? "Collision-only vector layer" : selected.type === "compound" ? "Custom shape · artwork is not editable" : "Selected vector layer"}</p>
               <label className="field">
                 LAYER NAME
                 <input
@@ -3689,7 +3765,7 @@ function App() {
                   onChange={(e) => update({ rotation: +e.target.value })}
                 />
               </label>
-              {selected.type !== "compound" && selected.type !== "text" && <>
+              {selected.type !== "compound" && selected.type !== "text" && !selected.collisionOnly && <>
               <div className="field-row colors">
                 <label className="field">
                   FILL
@@ -3731,10 +3807,10 @@ function App() {
                 </span>
               </label>
               </>}
-              <label className="collision-toggle">
+              {selected.collisionOnly ? <div className="collision-toggle"><span><b>Collision shape</b><small>This editable layer always contributes collision geometry and is hidden from library and Stageplot artwork.</small></span></div> : <label className="collision-toggle">
                 <input type="checkbox" checked={selected.toggleable ?? false} onChange={(e)=>update({toggleable:e.target.checked})} />
                 <span><b>Toggleable in Stageplot</b><small>Adds a per-placement show/hide control for this item part.</small></span>
-              </label>
+              </label>}
               <div className="layer-actions">
                 <button onClick={() => reorder(-1)}>Send back</button>
                 <button onClick={() => reorder(1)}>Bring forward</button>

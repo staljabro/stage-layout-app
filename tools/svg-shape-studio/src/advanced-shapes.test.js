@@ -15,7 +15,7 @@ test('single-layer placement preserves artwork in one independent transformable 
   assert.equal(layer.id, 20);
   assert.deepEqual([layer.x, layer.y, layer.width, layer.height, layer.rotation], [1, 1, 2, 3, 0]);
   assert.equal(layer.editorGroupId, undefined);
-  assert.deepEqual(layer.children, preset.editor.layers);
+  assert.deepEqual(layer.children, preset.editor.layers.map(child=>({...child,collision:false})));
   layer.width = 4;
   layer.rotation = 90;
   assert.equal(layer.artworkWidth, 2);
@@ -42,7 +42,7 @@ test('saved artwork inserts centered with independent editable layers', () => {
   assert.deepEqual(first.map(layer => layer.id), [20, 21]);
   assert.deepEqual(first.map(layer => [layer.x, layer.y]), [[1.2, 1.4], [1.8, 1.2]]);
   assert.equal(first[0].rotation, 30);
-  assert.equal(first[0].collision, true);
+  assert.equal(first[0].collision, false);
   assert.equal(first[1].collision, false);
   assert.equal(first[1].fill, '#49352b');
   assert.ok(first.every(layer => layer.editorGroupId === 'first'));
@@ -51,6 +51,17 @@ test('saved artwork inserts centered with independent editable layers', () => {
   assert.equal(second[0].nodes[1].arcDepth, .3);
   assert.equal(preset.editor.layers[0].nodes[1].arcDepth, .3);
   assert.equal(first.length, 2);
+});
+
+test('collision-only vectors remain collision geometry when reused', () => {
+  const preset={label:'Collision preset',dimensions:{widthMeters:1,depthMeters:1},editor:{layers:[
+    {id:1,type:'vector',collisionOnly:true,collision:false,x:0,y:0,width:1,height:1,nodes:[{x:0,y:0},{x:1,y:0},{x:1,y:1}]},
+    {id:2,type:'rect',collision:true,x:0,y:0,width:1,height:1},
+  ]}};
+  const layers=instantiateAdvancedShape(preset,{width:2,depth:2},10,'group');
+  assert.equal(layers[0].collisionOnly,true);
+  assert.equal(layers[0].collision,true);
+  assert.equal(layers[1].collision,false);
 });
 
 test('person replacements keep stable slots and empty artwork is rejected', () => {
