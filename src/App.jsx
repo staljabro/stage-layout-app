@@ -11,6 +11,7 @@ import { collisionPolygons, isItemInsideSpace, itemsCollide, nearestSnapOffset, 
 import { projectFile, resolveProject, stageSpace } from './project-file.js'
 import { StageplotHelp } from './help-dialog.jsx'
 import { APP_VERSION } from './version.js'
+import { AppMark } from './app-mark.jsx'
 import { customStagingItem, customTextItem } from './custom-items.js'
 import { sizeText } from './text-layout.js'
 
@@ -640,7 +641,7 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">S</span><span>STAGEPLOT</span></div>
+        <div className="brand"><AppMark/><span className="brand-title"><b>STAGEPLOT</b><small>{APP_VERSION}</small></span></div>
         <input className="project-name" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
         <div className="top-actions">
           <button className="btn ghost" onClick={()=>setHelpOpen(true)}>Help</button>

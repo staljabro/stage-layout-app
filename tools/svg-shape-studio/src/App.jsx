@@ -13,6 +13,8 @@ import { stageControlPoints, nearestControl } from "./stage-controls.js";
 import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
 import { StudioHelp } from "../../../src/help-dialog.jsx";
+import { APP_VERSION } from "../../../src/version.js";
+import { AppMark } from "../../../src/app-mark.jsx";
 
 const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:8787/api" : "/api")).replace(/\/$/, "");
 const LIBRARY_API = `${API_BASE}/items`;
@@ -2305,9 +2307,9 @@ function App() {
     <div className="app">
       <header>
         <div className="brand">
-          <span>S</span>
+          <AppMark studio />
           <div>
-            SHAPE STUDIO<small>FOR STAGEPLOT</small>
+            SHAPE STUDIO<small>STAGEPLOT · {APP_VERSION}</small>
           </div>
         </div>
         <input

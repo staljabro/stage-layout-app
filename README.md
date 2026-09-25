@@ -8,7 +8,7 @@ Stage Layout App is a two-part React/Vite system for designing accurate top-down
 
 Both interfaces include a **Help** button with workflow-specific instructions.
 
-Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
+Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
 
 ## Main capabilities
 
@@ -17,15 +17,17 @@ Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing releas
 - Choose a saved custom stage or create a rectangular space.
 - Use stage-locked links such as `?stage=<stable-stage-id>` for client-specific workflows.
 - Click or drag real-scale vector equipment from a grouped library.
+- Use project-native custom text, or draw custom Prostage decks in whole-metre dimensions without adding them to the shared equipment library.
 - Move against and slide along accurate equipment, stage and solid-zone collision geometry.
 - Temporarily disable equipment collision, stage/zone collision or 30 cm corner snapping.
 - Disable equipment collision on an individual placement, such as a deck that must sit below other equipment.
 - Rotate whole items and independently configured articulated parts.
 - Show or hide artwork parts marked toggleable in Shape Studio.
+- Show or hide toggleable stage zones and text per project. Hiding a solid zone also disables its collision.
 - Marquee-select objects or Shift-click layers for additive selection.
 - Organise the draw stack with collapsible, reorderable layer folders.
 - Hide individual layers or folders without changing their physical collision behaviour.
-- Automatically place equipment in the `Staging` group behind other layers.
+- Automatically place equipment in the `Staging` group and custom staging behind other layers, with equipment collision off by default.
 - Recover unsaved work after an accidental refresh in the same browser tab.
 - Save reference-based `.stageplot` project files and open legacy `.stageplot.json`/JSON projects.
 - Warn before saving enabled collision objects that overlap, intersect solid zones or leave the usable stage.
@@ -45,6 +47,8 @@ Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing releas
 - Add independent rotation parts with configurable pivots and angle limits.
 - Build curved or angled stage boundaries by editing nodes and segment modes.
 - Add aesthetic, solid-collision and outside-stage label zones.
+- Give zones a single-colour fill or two-colour diagonal stripes with adjustable stripe width.
+- Mark stage zones and text as toggleable for per-project Stageplot visibility controls.
 - Add draggable stage text and multiple reorderable, lockable, crop-capable background images.
 - Save new assets, update stable asset IDs, save copies and maintain equipment groups.
 - Rename or delete library equipment and stages. Stage IDs remain stable across renames.
@@ -58,8 +62,9 @@ Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing releas
 4. Optionally configure corner snapping, toggleable artwork or additional rotation controls.
 5. Assign an equipment group, save the item and publish it to Stageplot.
 6. Create a stage boundary and any visual, solid or label zones, then save the stage.
-7. Open Stageplot, choose the stage and arrange equipment.
-8. Save the editable `.stageplot` project and export a PDF for distribution.
+7. Optionally mark stage zones or labels toggleable and configure striped zone fills.
+8. Open Stageplot, choose the stage and arrange equipment or project-native custom staging/text.
+9. Save the editable `.stageplot` project and export a PDF for distribution.
 
 ## Stageplot usage
 
@@ -71,12 +76,13 @@ Current release: **Version 0.1.1 (Alpha)**. Update the single user-facing releas
 - Drag equipment to move it; collision-constrained movement stops at the nearest valid position and slides along obstacles.
 - Drag the lower handle to rotate an item. Additional handles control articulated parts.
 - Press **Delete** or **Backspace** to remove the current selection.
+- Press **Escape** to cancel an active custom-staging drawing operation.
 
 ### Layers and folders
 
 The top Layers row renders in front. Drag layers to reorder them. Use **New folder** to create an organisational folder, then drag layers onto it. Children can be reordered inside the folder, and the complete folder can be moved through the stack.
 
-Folders are created immediately with an automatic name; double-click the name to rename it inline. Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Dragging any member of a multi-selection onto a folder moves the complete selection. Eye controls hide layers or folders from the canvas and PDF but deliberately retain collision.
+Folders are created immediately with an automatic name; double-click the name to rename it inline. Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Dragging any member of a multi-selection onto a folder moves the complete selection. Eye controls hide equipment layers or folders from the canvas and PDF but deliberately retain their equipment collision. Toggleable stage parts are controlled separately in the canvas inspector; hiding a solid stage zone also removes that zone’s collision.
 
 When multiple items are selected, the inspector exposes settings shared by the selection, including label display, equipment collision, visibility and compatible toggleable parts. A mixed checkbox displays an X; clicking it enables the setting for every selected item before normal on/off toggling resumes.
 
@@ -90,9 +96,20 @@ Global movement controls appear in the canvas inspector when nothing is selected
 
 Each selected placement also has an **Equipment collision** override. Turning it off allows intentional overlap with that item while keeping stage and zone collision active. Saving always validates the layout, but intentional overlaps involving a placement-level disabled item are ignored.
 
+Equipment added from the **Staging** group starts behind other layers with its placement collision disabled. This is also the default for custom Prostage decks, allowing equipment to sit on top of them without disabling global equipment collision.
+
+### Custom project items
+
+The **Custom** library tab contains items that belong to the current project rather than the shared equipment library:
+
+- **Custom staging - Prostage** activates a drawing tool. Drag across the canvas to create a rectangular deck whose width and depth round to whole metres. The inspector controls width, depth, reference height in millimetres, annotation visibility, fill, boundary, metre-grid and text colours, plus transparency. Metre lines form snap points at every grid intersection, and the deck enters at the bottom of the layer stack with collision disabled.
+- **Custom Text** can be clicked into the viewport centre or dragged to an exact position. Its text-sized bounds update with the content, size, bold and italic settings; colour and rotation are also editable.
+
+These definitions are embedded in the `.stageplot` project because they do not have shared-library asset IDs.
+
 ### Project files
 
-`.stageplot` files contain stable stage/equipment IDs, placement transforms, layer folders, visibility and control settings. They do not embed library artwork. Opening a project therefore uses the newest asset versions; missing assets are dropped safely.
+`.stageplot` files contain stable stage/equipment IDs, placement transforms, layer folders, visibility, stage-part visibility and control settings. They do not embed shared-library artwork. Opening a project therefore uses the newest asset versions; missing assets are dropped safely. Project-native custom staging and text carry only their compact definitions inside the file.
 
 **New project** clears the selected stage and equipment. **Clear stage** removes equipment and folders but retains the selected stage. Browser session recovery is convenient but is not a replacement for downloading a project file.
 
@@ -102,7 +119,9 @@ Use **New item** to choose equipment or stage mode. The right inspector shows ca
 
 For equipment, keep the canvas tightly fitted to the physical item. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users.
 
-For stages, Shift-click a segment to insert a node and Ctrl-click a straight segment to convert it to a Point on Arc curve. Background images can extend beyond the stage and are editing references only. The main stage boundary clips normal stage assets in Stageplot; Label zones may render outside it, while Solid zones block equipment.
+For stages, Shift-click a segment to insert a node and Ctrl-click a straight segment to convert it to a Point on Arc curve. Background images can extend beyond the stage and are editing references only. The main stage boundary clips normal stage assets in Stageplot; Label zones may render outside it, while visible Solid zones block equipment.
+
+Zones support single-colour and multicoloured diagonal-stripe fills. In multicoloured mode, set both colours and the stripe width; the existing fill transparency applies to the complete pattern. Zones and stage text can be marked **Toggleable in Stageplot**. Each client project then receives show/hide controls in the canvas inspector, and hiding a solid zone disables its collision for that project.
 
 The Library dialog opens saved equipment and stages for editing. Updating an asset retains its stable ID; saving as new creates a new ID. Renaming a stage does not break its stage-locked URL.
 
@@ -203,6 +222,12 @@ stage-library/
 ```
 
 A separate private Git repository is suitable for manual data backups. Do not routinely pull into the live data directory unless intentionally restoring a backup.
+
+## Branding and release metadata
+
+Stageplot and Shape Studio share a floor-plan icon. Studio adds an orange **S** badge so browser tabs remain distinguishable. Their SVG favicons live in `public/favicon.svg` and `tools/svg-shape-studio/public/favicon.svg`; the reusable header mark is `src/app-mark.jsx`.
+
+Change `APP_VERSION` in `src/version.js` for a user-facing release. That value is reused by both app headers, both help dialogs and Stageplot’s PDF footer.
 
 ## Security notes
 
