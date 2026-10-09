@@ -22,14 +22,15 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Temporarily disable equipment collision, stage/zone collision or 30 cm corner snapping.
 - Disable equipment collision on an individual placement, such as a deck that must sit below other equipment.
 - Rotate whole items and independently configured articulated parts.
-- Show or hide artwork parts marked toggleable in Shape Studio.
+- Show or hide named artwork groups and parts, including matching toggles across different selected equipment.
 - Show or hide toggleable stage zones and text per project. Hiding a solid zone also disables its collision.
 - Marquee-select objects or Shift-click layers for additive selection.
 - Shift-click items directly on the canvas for additive selection, copy/paste complete selections with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`, or hold Alt while dragging to duplicate and position them in one action.
 - Organise the draw stack with collapsible, reorderable layer folders.
 - Hide individual layers or folders without changing their physical collision behaviour.
 - Automatically place equipment in the `Staging` group and custom staging behind other layers, with equipment collision off by default.
-- Recover unsaved work after an accidental refresh in the same browser tab.
+- Track per-project stock allocation, allow external sourcing, and export equipment quantities as CSV or PDF.
+- Warn before closing or refreshing with unsaved changes, and recover work after an accidental refresh in the same browser tab.
 - Refresh placed library equipment from the canvas toolbar while preserving placement-specific settings and stable asset references.
 - Save reference-based `.stageplot` project files and open legacy `.stageplot.json`/JSON projects.
 - Warn before saving enabled collision objects that overlap, intersect solid zones or leave the usable stage.
@@ -52,7 +53,8 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Build curved or angled stage boundaries by editing nodes and segment modes.
 - Add aesthetic, solid-collision and outside-stage label zones.
 - Give zones a single-colour fill or two-colour diagonal stripes with adjustable stripe width.
-- Mark stage zones and text as toggleable for per-project Stageplot visibility controls.
+- Group stage zones and expose one Stageplot visibility toggle for the group, or mark zones and text individually toggleable.
+- Set optional stock quantities for equipment in the Library popup.
 - Add draggable stage text and multiple reorderable, lockable, crop-capable background images.
 - Save new assets, update stable asset IDs, save copies and maintain equipment groups.
 - Rename or delete library equipment and stages. Stage IDs remain stable across renames.
@@ -92,6 +94,12 @@ The top Layers row renders in front. Drag layers to reorder them. Use **New fold
 Folders are created immediately with an automatic name; double-click the name to rename it inline. Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Dragging any member of a multi-selection onto a folder moves the complete selection. Eye controls hide equipment layers or folders from the canvas and PDF but deliberately retain their equipment collision. Toggleable stage parts are controlled separately in the canvas inspector; hiding a solid stage zone also removes that zone’s collision.
 
 When multiple items are selected, the inspector exposes settings shared by the selection, including label display, equipment collision, visibility and compatible toggleable parts. A mixed checkbox displays an X; clicking it enables the setting for every selected item before normal on/off toggling resumes.
+
+Stock quantities are set in Shape Studio's **Library** popup; press Enter or leave the field to save the value. Leave the quantity blank for untracked stock, or enter a whole number including zero. Stageplot allocates stock to the earliest-added placements; layer reordering does not change the allocation. Hidden equipment still uses stock. When stock runs out, the library tile and overflow layers turn amber and remain available to add from external suppliers. Enable **Use external** in the placement inspector to exclude a placement from stock usage. Multi-selection also offers this control when every selected item has a stock quantity. Deleting placements or changing their source makes stock available to the next eligible placement. Stock is calculated within each project, not reserved across other clients' projects.
+
+On the canvas, hover and selection outlines are **orange for external equipment** and **blue for equipment with collision disabled**. External orange takes priority when both apply. These outlines do not appear in the canvas PDF.
+
+The **Equipment list** button shows quantities by equipment and source, with separate Stock and External rows. It includes hidden placements and custom staging (with dimensions), but excludes text annotations. Export a CSV or choose **Export PDF**, then **Save as PDF** in the browser print dialog. These exports do not save the editable project. Closing or refreshing Stageplot with unsaved project changes triggers the browser's standard warning; saving or opening a project clears it.
 
 ### Collision and snapping
 
@@ -140,13 +148,15 @@ In stage mode, **Delete** or **Backspace** removes selected zones, text, dimensi
 
 For a boolean subtraction, arrange the target below the cutter and select exactly those two equipment layers. Choose **Cut upper layer from lower layer** to consume the cutter, or **Cut and retain upper layer** to keep it. Closed primitives and vectors are supported. Curved cut boundaries are fitted back into editable Bezier segments, while genuine straight edges and hard corners remain straight. If subtraction separates the target, Studio creates multiple result layers. A fully enclosed cut that would require a vector hole is rejected because the current editable-vector model supports one outline per layer.
 
-Use **Collision shape** in Advanced Shapes for editable collision geometry that should not be visible to Stageplot users. It behaves like a normal closed vector in Studio, including node editing, curves, cuts, movement and layer ordering. Its light-grey Studio artwork is only an editing guide: the layer is excluded from equipment artwork but always saved in the item collision geometry.
+Use **Collision shape** in Advanced Shapes for editable collision geometry that should not be visible to Stageplot users. It behaves like a normal closed vector in Studio, including node editing, curves, cuts, movement and layer ordering. Its light-grey Studio artwork is shown at 50% opacity and is only an editing guide: the layer is excluded from equipment artwork but always saved in the item collision geometry.
 
-For equipment, keep the canvas tightly fitted to the physical item. New basic shapes, advanced presets and closed custom vectors all begin with **Physical collision shape** off, so enable collision only on the minimum layers that define the real footprint. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users.
+For equipment, keep the canvas tightly fitted to the physical item. New basic shapes, advanced presets and closed custom vectors all begin with **Physical collision shape** off, so enable collision only on the minimum layers that define the real footprint. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users. Select multiple layers and choose **Group selected layers**, then set a group name and enable **Toggleable in Stageplot** in the group inspector to expose one toggle for all its artwork. Save/publish the equipment and refresh existing Stageplot placements to receive the change. Toggles with the same name are combined; selecting different equipment exposes every toggle name shared by the entire selection.
 
 For stages, Shift-click a segment to insert a node and Ctrl-click a straight segment to convert it to a Point on Arc curve. Background images can extend beyond the stage and are editing references only. The main stage boundary clips normal stage assets in Stageplot; Label zones may render outside it, while visible Solid zones block equipment.
 
 Zones support single-colour and multicoloured diagonal-stripe fills. In multicoloured mode, set both colours and the stripe width; the existing fill transparency applies to the complete pattern. Zones and stage text can be marked **Toggleable in Stageplot**. Each client project then receives show/hide controls in the canvas inspector, and hiding a solid zone disables its collision for that project.
+
+Shift-select multiple zones in the stage editor and choose **Group selected zones**. Set the group name and enable **Toggleable in Stageplot** to expose one control for the complete group. Clicking a grouped zone selects the group's members for movement, copying or deletion; individual zone geometry remains editable. **Ungroup zones** restores independent selection and each zone's own toggle setting. Save the stage, then reopen it in Stageplot to receive the group controls.
 
 The Library dialog opens saved equipment and stages for editing. Updating an asset retains its stable ID; saving as new creates a new ID. Renaming a stage does not break its stage-locked URL.
 
@@ -157,9 +167,10 @@ Requirements: Node.js 24 or a compatible current Node release, plus npm.
 Install both frontend dependency sets:
 
 ```powershell
-npm.cmd install
-npm.cmd install --prefix tools/svg-shape-studio
+npm.cmd run setup
 ```
+
+Run setup again after pulling dependency changes. Shape Studio has its own dependency set, including `polygon-clipping` and `fit-curve`; installing only at the repository root does not install these.
 
 Run Stageplot, Shape Studio and the library API together:
 
