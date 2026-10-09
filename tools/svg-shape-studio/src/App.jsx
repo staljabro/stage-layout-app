@@ -1,3 +1,4 @@
+import { zoneGroupIds, copyZoneGroups } from "../../../src/zone-groups.js";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { segmentMode, segmentMidpoint, smoothControl, arcOffset, pointOnArc, bezierGeometry, stageSegmentPath, stagePath, sampleStageBoundary } from "../../../src/stage-geometry.js";
 import { isPublishedItem, isEquipmentItem } from "../../library-membership.mjs";
@@ -515,6 +516,7 @@ function Shape({
         fill: item.collisionOnly ? "#d7d9d6" : item.fill,
         stroke: item.collisionOnly ? "#777b77" : item.stroke,
         strokeWidth: item.strokeWidth,
+        opacity: item.collisionOnly ? 0.5 : undefined,
         vectorEffect: "non-scaling-stroke",
       };
   let content;
@@ -1015,6 +1017,11 @@ function App() {
       : (selectedZone?.nodes || stageNodes)[selectedStageNode];
   const selectedZoneBounds=selectedZone?boundaryBounds(selectedZone.nodes):null;
   const selectedZoneAnchor=selectedZoneBounds?selectedZone.anchorMode==="centre"?{x:selectedZoneBounds.centreX,y:selectedZoneBounds.centreY}:{x:selectedZoneBounds.x,y:selectedZoneBounds.y}:null;
+  const selectedZones=zones.filter(zone=>selectedStageAssetIds.includes(zone.id)||zone.id===selectedZoneId);
+  const zoneGroupId=selectedZones[0]?.editorGroupId;
+  const selectedZoneGroup=zoneGroupId && selectedZones.every(zone=>zone.editorGroupId===zoneGroupId) ? zones.filter(zone=>zone.editorGroupId===zoneGroupId) : [];
+  const updateZoneGroup=changes=>{checkpoint();setZones(old=>old.map(zone=>zone.editorGroupId===zoneGroupId?{...zone,...changes}:zone));};
+  const groupZones=()=>{checkpoint();const ids=new Set(selectedZones.flatMap(zone=>zoneGroupIds(zones,zone.id))),id='zone-group-'+Date.now()+'-'+nextGroupId.current++;setZones(old=>old.map(zone=>ids.has(zone.id)?{...zone,editorGroupId:id,editorGroupName:'Zone group',editorGroupToggleable:false}:zone));setSelectedStageAssetIds([...ids]);setSelectedZoneId(null);};
   const hasStageInspectorSelection=Boolean(selectedZone||selectedText||selectedDimension||referenceSelected||stageNode||selectedStageAssetIds.length);
   const activeStageControls = documentMode === "stage" && !stageMoveMode && !selectedZone?.locked && (selectedZone || !stageBoundaryLocked) ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
   const selectedGroupItems = selectedGroupId
@@ -1036,6 +1043,7 @@ function App() {
         ...(shape.type === "compound" ? {children:shape.children.filter(child=>!child.collisionOnly).map(toVectorShape)} : {}),
         id: String(id),
         name,
+        ...(shape.editorGroupId && shape.editorGroupToggleable ? {toggleable:true,toggleName:shape.editorGroupName || "Group"} : {}),
       }); }),
     [items],
   );
@@ -1050,6 +1058,7 @@ function App() {
       id: activeLibraryId || draftAssetId,
       label: shapeName.trim() || "Untitled Item",
       groupId: advancedShapeRole ? null : groupId || null,
+      stockQuantity: library.find(item=>item.id===activeLibraryId)?.stockQuantity ?? null,
       dimensions: { widthMeters: realWidth, depthMeters: realDepth },
       shapes: vectorShapes,
       collisionShapes,
@@ -1847,11 +1856,11 @@ function App() {
   const startAssetMove = (event, asset, assetType) => {
     if (event.button !== 0) return;
     if (asset.locked || event.ctrlKey) return;
-    if(event.shiftKey){event.preventDefault();event.stopPropagation();const current=selectedStageAssetIds,next=current.includes(asset.id)?current.filter(id=>id!==asset.id):[...current,asset.id];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedStageNode(null);return;}
+    if(event.shiftKey){event.preventDefault();event.stopPropagation();const current=selectedStageAssetIds,members=zoneGroupIds(zones,asset.id),next=members.every(id=>current.includes(id))?current.filter(id=>!members.includes(id)):[...new Set([...current,...members])];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedStageNode(null);return;}
     if(event.altKey&&assetType!=="stage"){
       event.preventDefault();event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);checkpoint();
-      const sources=selectedStageAssetIds.includes(asset.id)?orderedAssets.filter(candidate=>selectedStageAssetIds.includes(candidate.id)):orderedAssets.filter(candidate=>candidate.id===asset.id);
-      const copies=sources.map(source=>({...structuredClone(source),id:`copy-${Date.now()}-${clipboardId.current++}`,zOrder:orderedAssets.length+clipboardId.current}));
+      const sources=selectedStageAssetIds.includes(asset.id)?orderedAssets.filter(candidate=>selectedStageAssetIds.includes(candidate.id)):orderedAssets.filter(candidate=>zoneGroupIds(zones,asset.id).includes(candidate.id));
+      const copies=copyZoneGroups(sources.map(source=>({...structuredClone(source),id:`copy-${Date.now()}-${clipboardId.current++}`,zOrder:orderedAssets.length+clipboardId.current})),()=>`zone-group-${Date.now()}-${nextGroupId.current++}`);
       setZones(old=>[...old,...copies.filter(candidate=>candidate.assetType==="zone").map(({assetType:ignored,...copy})=>copy)]);
       setTextItems(old=>[...old,...copies.filter(candidate=>candidate.assetType==="text").map(({assetType:ignored,...copy})=>copy)]);
       setDimensionLines(old=>[...old,...copies.filter(candidate=>candidate.assetType==="dimension").map(({assetType:ignored,...copy})=>copy)]);
@@ -1864,7 +1873,7 @@ function App() {
       return;
     }
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); checkpoint();
-    const moveIds = selectedStageAssetIds.includes(asset.id) ? selectedStageAssetIds : [asset.id];
+    const moveIds = selectedStageAssetIds.includes(asset.id) ? selectedStageAssetIds : zoneGroupIds(zones,asset.id);
     const selectedAssets = [{id:"stage-boundary",assetType:"stage",nodes:stageNodes,locked:stageBoundaryLocked}, ...orderedAssets].filter(candidate => moveIds.includes(candidate.id) && !candidate.locked);
     const originals = selectedAssets.length > 1 ? Object.fromEntries(selectedAssets.map(candidate => [candidate.id, candidate.assetType === "zone" || candidate.assetType === "stage" ? {nodes:structuredClone(candidate.nodes)} : {x:candidate.x,y:candidate.y}])) : null;
     stageDragRef.current = { handle: "asset-move", assetType, id: asset.id, start: stagePointer(event, false), original: assetType === "zone" || assetType === "stage" ? structuredClone(asset.nodes) : { x: asset.x, y: asset.y }, originals };
@@ -1966,7 +1975,7 @@ function App() {
       const copies=clipboard.items.map(item=>{let editorGroupId=item.editorGroupId;if(editorGroupId){if(!groupMap.has(editorGroupId))groupMap.set(editorGroupId,`group-${nextGroupId.current++}`);editorGroupId=groupMap.get(editorGroupId);}return {...structuredClone(item),id:nextId.current++,x:item.x+offset,y:item.y+offset,editorGroupId};});
       setItems(old=>[...old,...copies]);const ids=copies.map(item=>item.id);setSelectedGroupId(null);setSelectedId(ids.length===1?ids[0]:null);setMultiSelectedIds(ids.length>1?ids:[]);flash(`${ids.length} layer${ids.length===1?"":"s"} pasted`);return;
     }
-    const copies=clipboard.assets.map(asset=>{const id=`copy-${Date.now()}-${clipboardId.current++}`,copy={...structuredClone(asset),id,zOrder:orderedAssets.length+clipboardId.current};if(copy.assetType==="zone")copy.nodes=translateBoundaryNodes(copy.nodes,offset,offset);else {copy.x+=offset;copy.y+=offset;}return copy;});
+    const copies=copyZoneGroups(clipboard.assets.map(asset=>{const id=`copy-${Date.now()}-${clipboardId.current++}`,copy={...structuredClone(asset),id,zOrder:orderedAssets.length+clipboardId.current};if(copy.assetType==="zone")copy.nodes=translateBoundaryNodes(copy.nodes,offset,offset);else {copy.x+=offset;copy.y+=offset;}return copy;}),()=>`zone-group-${Date.now()}-${nextGroupId.current++}`);
     setZones(old=>[...old,...copies.filter(asset=>asset.assetType==="zone").map(({assetType,...asset})=>asset)]);
     setTextItems(old=>[...old,...copies.filter(asset=>asset.assetType==="text").map(({assetType,...asset})=>asset)]);
     setDimensionLines(old=>[...old,...copies.filter(asset=>asset.assetType==="dimension").map(({assetType,...asset})=>asset)]);
@@ -1983,7 +1992,7 @@ function App() {
     setItems((old) =>
       old.map((item) =>
         ids.includes(item.id)
-          ? { ...item, editorGroupId: id, editorGroupName: "Group" }
+          ? { ...item, editorGroupId: id, editorGroupName: "Group", editorGroupToggleable: false }
           : item,
       ),
     );
@@ -1997,7 +2006,7 @@ function App() {
     setItems((old) =>
       old.map((item) =>
         item.editorGroupId === selectedGroupId
-          ? { ...item, editorGroupId: undefined, editorGroupName: undefined }
+          ? { ...item, editorGroupId: undefined, editorGroupName: undefined, editorGroupToggleable: undefined }
           : item,
       ),
     );
@@ -2278,8 +2287,19 @@ function App() {
   const zoomViewport = (event) => {
     event.preventDefault();
     const factor = event.deltaY < 0 ? 1.12 : 0.89;
-    setZoom((value) => Math.max(0.25, Math.min(6, value * factor)));
+    const next = Math.max(0.25, Math.min(6, zoom * factor));
+    const rect = viewportRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left - rect.width / 2;
+    const y = event.clientY - rect.top - rect.height / 2;
+    setPan({x:x-(x-pan.x)*next/zoom,y:y-(y-pan.y)*next/zoom});
+    setZoom(next);
   };
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.addEventListener("wheel", zoomViewport, {passive:false});
+    return () => viewport.removeEventListener("wheel", zoomViewport);
+  });
   const startPan = (event) => {
     if (vectorDrawing && event.button===0) {drawVectorPoint(event);return;}
     const occupied = documentMode === "item"
@@ -2372,7 +2392,7 @@ function App() {
           return {x:Math.min(...xs),y:Math.min(...ys),right:Math.max(...xs),bottom:Math.max(...ys)};
         };
         const selectableAssets = [...orderedAssets, {id:"stage-boundary",assetType:"stage",nodes:stageNodes,locked:stageBoundaryLocked}];
-        const ids = [...new Set([...drag.additive,...selectableAssets.filter(asset=>!asset.locked && asset.id && containsBounds(box,boundsFor(asset))).map(asset=>asset.id)])];
+        const ids = [...new Set([...drag.additive,...selectableAssets.filter(asset=>!asset.locked && asset.id && containsBounds(box,boundsFor(asset))).flatMap(asset=>zoneGroupIds(zones,asset.id))])];
         setSelectedStageAssetIds(ids);
         if (ids.length === 1) {
           const asset=selectableAssets.find(candidate=>candidate.id===ids[0]);
@@ -2533,19 +2553,19 @@ function App() {
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => { if (assetDragRef.current) reorderAsset(assetDragRef.current, asset.id); assetDragRef.current = null; }}
                     onClick={(event) => {
-                      if(event.shiftKey){const current=selectedStageAssetIds,next=current.includes(asset.id)?current.filter(id=>id!==asset.id):[...current,asset.id];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedStageNode(null);return;}
+                      if(event.shiftKey){const current=selectedStageAssetIds,members=zoneGroupIds(zones,asset.id),next=members.every(id=>current.includes(id))?current.filter(id=>!members.includes(id)):[...new Set([...current,...members])];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedStageNode(null);return;}
                       if (asset.assetType === "image") { setSelectedReferenceId(asset.id); setSelectedZoneId(null); setSelectedTextId(null); }
                       else if (asset.assetType === "text") { setSelectedTextId(asset.id); setSelectedZoneId(null); setSelectedReferenceId(null); }
                       else if(asset.assetType==="dimension"){setSelectedDimensionId(asset.id);setSelectedZoneId(null);setSelectedTextId(null);setSelectedReferenceId(null);}
                       else { setSelectedZoneId(asset.id); setSelectedTextId(null); setSelectedReferenceId(null); }
                       if(asset.assetType!=="dimension")setSelectedDimensionId(null);
                       setSelectedStageNode(null);
-                      setSelectedStageAssetIds([asset.id]);
+                      setSelectedStageAssetIds(zoneGroupIds(zones,asset.id));
                     }}
                   >
                     <i style={{ background: asset.assetType === "image" ? "#d8d8d8" : ["text","dimension"].includes(asset.assetType) ? asset.color : asset.fill || "#f7f6ef" }} />
                     <span className="asset-name">{asset.name || (asset.assetType === "image" ? "Background image" : asset.assetType === "text" ? "Text" : asset.assetType==="dimension"?"Dimension":"Zone")}<span className="asset-lock" role="button" title={asset.locked ? "Unlock asset" : "Lock asset"} onClick={(event) => { event.stopPropagation(); toggleAssetLock(asset); }}>{asset.locked ? "🔒" : "🔓"}</span></span>
-                    <small>{asset.assetType === "image" ? "image" : asset.assetType === "text" ? "text" : asset.assetType==="dimension"?"studio dimension":asset.label ? "label zone" : asset.solid ? "solid zone" : "aesthetic zone"}</small>
+                    <small>{asset.editorGroupId ? asset.editorGroupName || "Zone group" : asset.assetType === "image" ? "image" : asset.assetType === "text" ? "text" : asset.assetType==="dimension"?"studio dimension":asset.label ? "label zone" : asset.solid ? "solid zone" : "aesthetic zone"}</small>
                   </button>
                 ))}
               </div>
@@ -2732,7 +2752,7 @@ function App() {
           <div
             className="viewport"
             ref={viewportRef}
-            onWheel={zoomViewport}
+
             onPointerDownCapture={event=>{if(event.button===1)startPan(event);}}
             onPointerDown={startPan}
             onPointerMove={movePan}
@@ -3241,6 +3261,8 @@ function App() {
                   ? `Boundary node ${selectedStageNode + 1}`
                   : selectedZone ? selectedZone.name || "Selected zone" : selectedText ? selectedText.name || "Selected text" : selectedDimension ? selectedDimension.name || "Selected dimension" : referenceSelected ? referenceImage.name || "Background image" : selectedStageAssetIds.length > 1 ? `${selectedStageAssetIds.length} stage assets selected` : selectedStageAssetIds.includes("stage-boundary") ? "Main stage selected" : "Stage and boundary settings"}
               </p>
+              {selectedZones.length>1 && !selectedZoneGroup.length && <button className="group-button" onClick={groupZones}>Group selected zones</button>}
+              {selectedZoneGroup.length>0 && <section className="zone-group-settings"><h3>Zone group - {selectedZoneGroup.length} zones</h3><label className="field">GROUP NAME<input value={selectedZoneGroup[0].editorGroupName || ''} onChange={event=>updateZoneGroup({editorGroupName:event.target.value})}/></label><label className="collision-toggle"><input type="checkbox" checked={selectedZoneGroup[0].editorGroupToggleable===true} onChange={event=>updateZoneGroup({editorGroupToggleable:event.target.checked})}/><span><b>Toggleable in Stageplot</b><small>One toggle controls every zone in this group, including solid-zone collision.</small></span></label><button className="ungroup" onClick={()=>updateZoneGroup({editorGroupId:undefined,editorGroupName:undefined,editorGroupToggleable:undefined})}>Ungroup zones</button></section>}
               {!hasStageInspectorSelection && <>
               <label className="field">
                 STAGE NAME
@@ -3629,6 +3651,8 @@ function App() {
                 together. Hold Shift for 15-degree steps. Ungroup to edit
                 individual layers.
               </p>
+              <label>Group name<input value={selectedGroupItems[0]?.editorGroupName || ""} onChange={event=>{checkpoint();setItems(old=>old.map(item=>item.editorGroupId===selectedGroupId?{...item,editorGroupName:event.target.value}:item));}} /></label>
+              <label className="collision-toggle"><input type="checkbox" checked={selectedGroupItems[0]?.editorGroupToggleable===true} onChange={event=>{checkpoint();setItems(old=>old.map(item=>item.editorGroupId===selectedGroupId?{...item,editorGroupToggleable:event.target.checked}:item));}} /><span><b>Toggleable in Stageplot</b><small>Show or hide all artwork in this group with one named toggle.</small></span></label>
               <MultiCollisionControl layers={selectedGroupItems} onChange={value=>{checkpoint();const ids=new Set(selectedGroupItems.map(item=>item.id));setItems(old=>old.map(item=>ids.has(item.id)?{...item,collision:item.collisionOnly?true:value}:item));}} />
               <button className="ungroup" onClick={ungroup}>
                 Ungroup layers
@@ -4079,6 +4103,7 @@ function App() {
               <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + item.label} viewBox={"0 0 " + item.dimensions.widthMeters + " " + item.dimensions.depthMeters}>{(item.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg></span>
               <div className="managed-item-name">{editingItemNameId===item.id ? <form onSubmit={event=>{event.preventDefault();if(itemNameDraft.trim())updateManagedItem(item,{label:itemNameDraft.trim()});}}><input aria-label={"Item name for " + item.label} autoFocus value={itemNameDraft} onChange={event=>setItemNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !itemNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingItemNameId(null)}>Cancel</button></form> : <><span>{item.label}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} aria-label={"Rename " + item.label} title="Rename item" onClick={()=>{setEditingItemNameId(item.id);setItemNameDraft(item.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}</div>
               <select aria-label={"Equipment group for " + item.label} value={item.groupId || ""} disabled={Boolean(removingStageplotId)} onChange={event=>updateManagedItem(item,{groupId:event.target.value || null})}><option value="">Uncategorised</option>{groups.map(group=><option key={group.id} value={group.id}>{group.label}</option>)}</select>
+              <label className="stock-quantity-field">Stock quantity<input key={item.id+':'+item.stockQuantity} type="number" min="0" step="1" placeholder="Not tracked" defaultValue={item.stockQuantity ?? ''} disabled={Boolean(removingStageplotId)} aria-label={"Stock quantity for " + item.label} onBlur={event=>{const raw=event.target.value,quantity=raw===''?null:Number(raw);if(quantity!==null&&(!Number.isSafeInteger(quantity)||quantity<0)){event.target.value=item.stockQuantity ?? '';flash('Stock must be a whole number of zero or more');return;}if(quantity!==(item.stockQuantity??null))updateManagedItem(item,{stockQuantity:quantity});}} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}} /></label>
               <label className="publish-equipment-toggle"><input type="checkbox" checked={isPublishedItem(item)} disabled={Boolean(removingStageplotId)} onChange={event=>updateManagedItem(item,{stageplotPublished:event.target.checked})}/>Add to Stageplot Library</label>
               <button disabled={Boolean(removingStageplotId)} onClick={()=>editManagedItem(item)}>EDIT</button>
               <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + item.label} aria-label={"Delete " + item.label} onClick={()=>removeStageplotItem(item)}>&times;</button>

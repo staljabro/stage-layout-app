@@ -4,6 +4,7 @@
   "version": "0.1.1-alpha.0",
   "type": "module",
   "scripts": {
+    "setup": "npm install && npm install --prefix tools/svg-shape-studio",
     "dev": "vite",
     "dev:all": "node tools/dev-all.mjs",
     "library": "node --watch tools/library-server.mjs",

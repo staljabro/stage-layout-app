@@ -106,7 +106,7 @@ main { height: calc(100vh - 70px); min-height: 0; display: grid; grid-template-c
 .custom-shape-row button { flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid #d1d0c8; border-radius: 4px; background: white; color: #9b4b4b; font-size: 18px; }
 .custom-shape-row button:disabled { opacity: .5; cursor: default; }
 .equipment-management-modal { width: min(760px, 94vw); }
-.equipment-management-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) minmax(110px, 150px) 110px auto auto; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #deddd5; font-size: 12px; color: #4f504a; }
+.equipment-management-row { display: grid; grid-template-columns: 48px minmax(100px, 1fr) minmax(90px, 130px) 90px 110px auto auto; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #deddd5; font-size: 12px; color: #4f504a; }
 .publish-equipment-toggle { display: flex; align-items: center; gap: 6px; font-size: 10px; line-height: 1.4; }
 .equipment-management-modal .publish-equipment-toggle input { flex: none; width: auto; accent-color: #899f38; }
 .managed-item-thumbnail { display: grid; place-items: center; width: 48px; height: 48px; padding: 5px; box-sizing: border-box; background: #fdfcf8; border: 1px solid #deddd5; border-radius: 5px; pointer-events: none; }
@@ -130,3 +130,13 @@ main { height: calc(100vh - 70px); min-height: 0; display: grid; grid-template-c
 .equipment-group-row > span { flex: 1; }
 .equipment-group-row small { color: #8a8b83; white-space: nowrap; }
 @media (max-width: 700px) { .equipment-management-row { grid-template-columns: 48px minmax(0, 1fr) auto auto; } .managed-item-name { grid-column: 2 / -1; } .equipment-management-row > select { grid-column: 1 / 3; } .equipment-management-row > .publish-equipment-toggle { grid-column: 3 / -1; } .equipment-management-row > button { grid-row: 3; } .equipment-group-row { flex-wrap: wrap; } }
+.stock-quantity-field { display: grid; gap: 4px; min-width: 85px; font-size: 9px; }
+.stock-quantity-field input { width: 90px; padding: 6px; border: 1px solid #c8c7be; border-radius: 4px; }
+.zone-group-settings { margin-bottom: 14px; padding: 10px; border: 1px solid #c8c7be; border-radius: 5px; }
+.equipment-management-modal { width: min(900px, 94vw); }
+@media (max-width: 700px) {
+  .equipment-management-row { grid-template-columns: 48px minmax(100px, 1fr) 90px auto; }
+  .equipment-management-row > .stock-quantity-field { grid-column: 3 / -1; }
+  .equipment-management-row > .publish-equipment-toggle { grid-column: 1 / 3; }
+  .equipment-management-row > button { grid-row: auto; }
+}

@@ -1,3 +1,6 @@
+import { allocateStock, stockQuantity, equipmentRows } from './inventory.js'
+import { EquipmentList } from './equipment-list.jsx'
+import { toggleableParts, sharedParts, partState, setPart } from './part-toggles.js'
 import { useEffect, useRef, useState } from 'react'
 import { sampleStageBoundary, stagePath as zonePath } from './stage-geometry.js'
 import { TextArtwork } from './text-shape.jsx'
@@ -155,6 +158,8 @@ function App() {
   const [history, setHistory] = useState([])
   const [notice, setNotice] = useState('')
   const [helpOpen,setHelpOpen]=useState(false)
+  const [equipmentListOpen,setEquipmentListOpen]=useState(false)
+  const [savedProjectSnapshot,setSavedProjectSnapshot]=useState(session.savedProjectSnapshot ?? JSON.stringify(projectFile('Untitled stageplot',null,[])))
   const [printTimestamp,setPrintTimestamp]=useState(()=>new Date().toLocaleString())
   const [library, setLibrary] = useState([])
   const [groups, setGroups] = useState([])
@@ -192,7 +197,18 @@ function App() {
   const bootedRef = useRef(false)
   const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
-  const sessionError = useSessionDraft(draftKey, {project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled})
+  const sessionError = useSessionDraft(draftKey, {project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled,savedProjectSnapshot})
+
+  const projectSnapshot=JSON.stringify(projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders))
+  const dirty=projectSnapshot!==savedProjectSnapshot
+  useEffect(()=>{
+    if (!dirty) return
+    const warn=event=>{event.preventDefault();event.returnValue=''}
+    window.addEventListener('beforeunload',warn)
+    return ()=>window.removeEventListener('beforeunload',warn)
+  },[dirty])
+  const allocation=allocateStock(items,library)
+  const equipmentListRows=equipmentRows(items,library,allocation)
 
   const printLayout=(()=>{
     if(!space)return {scale:1,x:0,y:0}
@@ -466,6 +482,13 @@ function App() {
     setZoom(next)
   }
 
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    viewport.addEventListener('wheel', zoomViewport, { passive: false })
+    return () => viewport.removeEventListener('wheel', zoomViewport)
+  })
+
   const fitToSpace = (targetSpace) => {
     const viewport = viewportRef.current
     if (!viewport || !targetSpace) return
@@ -508,6 +531,7 @@ function App() {
     link.download = `${project.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'stageplot'}.stageplot`
     link.click()
     URL.revokeObjectURL(link.href)
+    setSavedProjectSnapshot(projectSnapshot)
     setNotice('Project saved')
   }
 
@@ -523,6 +547,7 @@ function App() {
       const [latestEquipment,latestStages]=await Promise.all(responses.map(response=>response.json()))
       const equipment=latestEquipment.filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
       const restored=resolveProject(data,equipment,latestStages,lockedStageId)
+      setSavedProjectSnapshot(JSON.stringify(projectFile(restored.project,restored.space,restored.items,restored.preset,restored.collisionSettings,restored.layerFolders)))
       setProject(restored.project);setSpace(restored.space);setPreset(restored.preset);setItems(restored.items);setLayerFolders(restored.layerFolders)
       setEquipmentCollisionEnabled(restored.collisionSettings.equipment);setZoneCollisionEnabled(restored.collisionSettings.zone);setSnappingEnabled(restored.collisionSettings.snapping)
       setLibrary(equipment);setStages(latestStages);setLibraryOnline(true)
@@ -541,6 +566,7 @@ function App() {
   }
   const newProject = () => {
     if(!window.confirm('Create a new project? This clears all placed equipment and the selected stage. Save first to keep a copy.'))return
+    setSavedProjectSnapshot(JSON.stringify(projectFile('Untitled stageplot',null,[])))
     setProject('Untitled stageplot');setSpace(null);setPreset('');setItems([]);setLayerFolders([]);setHistory([]);setEquipmentCollisionEnabled(true);setZoneCollisionEnabled(true);setSnappingEnabled(true)
     setSelected(null);setMultiSelected([]);setStagePickerOpen(true);setZoom(1);setPan({x:56,y:56})
     dragRef.current=null;rotateRef.current=null;panRef.current=null;marqueeRef.current=null;setMarquee(null)
@@ -630,7 +656,7 @@ function App() {
       const controls=Object.fromEntries(Object.entries(item.controls||{}).filter(([id])=>validParts.has(id)))
       for(const part of asset.rotationParts||[])if(!controls[part.id])controls[part.id]={rotation:part.defaultRotation||0}
       const partVisibility=Object.fromEntries((asset.shapes||[]).filter(shape=>shape.toggleable).map(shape=>[shape.id,item.partVisibility?.[shape.id]!==false]))
-      return {...item,...asset,id:item.id,assetId:item.assetId,type:`library:${item.assetId}`,widthMeters:asset.dimensions.widthMeters,depthMeters:asset.dimensions.depthMeters,xMeters:item.xMeters,yMeters:item.yMeters,rotation:item.rotation||0,label:item.label,showLabel:item.showLabel===true,collisionEnabled:item.collisionEnabled!==false,visible:item.visible!==false,controls,partVisibility}
+      return {...item,...asset,id:item.id,assetId:item.assetId,type:`library:${item.assetId}`,widthMeters:asset.dimensions.widthMeters,depthMeters:asset.dimensions.depthMeters,xMeters:item.xMeters,yMeters:item.yMeters,rotation:item.rotation||0,label:item.label,showLabel:item.showLabel===true,collisionEnabled:item.collisionEnabled!==false,visible:item.visible!==false,useExternal:item.useExternal===true,controls,partVisibility}
     })
     setItems(next)
     setNotice(`${refreshed} library item${refreshed===1?'':'s'} refreshed${missing?`; ${missing} unavailable unchanged`:''}`)
@@ -683,15 +709,14 @@ function App() {
   const multiSelectedItems=items.filter(item=>multiSelected.includes(item.id))
   const triState=getValue=>{const values=multiSelectedItems.map(getValue);return values.every(Boolean)?true:values.every(value=>!value)?false:'mixed'}
   const updateMultiple=(updater)=>{checkpoint();const ids=new Set(multiSelected);setItems(old=>old.map(item=>ids.has(item.id)?updater(item):item))}
-  const sharedToggleableParts=multiSelectedItems.length&&multiSelectedItems.every(item=>item.assetId===multiSelectedItems[0].assetId)
-    ? (multiSelectedItems[0].shapes||[]).filter(shape=>shape.toggleable)
-    : []
-  const toggleableStageParts=space ? [...(space.zones||[]),...(space.textItems||[])].filter(part=>part.toggleable) : []
+  const sharedToggleableParts=sharedParts(multiSelectedItems)
+  const stageToggleItem={shapes:[...(space?.zones||[]),...(space?.textItems||[])],partVisibility:space?.partVisibility}
+  const toggleableStageParts=toggleableParts(stageToggleItem)
   const finishFolderRename=(folder,name)=>{const trimmed=name.trim();setEditingFolderId(null);if(!trimmed||trimmed===folder.name)return;checkpoint();setLayerFolders(old=>old.map(candidate=>candidate.id===folder.id?{...candidate,name:trimmed}:candidate))}
   const folderNameControl=folder=>editingFolderId===folder.id?<input className="folder-name-input" autoFocus value={folderNameDraft} onPointerDown={event=>event.stopPropagation()} onChange={event=>setFolderNameDraft(event.target.value)} onBlur={event=>finishFolderRename(folder,event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}if(event.key==='Escape'){event.preventDefault();event.currentTarget.value=folder.name;event.currentTarget.blur()}}}/>:<button className="folder-name" title="Click to select contents · Shift-click to add/remove · Double-click to rename" onClick={event=>selectLayerFolder(folder,event.shiftKey)} onDoubleClick={event=>{event.stopPropagation();setEditingFolderId(folder.id);setFolderNameDraft(folder.name)}}>{folder.name}</button>
   const layerTree=layerRows(items,layerFolders)
-  const layerRow=(item,nested=false)=><div key={item.id} className={`stage-layer ${nested?'nested ':''}${item.id===selected||multiSelected.includes(item.id)?'active':''}`} draggable onDragStart={event=>{event.stopPropagation();const ids=multiSelected.includes(item.id)?multiSelected:[item.id];layerDragRef.current={type:ids.length>1?'items':'item',id:item.id,ids};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-layer',String(item.id))}} onDragEnd={event=>{event.stopPropagation();layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')reorderLayer(source.id,item.id);else if(source?.type==='items'){const folder=folderForItem(layerFolders,item.id);if(folder)dropItemsOnFolder(source.ids,folder.id)}else if(source?.type==='folder')dropFolderOnTarget(source.id,item.id);layerDragRef.current=null}}>
-    <span className="layer-grip" aria-hidden="true">&#9776;</span><button className="layer-name" onClick={event=>changeLayerSelection([item.id],event.shiftKey)}>{item.label}</button><small>{item.collisionEnabled===false?'collision off':item.showLabel?'label':''}</small><button className="layer-visibility" title={item.visible===false?'Show layer':'Hide layer'} aria-label={item.visible===false?`Show ${item.label}`:`Hide ${item.label}`} onClick={()=>toggleItemVisibility(item)}><Icon name={item.visible===false?'eyeOff':'eye'} /></button>
+  const layerRow=(item,nested=false)=><div key={item.id} className={`stage-layer ${allocation.external.has(item.id)?'external-source ':''}${nested?'nested ':''}${item.id===selected||multiSelected.includes(item.id)?'active':''}`} draggable onDragStart={event=>{event.stopPropagation();const ids=multiSelected.includes(item.id)?multiSelected:[item.id];layerDragRef.current={type:ids.length>1?'items':'item',id:item.id,ids};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-layer',String(item.id))}} onDragEnd={event=>{event.stopPropagation();layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item')reorderLayer(source.id,item.id);else if(source?.type==='items'){const folder=folderForItem(layerFolders,item.id);if(folder)dropItemsOnFolder(source.ids,folder.id)}else if(source?.type==='folder')dropFolderOnTarget(source.id,item.id);layerDragRef.current=null}}>
+    <span className="layer-grip" aria-hidden="true">&#9776;</span><button className="layer-name" onClick={event=>changeLayerSelection([item.id],event.shiftKey)}>{item.label}</button><small>{allocation.external.has(item.id)?'External':item.collisionEnabled===false?'collision off':item.showLabel?'label':''}</small><button className="layer-visibility" title={item.visible===false?'Show layer':'Hide layer'} aria-label={item.visible===false?`Show ${item.label}`:`Hide ${item.label}`} onClick={()=>toggleItemVisibility(item)}><Icon name={item.visible===false?'eyeOff':'eye'} /></button>
   </div>
 
   return (
@@ -704,6 +729,7 @@ function App() {
           <button className="btn ghost" onClick={newProject}><Icon name="plus" /> New project</button>
           <button className="btn ghost" onClick={save}><Icon name="save" /> Save</button>
           <button className="btn ghost" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Open</button>
+          <button className="btn ghost" onClick={()=>setEquipmentListOpen(true)}>Equipment list</button>
           <button className="btn primary" disabled={!space} onClick={exportPdf}><Icon name="print" /> Export PDF</button>
           <input ref={fileRef} type="file" accept=".stageplot,.stageplot.json,.json,application/json" onChange={load} hidden />
         </div>
@@ -734,7 +760,7 @@ function App() {
           </div>
           <header className="print-header">{project.trim() || 'Untitled stageplot'}</header>
 
-          <div className={`stage-viewport ${customToolMode ? 'custom-tool-active' : ''}`} ref={viewportRef} style={{'--print-scale':printLayout.scale,'--print-x':`${printLayout.x}px`,'--print-y':`${printLayout.y}px`}} onWheel={zoomViewport} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;customDrawRef.current=null;setCustomStagingPreview(null);setMarquee(null) }}>
+          <div className={`stage-viewport ${customToolMode ? 'custom-tool-active' : ''}`} ref={viewportRef} style={{'--print-scale':printLayout.scale,'--print-x':`${printLayout.x}px`,'--print-y':`${printLayout.y}px`}}  onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;customDrawRef.current=null;setCustomStagingPreview(null);setMarquee(null) }}>
             {space ? <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
               <div className="stage-boundary-surface" style={{ clipPath: stageClipPath(space) }} />
               {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}><ZonePatterns zones={space.zones||[]} prefix="stage-zone-pattern"/>{(space.zones || []).filter((zone) => !zone.solid && !zone.label && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-zone-pattern')} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-zone-pattern') || "#faf9f4"} fillOpacity={zone.fillOpacity ?? 1} stroke={zone.stroke || "#71851f"} strokeOpacity={zone.strokeOpacity ?? 1} strokeWidth={zone.strokeWidth ?? 2} />)}</svg>}
@@ -743,7 +769,7 @@ function App() {
               {items.filter(item=>item.visible!==false && folderForItem(layerFolders,item.id)?.visible!==false).map((item) => (
                 <button
                   key={item.id}
-                  className={`placed-item ${selected === item.id || multiSelected.includes(item.id) ? 'selected' : ''} ${item.collisionEnabled===false?'collision-disabled':''}`}
+                  className={`placed-item ${selected === item.id || multiSelected.includes(item.id) ? 'selected' : ''} ${item.collisionEnabled===false?'collision-disabled':''} ${allocation.external.has(item.id)?'external-source':''}`}
                   style={{ left: `${(item.xMeters - item.widthMeters / 2) * 100}px`, top: `${(item.yMeters - item.depthMeters / 2) * 100}px`, width: `${item.widthMeters * 100}px`, height: `${item.depthMeters * 100}px`, transform: `rotate(${item.rotation || 0}deg)` }}
                   onPointerDown={(e) => startDrag(e, item)}
                   onDoubleClick={() => {
@@ -781,8 +807,8 @@ function App() {
                 {['Custom staging - Prostage','Custom Text'].filter(label=>label.toLowerCase().includes(equipmentSearch.trim().toLowerCase())).map((label,index)=><button className="custom-tool" key={label} draggable onDragStart={event=>{event.dataTransfer.effectAllowed='copy';event.dataTransfer.setData('application/x-stageplot-custom',index===0?'staging':'text')}} onClick={()=>{if(index===0){if(!space)return setStagePickerOpen(true);setCustomToolMode('staging');setNotice('Drag across the canvas to draw staging')}else addCustomText()}}>
                   <span>{index===0?<svg viewBox="0 0 100 70" aria-hidden="true"><rect x="5" y="8" width="90" height="54" fill="#d6d2c5" stroke="#25261f" strokeWidth="4"/><text x="50" y="36" textAnchor="middle" dominantBaseline="middle" fontSize="16" stroke="none" fill="#25261f">200mm</text></svg>:<svg viewBox="0 0 100 70" aria-hidden="true"><text x="50" y="38" textAnchor="middle" fontSize="34" fontWeight="700" stroke="none" fill="#25261f">T</text></svg>}</span><span className="equipment-tile-name">{label}</span>
                 </button>)}
-              </div> : <div className="custom-tools">{visibleEquipment.map(tool => <button className="custom-tool" key={tool.id} draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-stageplot-item', tool.id) }} onClick={() => addItem({ ...tool, type: 'library:' + tool.id, tone: 'custom' })}>
-                <span><VectorArtwork shapes={tool.shapes} width={tool.dimensions.widthMeters} depth={tool.dimensions.depthMeters} /></span><span className="equipment-tile-name">{tool.label}</span>
+              </div> : <div className="custom-tools">{visibleEquipment.map(tool => <button className={`custom-tool ${allocation.remaining.get(tool.id)===0?"stock-exhausted":""}`} key={tool.id} draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-stageplot-item', tool.id) }} onClick={() => addItem({ ...tool, type: 'library:' + tool.id, tone: 'custom' })}>
+                <span><VectorArtwork shapes={tool.shapes} width={tool.dimensions.widthMeters} depth={tool.dimensions.depthMeters} /></span><span className="equipment-tile-name">{tool.label}</span>{stockQuantity(tool)!==null&&<small className="stock-label">{allocation.remaining.get(tool.id)} in stock{allocation.remaining.get(tool.id)===0?" - External supply":""}</small>}
               </button>)}</div>}
               {activeEquipmentTab !== 'custom' && !visibleEquipment.length && <p className="helper" role="status">{equipmentSearch.trim() ? 'No equipment matches your search in this tab.' : activeEquipmentTab !== 'all' ? 'No equipment in this group.' : libraryOnline ? 'No equipment published yet.' : 'Equipment library unavailable.'}</p>}
             </div>
@@ -831,14 +857,15 @@ function App() {
             </div>
             <label className="field">ROTATION<input type="number" step="1" value={selectedItem.rotation || 0} onChange={(e) => updateSelected({ rotation: +e.target.value })} /></label>
             {(selectedItem.rotationParts || []).map(part=><label className="field" key={part.id}>{part.name.toUpperCase()} ROTATION<input type="number" step="1" min={part.minRotation??-180} max={part.maxRotation??180} value={selectedItem.controls?.[part.id]?.rotation ?? part.defaultRotation ?? 0} onChange={event=>updateSelected({controls:{...selectedItem.controls,[part.id]:{rotation:Math.max(part.minRotation??-180,Math.min(part.maxRotation??180,+event.target.value))}}})}/></label>)}
-            {(selectedItem.shapes || []).some(shape=>shape.toggleable) && <section className="toggleable-parts"><h3>Toggleable parts</h3><p>Choose which optional parts appear on this item.</p><div className="toggleable-part-list">{selectedItem.shapes.filter(shape=>shape.toggleable).map(shape=><label className="toggleable-part-option" key={shape.id}><input type="checkbox" checked={selectedItem.partVisibility?.[shape.id]!==false} onChange={event=>{checkpoint();updateSelected({partVisibility:{...selectedItem.partVisibility,[shape.id]:event.target.checked}})}} /><span>{shape.name || 'Item part'}</span></label>)}</div></section>}
+            {toggleableParts(selectedItem).length>0 && <section className="toggleable-parts"><h3>Toggleable parts</h3><div className="toggleable-part-list">{toggleableParts(selectedItem).map(part=><TriStateToggle key={part.name} value={partState([selectedItem],part.name)} label={part.name} onChange={value=>{checkpoint();updateSelected({partVisibility:setPart(selectedItem,part.name,value).partVisibility})}} />)}</div></section>}
+            {selectedItem.assetId && (stockQuantity(library.find(asset=>asset.id===selectedItem.assetId)||selectedItem)!==null || selectedItem.useExternal) && <section><label className="label-toggle"><input type="checkbox" checked={selectedItem.useExternal===true} onChange={event=>{checkpoint();updateSelected({useExternal:event.target.checked})}} /> Use external</label><p className="inspector-hint">{allocation.external.has(selectedItem.id)?'Externally sourced':'Allocated from stock'}. Use external reserves no stock for this placement.</p></section>}
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.showLabel === true} onChange={event => { checkpoint(); updateSelected({ showLabel: event.target.checked }) }} /> Show label</label>
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.collisionEnabled !== false} onChange={event => { checkpoint(); updateSelected({ collisionEnabled: event.target.checked }) }} /> Equipment collision</label>
             <p className="inspector-hint">Turn this off to allow other equipment to overlap this item. Stage and solid-zone collision still applies.</p>
             <button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete item</button>
-          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Changes below apply to the entire selection.</p><section className="multi-item-settings"><h3>Common settings</h3><TriStateToggle value={triState(item=>item.showLabel===true)} label="Show label" onChange={value=>updateMultiple(item=>({...item,showLabel:value}))}/><TriStateToggle value={triState(item=>item.collisionEnabled!==false)} label="Equipment collision" description="Stage and solid-zone collision remain separate." onChange={value=>updateMultiple(item=>({...item,collisionEnabled:value}))}/><TriStateToggle value={triState(item=>item.visible!==false)} label="Visible on canvas" onChange={value=>updateMultiple(item=>({...item,visible:value}))}/></section>{sharedToggleableParts.length>0&&<section className="toggleable-parts"><h3>Toggleable parts</h3><p>Mixed values show an X. Clicking applies On to every selected item.</p><div className="toggleable-part-list">{sharedToggleableParts.map(shape=><TriStateToggle key={shape.id} value={triState(item=>item.partVisibility?.[shape.id]!==false)} label={shape.name||'Item part'} onChange={value=>updateMultiple(item=>({...item,partVisibility:{...item.partVisibility,[shape.id]:value}}))}/>)}</div></section>}<button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
+          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Changes below apply to the entire selection.</p><section className="multi-item-settings"><h3>Common settings</h3>{multiSelectedItems.every(item=>item.assetId&&stockQuantity(library.find(asset=>asset.id===item.assetId)||item)!==null)&&<TriStateToggle value={triState(item=>item.useExternal===true)} label="Use external" onChange={value=>updateMultiple(item=>({...item,useExternal:value}))}/>}<TriStateToggle value={triState(item=>item.showLabel===true)} label="Show label" onChange={value=>updateMultiple(item=>({...item,showLabel:value}))}/><TriStateToggle value={triState(item=>item.collisionEnabled!==false)} label="Equipment collision" description="Stage and solid-zone collision remain separate." onChange={value=>updateMultiple(item=>({...item,collisionEnabled:value}))}/><TriStateToggle value={triState(item=>item.visible!==false)} label="Visible on canvas" onChange={value=>updateMultiple(item=>({...item,visible:value}))}/></section>{sharedToggleableParts.length>0&&<section className="toggleable-parts"><h3>Toggleable parts</h3><p>Mixed values show an X. Clicking applies On to every selected item.</p><div className="toggleable-part-list">{sharedToggleableParts.map(shape=><TriStateToggle key={shape.name} value={partState(multiSelectedItems,shape.name)} label={shape.name} onChange={value=>updateMultiple(item=>setPart(item,shape.name,value))}/>)}</div></section>}<button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
             <p className="inspector-hint">{space ? space.name : 'No stage selected.'}{lockedStageId!==null && ' · Stage locked by this link'}</p>
-            {toggleableStageParts.length>0&&<section className="toggleable-parts"><h3>Toggleable stage parts</h3><p>Choose which optional parts appear in this project. Hiding a solid zone also disables its collision.</p><div className="toggleable-part-list">{toggleableStageParts.map(part=><label className="toggleable-part-option" key={part.id}><input type="checkbox" checked={space.partVisibility?.[part.id]!==false} onChange={event=>setSpace(current=>({...current,partVisibility:{...current.partVisibility,[part.id]:event.target.checked}}))}/><span>{part.name||'Stage part'}</span></label>)}</div></section>}
+            {toggleableStageParts.length>0&&<section className="toggleable-parts"><h3>Toggleable stage parts</h3><p>Choose which optional parts appear in this project. Hiding a solid zone also disables its collision.</p><div className="toggleable-part-list">{toggleableStageParts.map(part=><TriStateToggle key={part.name} value={partState([stageToggleItem],part.name)} label={part.name} onChange={value=>setSpace(current=>({...current,partVisibility:setPart({...stageToggleItem,partVisibility:current.partVisibility},part.name,value).partVisibility}))}/>)}</div></section>}
             <h3>Movement collision</h3>
             <label className="label-toggle"><input type="checkbox" checked={equipmentCollisionEnabled} onChange={event=>setEquipmentCollisionEnabled(event.target.checked)} /> Equipment collision</label>
             <label className="label-toggle"><input type="checkbox" checked={zoneCollisionEnabled} onChange={event=>setZoneCollisionEnabled(event.target.checked)} /> Stage and zone collision</label>
@@ -868,6 +895,7 @@ function App() {
           <button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>
         </section>
       </div>}
+      {equipmentListOpen&&<EquipmentList project={project} rows={equipmentListRows} onClose={()=>setEquipmentListOpen(false)}/>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {notice && <div className="toast">{notice}</div>}
       {helpOpen&&<StageplotHelp onClose={()=>setHelpOpen(false)}/>} 

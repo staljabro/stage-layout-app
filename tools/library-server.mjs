@@ -131,6 +131,7 @@ const server = createServer(async (request, response) => {
         if (item.id !== match[1]) return send(response, 400, { error: 'Item ID does not match its filename' })
         if (item.schema !== 'stageplot-item@3') return send(response, 400, { error: 'Unsupported Stageplot item format' })
         if (typeof item.label !== 'string' || !item.label.trim()) return send(response, 400, { error: 'Give the item a name before saving' })
+        if (item.stockQuantity != null && (!Number.isSafeInteger(item.stockQuantity) || item.stockQuantity < 0)) return send(response, 400, { error: 'Stock quantity must be a non-negative whole number or blank' })
         if (!Array.isArray(item.shapes)) return send(response, 400, { error: 'Item artwork is invalid' })
         if (!Array.isArray(item.collisionShapes)) return send(response, 400, { error: 'Item collision geometry is invalid' })
         const temporary = `${file}.tmp`

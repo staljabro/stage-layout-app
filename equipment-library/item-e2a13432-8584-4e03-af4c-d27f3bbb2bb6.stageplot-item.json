@@ -1,0 +1,216 @@
+{
+  "schema": "stageplot-item@3",
+  "stageplotPublished": true,
+  "id": "item-e2a13432-8584-4e03-af4c-d27f3bbb2bb6",
+  "label": "Test 3",
+  "groupId": null,
+  "dimensions": {
+    "widthMeters": 1,
+    "depthMeters": 1
+  },
+  "shapes": [
+    {
+      "type": "polygon",
+      "x": 0.2,
+      "y": 0.2,
+      "width": 0.6,
+      "height": 0.6,
+      "sides": 5,
+      "fill": "#e9f5bc",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "toggleable": false,
+      "id": "20",
+      "name": "Polygon"
+    },
+    {
+      "type": "triangle",
+      "x": 0.1,
+      "y": 0.4,
+      "width": 0.5,
+      "height": 0.45,
+      "fill": "#e9f5bc",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "toggleable": true,
+      "id": "22",
+      "name": "Triangle"
+    },
+    {
+      "type": "triangle",
+      "x": 0.4,
+      "y": 0.2,
+      "width": 0.5,
+      "height": 0.45,
+      "fill": "#e9f5bc",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "toggleable": true,
+      "editorGroupId": "group-1",
+      "editorGroupName": "Group",
+      "editorGroupToggleable": true,
+      "id": "23",
+      "name": "Triangle",
+      "toggleName": "Group"
+    },
+    {
+      "type": "circle",
+      "x": 0.2,
+      "y": 0.1,
+      "width": 0.4,
+      "height": 0.4,
+      "fill": "#e9f5bc",
+      "stroke": "#25261f",
+      "strokeWidth": 2,
+      "rotation": 0,
+      "toggleable": true,
+      "editorGroupId": "group-1",
+      "editorGroupName": "Group",
+      "editorGroupToggleable": true,
+      "id": "24",
+      "name": "Circle",
+      "toggleName": "Group"
+    }
+  ],
+  "collisionShapes": [
+    {
+      "type": "polygon",
+      "points": [
+        {
+          "x": 0.10000000000000003,
+          "y": 0.2
+        },
+        {
+          "x": 0.8,
+          "y": 0.2
+        },
+        {
+          "x": 0.8,
+          "y": 0.8
+        },
+        {
+          "x": 0.10000000000000003,
+          "y": 0.8
+        }
+      ]
+    }
+  ],
+  "snapPoints": [],
+  "rotationParts": [],
+  "editor": {
+    "layers": [
+      {
+        "id": 20,
+        "type": "polygon",
+        "name": "Polygon",
+        "x": 0.2,
+        "y": 0.2,
+        "width": 0.6,
+        "height": 0.6,
+        "sides": 5,
+        "fill": "#e9f5bc",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "toggleable": false,
+        "collision": false
+      },
+      {
+        "id": 21,
+        "type": "vector",
+        "name": "Collision shape",
+        "x": 0.1,
+        "y": 0.2,
+        "width": 0.6,
+        "height": 0.4,
+        "nodes": [
+          {
+            "x": 0,
+            "y": 0,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.7000000000000001,
+            "y": 0,
+            "curveMode": "line"
+          },
+          {
+            "x": 0.7000000000000001,
+            "y": 0.6000000000000001,
+            "curveMode": "line"
+          },
+          {
+            "x": 0,
+            "y": 0.6000000000000001,
+            "curveMode": "line"
+          }
+        ],
+        "collisionOnly": true,
+        "fill": "#d7d9d6",
+        "stroke": "#777b77",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "toggleable": false,
+        "collision": true,
+        "leftInset": 0,
+        "rightInset": 0,
+        "slew": 0
+      },
+      {
+        "id": 22,
+        "type": "triangle",
+        "name": "Triangle",
+        "x": 0.1,
+        "y": 0.4,
+        "width": 0.5,
+        "height": 0.45,
+        "fill": "#e9f5bc",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "toggleable": true,
+        "collision": false
+      },
+      {
+        "id": 23,
+        "type": "triangle",
+        "name": "Triangle",
+        "x": 0.4,
+        "y": 0.2,
+        "width": 0.5,
+        "height": 0.45,
+        "fill": "#e9f5bc",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "toggleable": false,
+        "collision": false,
+        "editorGroupId": "group-1",
+        "editorGroupName": "Group",
+        "editorGroupToggleable": true
+      },
+      {
+        "id": 24,
+        "type": "circle",
+        "name": "Circle",
+        "x": 0.2,
+        "y": 0.1,
+        "width": 0.4,
+        "height": 0.4,
+        "fill": "#e9f5bc",
+        "stroke": "#25261f",
+        "strokeWidth": 2,
+        "rotation": 0,
+        "toggleable": false,
+        "collision": false,
+        "editorGroupId": "group-1",
+        "editorGroupName": "Group",
+        "editorGroupToggleable": true
+      }
+    ],
+    "referenceImages": []
+  }
+}
