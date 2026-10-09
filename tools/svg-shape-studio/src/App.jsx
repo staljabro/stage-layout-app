@@ -18,6 +18,7 @@ import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership
 import { StudioHelp } from "../../../src/help-dialog.jsx";
 import { APP_VERSION } from "../../../src/version.js";
 import { AppMark } from "../../../src/app-mark.jsx";
+import { normalizeZoneFolders, putZonesInFolder, removeZonesFromFolders } from "./stage-zone-folders.js";
 
 const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:8787/api" : "/api")).replace(/\/$/, "");
 const LIBRARY_API = `${API_BASE}/items`;
@@ -913,6 +914,9 @@ function App() {
   const [referenceImages, setReferenceImages] = useDimensionState(session.referenceImages ?? []);
   const [selectedReferenceId, setSelectedReferenceId] = useState(null);
   const [zones, setZones] = useState(session.zones ?? []);
+  const [zoneFolders, setZoneFolders] = useState(() => normalizeZoneFolders(session.zoneFolders, session.zones ?? []));
+  const [editingZoneFolderId, setEditingZoneFolderId] = useState(null);
+  const [zoneFolderDraft, setZoneFolderDraft] = useState("");
   const [textItems, setTextItems] = useState(session.textItems ?? []);
   const [selectedTextId, setSelectedTextId] = useState(null);
   const [dimensionLines,setDimensionLines]=useState(session.dimensionLines??[]);
@@ -949,7 +953,7 @@ function App() {
   const clipboardId = useRef(1);
   const projectSnapshot = JSON.stringify(documentMode === "item"
     ? {documentMode,shapeName,realWidth,realDepth,groupId,items,rotationParts,cornerSnapping,referenceImages,advancedShapeRole}
-    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,zones,textItems,dimensionLines,referenceImages});
+    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,zones,zoneFolders,textItems,dimensionLines,referenceImages});
   useEffect(() => {
     if (savedProject.current === null || resetProjectBaseline.current) {
       savedProject.current = projectSnapshot;
@@ -958,7 +962,7 @@ function App() {
   });
   const sessionError = useSessionDraft("shape-studio:draft", {
     documentMode, shapeName, realWidth, realDepth, groupId, items, rotationParts, cornerSnapping, referenceImages,
-    advancedShapeRole, stageNodes, zones, textItems, dimensionLines, stageBoundaryLocked, activeLibraryId, draftAssetId, snapMode, grid,
+    advancedShapeRole, stageNodes, zones, zoneFolders, textItems, dimensionLines, stageBoundaryLocked, activeLibraryId, draftAssetId, snapMode, grid,
     zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
     savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
   });
@@ -1103,7 +1107,7 @@ function App() {
       })),
       textItems,
       details: [],
-      editor: { referenceImages, dimensionLines, stageBoundaryLocked },
+      editor: { referenceImages, dimensionLines, stageBoundaryLocked, zoneFolders },
     }),
     [
       activeLibraryId, draftAssetId,
@@ -1116,6 +1120,7 @@ function App() {
       textItems,
       dimensionLines,
       referenceImages,
+      zoneFolders,
     ],
   );
 
@@ -1149,6 +1154,7 @@ function App() {
         stageNodes: structuredClone(stageNodes),
         stageBoundaryLocked,
         zones: structuredClone(zones),
+        zoneFolders: structuredClone(zoneFolders),
         textItems: structuredClone(textItems),
         dimensionLines: structuredClone(dimensionLines),
         realWidth,
@@ -1167,6 +1173,7 @@ function App() {
     if (previous.stageNodes) setStageNodes(previous.stageNodes);
     if (previous.stageBoundaryLocked !== undefined) setStageBoundaryLocked(previous.stageBoundaryLocked);
     if (previous.zones) setZones(previous.zones);
+    if (previous.zoneFolders) setZoneFolders(previous.zoneFolders);
     if (previous.textItems) setTextItems(previous.textItems);
     if (previous.dimensionLines) setDimensionLines(previous.dimensionLines);
     setSelectedReferenceId(null);
@@ -2172,6 +2179,7 @@ function App() {
     setStageNodes(normalized);
     setStageBoundaryLocked(stage.editor?.stageBoundaryLocked ?? false);
     setZones((stage.zones || []).map((zone, index) => ({ ...zone, zOrder: zone.zOrder ?? index })));
+    setZoneFolders(normalizeZoneFolders(stage.editor?.zoneFolders, stage.zones || []));
     setTextItems((stage.textItems || []).map((item, index) => ({ ...item, zOrder: item.zOrder ?? (stage.zones?.length || 0) + index })));
     setDimensionLines((stage.editor?.dimensionLines||[]).map((item,index)=>({...item,zOrder:item.zOrder??(stage.zones?.length||0)+(stage.textItems?.length||0)+index})));
     setSelectedDimensionId(null);
@@ -2210,6 +2218,7 @@ function App() {
     setStageNodes(defaultStageNodes(width, depth));
     setStageBoundaryLocked(false);
     setZones([]);
+    setZoneFolders([]);
     setTextItems([]);
     setDimensionLines([]);
     setSelectedDimensionId(null);
@@ -2436,7 +2445,7 @@ function App() {
     ids.delete("stage-boundary");
     if(!ids.size)return;
     checkpoint();
-    setZones(old=>old.filter(zone=>!ids.has(zone.id)));setTextItems(old=>old.filter(item=>!ids.has(item.id)));setDimensionLines(old=>old.filter(item=>!ids.has(item.id)));setReferenceImages(old=>old.filter(image=>!ids.has(image.id)));
+    setZones(old=>old.filter(zone=>!ids.has(zone.id)));setZoneFolders(old=>removeZonesFromFolders(old,[...ids]));setTextItems(old=>old.filter(item=>!ids.has(item.id)));setDimensionLines(old=>old.filter(item=>!ids.has(item.id)));setReferenceImages(old=>old.filter(image=>!ids.has(image.id)));
     setSelectedStageAssetIds([]);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedReferenceId(null);setSelectedStageNode(null);
   };
   useEffect(() => {
@@ -2473,6 +2482,24 @@ function App() {
   });
 
   useEffect(()=>{if(documentMode!=="stage")setStageMoveMode(false);},[documentMode]);
+
+  const selectStageAsset = (event, asset) => {
+    if(event.shiftKey){const current=selectedStageAssetIds,members=zoneGroupIds(zones,asset.id),next=members.every(id=>current.includes(id))?current.filter(id=>!members.includes(id)):[...new Set([...current,...members])];setSelectedStageAssetIds(next);setSelectedReferenceId(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedStageNode(null);return;}
+    if (asset.assetType === "image") { setSelectedReferenceId(asset.id); setSelectedZoneId(null); setSelectedTextId(null); }
+    else if (asset.assetType === "text") { setSelectedTextId(asset.id); setSelectedZoneId(null); setSelectedReferenceId(null); }
+    else if(asset.assetType==="dimension"){setSelectedDimensionId(asset.id);setSelectedZoneId(null);setSelectedTextId(null);setSelectedReferenceId(null);}
+    else { setSelectedZoneId(asset.id); setSelectedTextId(null); setSelectedReferenceId(null); }
+    if(asset.assetType!=="dimension")setSelectedDimensionId(null);
+    setSelectedStageNode(null);
+    setSelectedStageAssetIds(zoneGroupIds(zones,asset.id));
+  };
+
+  const stageAssetLayer = asset => <button draggable={!asset.locked} className={selectedStageAssetIds.includes(asset.id) || (asset.assetType === "image" ? selectedReferenceId === asset.id : asset.assetType === "text" ? selectedTextId === asset.id : asset.assetType === "dimension" ? selectedDimensionId===asset.id : selectedZoneId === asset.id) ? "active" : ""} key={asset.id}
+    onDragStart={event=>{assetDragRef.current=asset.id;event.dataTransfer.setData("text/plain",asset.id);}} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(assetDragRef.current){reorderAsset(assetDragRef.current,asset.id);setZoneFolders(old=>removeZonesFromFolders(old,[assetDragRef.current]));}assetDragRef.current=null;}} onClick={event=>selectStageAsset(event,asset)}>
+    <i style={{background:asset.assetType==="image"?"#d8d8d8":["text","dimension"].includes(asset.assetType)?asset.color:asset.fill||"#f7f6ef"}}/>
+    <span className="asset-name">{asset.name||(asset.assetType==="image"?"Background image":asset.assetType==="text"?"Text":asset.assetType==="dimension"?"Dimension":"Zone")}<span className="asset-lock" role="button" title={asset.locked?"Unlock asset":"Lock asset"} onClick={event=>{event.stopPropagation();toggleAssetLock(asset);}}>{asset.locked?"🔒":"🔓"}</span></span>
+    <small>{asset.editorGroupId?asset.editorGroupName||"Zone group":asset.assetType==="image"?"image":asset.assetType==="text"?"text":asset.assetType==="dimension"?"studio dimension":asset.label?"label zone":asset.solid?"solid zone":"aesthetic zone"}</small>
+  </button>;
 
   return (
     <MeasurementUnit.Provider value={documentMode === "stage" ? "m" : "cm"}>
@@ -2544,7 +2571,17 @@ function App() {
                 hidden
               />
               <div className="layers asset-layers">
-                {orderedAssets.map((asset) => (
+                {zoneFolders.map(folder=>{const members=orderedAssets.filter(asset=>asset.assetType==="zone"&&folder.zoneIds.includes(asset.id));return <div className="studio-zone-folder" key={folder.id}>
+                  <div className="studio-zone-folder-header" onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();const dragged=zones.find(zone=>zone.id===assetDragRef.current);if(!dragged)return;const ids=selectedStageAssetIds.includes(dragged.id)?selectedStageAssetIds.filter(id=>zones.some(zone=>zone.id===id)):zoneGroupIds(zones,dragged.id);checkpoint();setZoneFolders(old=>putZonesInFolder(old,ids,folder.id));assetDragRef.current=null;}}>
+                    <button type="button" className="studio-folder-collapse" aria-label={folder.collapsed?"Expand folder":"Collapse folder"} aria-expanded={!folder.collapsed} onClick={()=>setZoneFolders(old=>old.map(candidate=>candidate.id===folder.id?{...candidate,collapsed:!candidate.collapsed}:candidate))}>{folder.collapsed?"▸":"▾"}</button>
+                    <span aria-hidden="true">📁</span>
+                    {editingZoneFolderId===folder.id?<input className="studio-folder-name-input" autoFocus value={zoneFolderDraft} onChange={event=>setZoneFolderDraft(event.target.value)} onBlur={()=>{const name=zoneFolderDraft.trim();setZoneFolders(old=>old.map(candidate=>candidate.id===folder.id?{...candidate,...(name?{name}:{})}:candidate));setEditingZoneFolderId(null);}} onKeyDown={event=>{if(event.key==="Enter")event.currentTarget.blur();if(event.key==="Escape"){setZoneFolderDraft(folder.name);event.currentTarget.blur();}}}/>:<button type="button" className="studio-folder-name" onDoubleClick={()=>{setEditingZoneFolderId(folder.id);setZoneFolderDraft(folder.name);}} onClick={event=>{const ids=members.flatMap(asset=>zoneGroupIds(zones,asset.id));setSelectedStageAssetIds(event.shiftKey?[...new Set([...selectedStageAssetIds,...ids])]:ids);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedReferenceId(null);}}>{folder.name}</button>}
+                    <small>{members.length}</small>
+                    <button type="button" className="studio-folder-remove" title="Remove folder" aria-label={`Remove ${folder.name}`} onClick={()=>setZoneFolders(old=>old.filter(candidate=>candidate.id!==folder.id))}>×</button>
+                  </div>
+                  {!folder.collapsed&&<div className="studio-zone-folder-children">{members.map(stageAssetLayer)}</div>}
+                </div>;})}
+                {orderedAssets.filter(asset=>asset.assetType!=="zone"||!zoneFolders.some(folder=>folder.zoneIds.includes(asset.id))).map((asset) => (
                   <button
                     draggable={!asset.locked}
                     className={selectedStageAssetIds.includes(asset.id) || (asset.assetType === "image" ? selectedReferenceId === asset.id : asset.assetType === "text" ? selectedTextId === asset.id : asset.assetType === "dimension" ? selectedDimensionId===asset.id : selectedZoneId === asset.id) ? "active" : ""}
@@ -2569,6 +2606,7 @@ function App() {
                   </button>
                 ))}
               </div>
+              <button className="new-zone-folder" onClick={()=>{const id=`zone-folder-${Date.now()}`,name=`Zone folder ${zoneFolders.length+1}`;checkpoint();setZoneFolders(old=>[...old,{id,name,collapsed:false,zoneIds:[]}]);setEditingZoneFolderId(id);setZoneFolderDraft(name);}}>+ New zone folder</button>
               <button className={`stage-boundary-toggle${selectedStageAssetIds.includes("stage-boundary") ? " selected" : ""}`} type="button" aria-expanded={stageNodesExpanded} onClick={()=>setStageNodesExpanded(value=>!value)}><span>STAGE BOUNDARY</span><small>{stageNodes.length} nodes</small><span className="asset-lock" role="button" title={stageBoundaryLocked ? "Unlock main stage" : "Lock main stage"} onClick={event=>{event.stopPropagation();checkpoint();setStageBoundaryLocked(value=>!value);setSelectedStageNode(null);setSelectedStageAssetIds([]);}}>{stageBoundaryLocked ? "🔒" : "🔓"}</span><b>{stageNodesExpanded ? "−" : "+"}</b></button>
               <p className="handle-help">
                 <b>Shift-click</b> a highlighted edge to insert a node.{" "}
@@ -3405,9 +3443,12 @@ function App() {
                   <button
                     className="delete"
                     onClick={() => {
+                      checkpoint();
                       setZones((old) =>
                         old.filter((zone) => zone.id !== selectedZoneId),
                       );
+                      setZoneFolders(old=>removeZonesFromFolders(old,[selectedZoneId]));
+                      setSelectedStageAssetIds(old=>old.filter(id=>id!==selectedZoneId));
                       setSelectedZoneId(null);
                       setSelectedStageNode(null);
                     }}

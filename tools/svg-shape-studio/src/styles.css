@@ -49,6 +49,17 @@ main { height: calc(100vh - 70px); min-height: 0; display: grid; grid-template-c
 .canvas-resize-edge.depth { cursor: ns-resize; }
 .asset-layers button[draggable="true"] { cursor: grab; }
 .asset-layers button { position: relative; }
+.studio-zone-folder { border: 1px solid transparent; border-radius: 4px; }
+.studio-zone-folder:has(.active) { border-color: #d7dfb4; }
+.studio-zone-folder-header { display: grid; grid-template-columns: 18px 16px minmax(0,1fr) auto 18px; gap: 4px; align-items: center; padding: 5px 3px; border-radius: 4px; background: #e9e8e1; color: #4f504a; font-size: 10px; }
+.studio-zone-folder-header:hover { background: #e2e7cf; }
+.studio-zone-folder-header > button { display: block; padding: 2px; border: 0; background: transparent; color: inherit; }
+.studio-zone-folder-header small { color: #85867e; font-size: 8px; }
+.studio-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.studio-folder-name-input { min-width: 0; width: 100%; padding: 3px 4px; border: 1px solid #9db72d; border-radius: 3px; background: white; color: #3f413b; font: inherit; }
+.studio-folder-collapse,.studio-folder-remove { text-align: center; cursor: pointer; }
+.studio-zone-folder-children { padding-left: 5px; border-left: 1px solid #c7ccb2; }
+.new-zone-folder { width: 100%; margin: 7px 0 15px; padding: 7px; border: 1px solid #c9c8bf; border-radius: 4px; background: white; color: #62645c; font-size: 10px; }
 .asset-name { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 5px; }.asset-lock { flex: 0 0 auto; font-size: 13px; padding: 2px 4px; cursor: pointer; }
 .stage-boundary-toggle { width: 100%; margin-top: 20px; display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; padding: 8px 0; border: 0; border-bottom: 1px solid #d8d7cf; color: #777970; background: transparent; text-align: left; font: 700 9px 'Space Mono'; letter-spacing: .1em; }.stage-boundary-toggle small { color: #aaa; font-size: 8px; letter-spacing: 0; }.stage-boundary-toggle b { font-size: 15px; }.stage-floor-drag.locked { cursor: default; pointer-events: none; }
 .stage-boundary-toggle.selected { background: #fff; color: #4f504a; }
