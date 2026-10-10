@@ -9,6 +9,7 @@ import { selectionBox, enclosedItems } from './marquee.js'
 import { belongsToStagingGroup, insertAtDefaultLayer } from './layer-order.js'
 import { folderForItem, layerRows, moveFolderBlock, putItemsInFolder } from './layer-folders.js'
 import { rotatedBounds } from '../tools/svg-shape-studio/src/rotation.js'
+import { controlsKeepingWorldOrientation } from './rotation-controls.js'
 import { isPublishedItem, isEquipmentItem } from '../tools/library-membership.mjs'
 import { collisionPolygons, isItemInsideSpace, itemsCollide, nearestSnapOffset, polygonsIntersect, rectangleBoundary } from './geometry.js'
 import { projectFile, resolveProject, stageSpace } from './project-file.js'
@@ -363,7 +364,7 @@ function App() {
     const board = boardRef.current.getBoundingClientRect()
     const cx = board.left + item.xMeters * 100 * zoom
     const cy = board.top + item.yMeters * 100 * zoom
-    rotateRef.current = { id: item.id, cx, cy, offset: (item.rotation || 0) - Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI }
+    rotateRef.current = { id: item.id, cx, cy, offset: (item.rotation || 0) - Math.atan2(event.clientY - cy, event.clientX - cx) * 180 / Math.PI, preservePartOrientation:event.ctrlKey, originalItem:structuredClone(item) }
     setSelected(item.id)
     setMultiSelected([])
   }
@@ -463,7 +464,8 @@ function App() {
       const rotation = current.partId ? Math.max(current.min,Math.min(current.max,Math.round(pointer-current.itemRotation+current.offset))) : pointer + current.offset
       setItems((old) => old.map((item) => {
         if (item.id !== current.id) return item
-        const candidate = current.partId ? {...item,controls:{...item.controls,[current.partId]:{rotation}}} : { ...item, rotation: Math.round(rotation) }
+        const nextRotation=Math.round(rotation)
+        const candidate = current.partId ? {...item,controls:{...item.controls,[current.partId]:{rotation}}} : { ...item, rotation: nextRotation, ...(current.preservePartOrientation?{controls:{...item.controls,...controlsKeepingWorldOrientation(current.originalItem,nextRotation)}}:{}) }
         return canPlace(candidate) ? candidate : item
       }))
       return
@@ -779,8 +781,8 @@ function App() {
                 >
                   {item.customType ? <span className="placed-artwork"><CustomItemArtwork item={item} /></span> : item.shapes ? <span className="placed-artwork"><VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility} /></span> : <span className={`placed-symbol ${item.tone}`}>{item.icon}</span>}
                   {item.showLabel === true && <span className="placed-label">{item.label}</span>}
-                  {selected === item.id && <span className="rotation-stem"><span className="rotation-handle" onPointerDown={(event) => startRotation(event, item)} /></span>}
-                  {selected === item.id && (item.rotationParts || []).map(part=><span key={part.id} className="part-rotation-handle" title={`Rotate ${part.name}`} style={{left:`${part.pivotX/item.widthMeters*100}%`,top:`${part.pivotY/item.depthMeters*100}%`}} onPointerDown={event=>startPartRotation(event,item,part)} />)}
+                  {selected === item.id && <span className="rotation-stem"><span className="rotation-handle" title="Rotate item · Ctrl-drag to keep articulated parts facing their current direction" onPointerDown={(event) => startRotation(event, item)} /></span>}
+                  {selected === item.id && (item.rotationParts || []).map((part,index)=>{const angle=item.controls?.[part.id]?.rotation??part.defaultRotation??0;return <span key={part.id} className="part-rotation-control" style={{left:`${part.pivotX/item.widthMeters*100}%`,top:`${part.pivotY/item.depthMeters*100}%`,transform:`rotate(${angle}deg)`,"--part-handle-length":`${28+index*14}px`,"--part-colour":`hsl(${200+index*47} 62% 42%)`}}><span className="part-rotation-arm"/><span className="part-rotation-handle" title={`Rotate ${part.name}`} aria-label={`Rotate ${part.name}`} onPointerDown={event=>startPartRotation(event,item,part)}/><span className="part-rotation-name">{part.name}</span></span>})}
                 </button>
               ))}
               {customStagingPreview && <div className="custom-staging-preview" style={{left:`${customStagingPreview.left*100}px`,top:`${customStagingPreview.top*100}px`,width:`${customStagingPreview.widthMeters*100}px`,height:`${customStagingPreview.depthMeters*100}px`}}><span>{customStagingPreview.widthMeters} × {customStagingPreview.depthMeters}m</span></div>}

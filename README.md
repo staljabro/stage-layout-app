@@ -81,7 +81,7 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Left-drag empty canvas to select fully enclosed equipment.
 - Shift-click canvas items to add or remove them from the current selection.
 - Drag equipment to move it; collision-constrained movement stops at the nearest valid position and slides along obstacles.
-- Drag the lower handle to rotate an item. Additional handles control articulated parts.
+- Drag the lower handle to rotate an item. Ctrl-drag it to keep articulated parts at their current stage-facing orientations while the rest of the item turns. Differently coloured arm handles control individual articulated parts and remain distinct when an item has several controls.
 - Press **Delete** or **Backspace** to remove the current selection.
 - Press **Ctrl/Cmd+C** and **Ctrl/Cmd+V** to copy and paste selected items. Copies retain library references, custom-item definitions, controls, visibility and folder membership.
 - Hold **Alt** while beginning a drag to duplicate the clicked item, or the complete selection when dragging a selected item.

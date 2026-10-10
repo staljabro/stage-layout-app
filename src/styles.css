@@ -89,7 +89,12 @@ select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #
 .rotation-stem { position: absolute; left: 50%; top: 100%; width: 1px; height: 30px; background: #809622; transform: translateX(-50%); pointer-events: none; }
 .rotation-handle { position: absolute; left: 50%; bottom: -7px; width: 14px; height: 14px; border: 2px solid #71851d; border-radius: 50%; background: #d6ff46; box-shadow: 0 1px 3px #0003; transform: translateX(-50%); pointer-events: auto; cursor: grab; }
 .rotation-handle:active { cursor: grabbing; }
-.part-rotation-handle { position: absolute; width: 12px; height: 12px; border: 2px solid #287da1; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0004; transform: translate(-50%,-50%); pointer-events: auto; cursor: grab; z-index: 5; }.part-rotation-handle:active { cursor: grabbing; }
+.part-rotation-control { position: absolute; width: 0; height: 0; transform-origin: center; pointer-events: none; z-index: 5; }
+.part-rotation-arm { position: absolute; left: 0; top: -1px; width: var(--part-handle-length); height: 2px; border-radius: 2px; background: var(--part-colour); box-shadow: 0 0 0 1px #fff9; }
+.part-rotation-handle { position: absolute; left: var(--part-handle-length); top: 0; width: 18px; height: 18px; border: 2px solid var(--part-colour); border-radius: 50%; background: #fff; box-shadow: 0 1px 4px #0005; transform: translate(-50%,-50%); pointer-events: auto; cursor: grab; }
+.part-rotation-handle:active { cursor: grabbing; }
+.part-rotation-name { position: absolute; left: calc(var(--part-handle-length) + 13px); top: 0; width: max-content; max-width: 120px; padding: 3px 5px; border-radius: 3px; background: #20211eeb; color: white; opacity: 0; transform: translateY(-50%); transition: opacity .12s; font: 700 8px 'Space Mono'; pointer-events: none; }
+.part-rotation-control:hover .part-rotation-name { opacity: 1; }
 .stage-viewport, .stage-viewport:active { cursor: default; }
 .placed-item { cursor: move; }
 .selection-marquee { position: absolute; border: 1px solid #71851f; background: #a7c62822; pointer-events: none; z-index: 100; }
@@ -137,7 +142,7 @@ select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #
   .stage-viewport { position: relative; display: block; width: 400mm; height: 250mm; overflow: hidden; padding: 0; background: white; }
   .stage-viewport .stage { position: absolute; left: 0; top: 0; transform: translate(var(--print-x), var(--print-y)) scale(var(--print-scale)) !important; transform-origin: 0 0; box-shadow: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .placed-item { outline: 0 !important; box-shadow: none !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .rotation-stem, .part-rotation-handle, .selection-marquee { display: none !important; }
+  .rotation-stem, .part-rotation-control, .selection-marquee { display: none !important; }
   .print-footer { height: 7mm; display: flex; align-items: flex-end; justify-content: center; color: #6f7169; font-size: 8pt; white-space: nowrap; }
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

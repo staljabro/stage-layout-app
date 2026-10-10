@@ -4,6 +4,7 @@
   "id": "item-67a3dec9-2e7f-4ecf-b579-1e3263d381c5",
   "label": "D+B M6 Foldback Monitor Stand",
   "groupId": "speakers-and-amps",
+  "stockQuantity": null,
   "dimensions": {
     "widthMeters": 0.8,
     "depthMeters": 0.8
@@ -295,6 +296,7 @@
       ]
     }
   ],
+  "snapPoints": [],
   "rotationParts": [
     {
       "id": "rotation-part-1789979384924",

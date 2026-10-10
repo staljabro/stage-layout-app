@@ -1,10 +1,11 @@
-import { stageZone } from './zone-groups.js';
+import { stageText, stageZone } from './zone-groups.js';
 import { customItemData, restoreCustomItem } from './custom-items.js';
 
 export function stageSpace(stage, savedVisibility = {}) {
   const zones=(stage.zones||[]).map(stageZone);
-  const toggleable=[...zones,...(stage.textItems||[])].filter(part=>part.toggleable).map(part=>String(part.id));
-  return {stageId:stage.id,name:stage.label,width:stage.dimensions.widthMeters,depth:stage.dimensions.depthMeters,collisionBoundary:stage.collisionBoundary,boundary:stage.boundary,zones,textItems:stage.textItems || [],partVisibility:Object.fromEntries(toggleable.map(id=>[id,savedVisibility[id]!==false]))};
+  const textItems=(stage.textItems||[]).map(stageText);
+  const toggleable=[...zones,...textItems].filter(part=>part.toggleable).map(part=>String(part.id));
+  return {stageId:stage.id,name:stage.label,width:stage.dimensions.widthMeters,depth:stage.dimensions.depthMeters,collisionBoundary:stage.collisionBoundary,boundary:stage.boundary,zones,textItems,partVisibility:Object.fromEntries(toggleable.map(id=>[id,savedVisibility[id]!==false]))};
 }
 export function assetReference(item) {
   return item.assetId || (item.type?.startsWith('library:') ? item.type.slice(8) : null);
