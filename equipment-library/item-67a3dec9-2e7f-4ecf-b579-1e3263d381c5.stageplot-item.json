@@ -21,7 +21,6 @@
       "stroke": "#25261f",
       "strokeWidth": 2,
       "rotation": -90,
-      "rotationPartId": "rotation-part-1789979384924",
       "id": "25",
       "name": "Tripod base"
     },
@@ -324,8 +323,7 @@
         "stroke": "#25261f",
         "strokeWidth": 2,
         "rotation": -90,
-        "collision": false,
-        "rotationPartId": "rotation-part-1789979384924"
+        "collision": false
       },
       {
         "id": 24,

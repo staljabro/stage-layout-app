@@ -27,6 +27,8 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Marquee-select objects or Shift-click layers for additive selection.
 - Shift-click items directly on the canvas for additive selection, copy/paste complete selections with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`, or hold Alt while dragging to duplicate and position them in one action.
 - Organise the draw stack with collapsible, reorderable layer folders.
+- Search and filter large layer stacks, resize or hide the side panels, and collapse remembered Inspector sections.
+- Align or distribute multi-selections and use undo/redo for structural edits.
 - Hide individual layers or folders without changing their physical collision behaviour.
 - Automatically place equipment in the `Staging` group and custom staging behind other layers, with equipment collision off by default.
 - Track per-project stock allocation, allow external sourcing, and export equipment quantities as CSV or PDF.
@@ -81,7 +83,9 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Left-drag empty canvas to select fully enclosed equipment.
 - Shift-click canvas items to add or remove them from the current selection.
 - Drag equipment to move it; collision-constrained movement stops at the nearest valid position and slides along obstacles.
-- Drag the lower handle to rotate an item. Ctrl-drag it to keep articulated parts at their current stage-facing orientations while the rest of the item turns. Differently coloured arm handles control individual articulated parts and remain distinct when an item has several controls.
+- Drag the lower handle to rotate an item. Hold **Shift** for 15-degree snapping. Ctrl-drag it to keep articulated parts at their current stage-facing orientations while the rest of the item turns. Differently coloured arm handles control individual articulated parts and remain distinct when an item has several controls.
+- Press an arrow key to nudge the selection by 1 cm, or Shift-arrow to move it by 10 cm.
+- Press **Ctrl/Cmd+Z** to undo and **Ctrl/Cmd+Shift+Z** or **Ctrl/Cmd+Y** to redo.
 - Press **Delete** or **Backspace** to remove the current selection.
 - Press **Ctrl/Cmd+C** and **Ctrl/Cmd+V** to copy and paste selected items. Copies retain library references, custom-item definitions, controls, visibility and folder membership.
 - Hold **Alt** while beginning a drag to duplicate the clicked item, or the complete selection when dragging a selected item.
