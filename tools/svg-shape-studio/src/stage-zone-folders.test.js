@@ -25,3 +25,8 @@ test("saved folders discard missing and duplicate zone references", () => {
   const folders = normalizeZoneFolders([{ id: "one", zoneIds: ["a", "missing"] }, { id: "two", zoneIds: ["a", "b"] }], assets.slice(1));
   assert.deepEqual(folders.map(folder => folder.zoneIds), [["a"], ["b"]]);
 });
+
+test("new generic asset folders load alongside legacy zone folders",()=>{
+  const folders=normalizeZoneFolders([{id:"mixed",assetIds:["text","a"]}],assets)
+  assert.deepEqual(folders[0].zoneIds,["text","a"])
+})

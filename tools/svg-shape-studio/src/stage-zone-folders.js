@@ -43,6 +43,6 @@ export function normalizeZoneFolders(folders, zones) {
     id: typeof folder.id === "string" ? folder.id : `zone-folder-${index}`,
     name: typeof folder.name === "string" && folder.name.trim() ? folder.name : "Zone folder",
     collapsed: folder.collapsed === true,
-    zoneIds: (Array.isArray(folder.zoneIds) ? folder.zoneIds : []).filter(id => valid.has(id) && !claimed.has(id) && claimed.add(id)),
+    zoneIds: (Array.isArray(folder.assetIds) ? folder.assetIds : Array.isArray(folder.zoneIds) ? folder.zoneIds : []).filter(id => valid.has(id) && !claimed.has(id) && claimed.add(id)),
   }));
 }

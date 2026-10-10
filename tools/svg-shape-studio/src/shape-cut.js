@@ -32,6 +32,16 @@ export function subtractLayers(bottom,cutter) {
   return result.map(polygon=>polygon[0].slice(0,-1)).filter(ring=>ring.length>=3);
 }
 
+export function unionLayers(layers) {
+  if (!Array.isArray(layers) || layers.length < 2) throw new Error('Select at least two closed layers to merge.');
+  const result=polygonClipping.union(...layers.map(layer=>[[layerOutline(layer)]]));
+  if(result.length!==1)throw new Error('The selected layers must overlap into one continuous shape.');
+  if(result[0].length!==1)throw new Error('This merge would create a hole, which editable Studio vectors do not support.');
+  const ring=result[0][0].slice(0,-1);
+  if(ring.length<3)throw new Error('The selected layers do not produce a valid closed shape.');
+  return ring;
+}
+
 const distanceToLine=(pointValue,start,end)=>{
   const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy);
   return length<1e-9?Math.hypot(pointValue[0]-start[0],pointValue[1]-start[1]):Math.abs(dy*pointValue[0]-dx*pointValue[1]+end[0]*start[1]-end[1]*start[0])/length;
