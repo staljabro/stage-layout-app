@@ -826,7 +826,10 @@
           "y": 2.9995
         }
       ],
-      "toggleable": true
+      "toggleable": true,
+      "editorGroupId": "stage-group-1791625445317-2",
+      "editorGroupName": "Storage Zone",
+      "editorGroupToggleable": true
     },
     {
       "id": "zone-1790293768039",
@@ -883,7 +886,10 @@
           "x": 2,
           "y": 4.15
         }
-      ]
+      ],
+      "editorGroupId": "stage-group-1791625410178-1",
+      "editorGroupName": "Door Clearways",
+      "editorGroupToggleable": true
     },
     {
       "id": "zone-1790293902725",
@@ -940,7 +946,10 @@
           "x": 10.3,
           "y": 4.15
         }
-      ]
+      ],
+      "editorGroupId": "stage-group-1791625410178-1",
+      "editorGroupName": "Door Clearways",
+      "editorGroupToggleable": true
     }
   ],
   "textItems": [
@@ -980,13 +989,17 @@
       "opacity": 1,
       "locked": true,
       "zOrder": 12,
-      "toggleable": true
+      "toggleable": true,
+      "editorGroupId": "stage-group-1791625445317-2",
+      "editorGroupName": "Storage Zone",
+      "editorGroupToggleable": true
     }
   ],
   "details": [],
   "editor": {
     "referenceImages": [],
     "dimensionLines": [],
-    "stageBoundaryLocked": true
+    "stageBoundaryLocked": true,
+    "zoneFolders": []
   }
 }

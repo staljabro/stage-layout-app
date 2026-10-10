@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { subtractLayers, vectorFromCutRing } from './shape-cut.js';
+import { subtractLayers, unionLayers, vectorFromCutRing } from './shape-cut.js';
 import { sampleStageBoundary } from '../../../src/stage-geometry.js';
 
 test('a rectangle cuts a circle into an editable half-circle vector',()=>{
@@ -55,4 +55,17 @@ test('cuts that create unsupported holes are rejected',()=>{
   const bottom={type:'rect',x:0,y:0,width:4,height:4};
   const cutter={type:'circle',x:1,y:1,width:2,height:2};
   assert.throws(()=>subtractLayers(bottom,cutter),/create a hole/);
+});
+
+test('overlapping closed layers merge into one ring',()=>{
+  const ring=unionLayers([{type:'rect',x:0,y:0,width:2,height:1,rotation:0},{type:'rect',x:1,y:0,width:2,height:1,rotation:0}]);
+  assert.ok(ring.length>=4);
+  const merged=vectorFromCutRing({type:'rect',name:'Merged',fill:'#fff'},ring,1);
+  assert.equal(merged.type,'vector');assert.equal(merged.width,3);
+});
+
+test('disconnected merges and merges containing holes are rejected',()=>{
+  assert.throws(()=>unionLayers([{type:'rect',x:0,y:0,width:1,height:1,rotation:0},{type:'rect',x:2,y:0,width:1,height:1,rotation:0}]),/overlap/);
+  const frame=[{type:'rect',x:0,y:0,width:3,height:1,rotation:0},{type:'rect',x:0,y:2,width:3,height:1,rotation:0},{type:'rect',x:0,y:1,width:1,height:1,rotation:0},{type:'rect',x:2,y:1,width:1,height:1,rotation:0}];
+  assert.throws(()=>unionLayers(frame),/create a hole/);
 });
