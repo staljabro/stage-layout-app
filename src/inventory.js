@@ -3,7 +3,8 @@ import { assetReference } from './project-file.js'
 export const stockQuantity = item => Number.isSafeInteger(item?.stockQuantity) && item.stockQuantity >= 0 ? item.stockQuantity : null
 
 // Placement IDs increase on insertion; draw-stack reordering must not reallocate stock.
-export function allocateStock(items, library) {
+export function allocateStock(items, library, trackStock = true) {
+  if (!trackStock) return {external:new Set(),remaining:new Map(library.map(asset=>[asset.id,null]))}
   const assets = new Map(library.map(asset => [asset.id, asset]))
   const used = new Map(), external = new Set()
   for (const item of [...items].sort((a,b) => a.id-b.id)) {
@@ -17,14 +18,14 @@ export function allocateStock(items, library) {
   return { external, remaining: new Map(library.map(asset => [asset.id, stockQuantity(asset) === null ? null : Math.max(0, stockQuantity(asset)-(used.get(asset.id)||0))])) }
 }
 
-export function equipmentRows(items, library, allocation = allocateStock(items, library)) {
+export function equipmentRows(items, library, allocation = allocateStock(items, library), trackStock = true) {
   const assets = new Map(library.map(asset => [asset.id, asset]))
   const rows = new Map()
   for (const item of items) {
     const id = assetReference(item)
     if (!id && item.customType !== 'staging') continue
     const name = id ? assets.get(id)?.label || item.label || 'Equipment' : `${item.label || 'Custom staging'} (${item.widthMeters} × ${item.depthMeters} m, ${item.heightMm || 0} mm high)`
-    const source = allocation.external.has(item.id) ? 'External' : id ? 'Stock' : 'Custom staging'
+    const source = !trackStock ? '' : allocation.external.has(item.id) ? 'External' : id ? 'Stock' : 'Custom staging'
     const key = JSON.stringify([id || name, source])
     if (!rows.has(key)) rows.set(key, {key, name, source, quantity:0})
     rows.get(key).quantity++
@@ -32,7 +33,7 @@ export function equipmentRows(items, library, allocation = allocateStock(items, 
   return [...rows.values()].sort((a,b) => a.name.localeCompare(b.name) || a.source.localeCompare(b.source))
 }
 
-export function equipmentCsv(rows) {
+export function equipmentCsv(rows, trackStock = true) {
   const cell = value => '"'+String(value).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"','""')+'"'
-  return '\uFEFF'+[['Equipment','Source','Quantity'],...rows.map(row=>[row.name,row.source,row.quantity])].map(row=>row.map(cell).join(',')).join('\r\n')+'\r\n'
+  return '\uFEFF'+[trackStock ? ['Equipment','Source','Quantity'] : ['Equipment','Quantity'],...rows.map(row=>trackStock ? [row.name,row.source,row.quantity] : [row.name,row.quantity])].map(row=>row.map(cell).join(',')).join('\r\n')+'\r\n'
 }

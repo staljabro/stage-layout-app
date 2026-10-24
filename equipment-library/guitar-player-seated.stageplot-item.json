@@ -2087,5 +2087,9 @@
       }
     ],
     "referenceImages": []
-  }
+  },
+  "profiles": [
+    "empire",
+    "external"
+  ]
 }

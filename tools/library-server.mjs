@@ -2,7 +2,8 @@ import { createServer } from 'node:http'
 import { mkdir, readFile, readdir, rename, writeFile, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isPublishedItem, unpublishItem } from './library-membership.mjs'
+import { randomBytes } from 'node:crypto'
+import { isPublishedItem, unpublishItem, belongsToProfile, profileItem, validProfiles, LIBRARY_PROFILES } from './library-membership.mjs'
 
 const root = resolve(process.env.STAGEPLOT_LIBRARY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..'))
 const libraryDir = join(root, 'equipment-library')
@@ -69,19 +70,32 @@ async function readLibraryItem(file) {
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') return send(response, 204, {})
   const url = new URL(request.url, `http://${request.headers.host}`)
+  const profile = url.searchParams.get('profile')
+  if (request.headers['x-stageplot-public'] === 'true' &&
+      (request.method !== 'GET' || !['/api/items','/api/groups','/api/stages'].includes(url.pathname) || url.searchParams.get('scope') === 'all')) return send(response, 403, {error:'This endpoint is available only in Studio'})
+  if (profile !== null && !LIBRARY_PROFILES.includes(profile)) return send(response, 400, {error:'Unknown library profile'})
 
   try {
     if (request.method === 'GET' && url.pathname === '/api/items') {
       const names = (await readdir(libraryDir)).filter((name) => name.endsWith('.stageplot-item.json'))
       const items = await Promise.all(names.map((name) => readLibraryItem(join(libraryDir, name))))
-      const visible = url.searchParams.get('scope') === 'all' ? items : items.filter(isPublishedItem)
+      const visible = url.searchParams.get('scope') === 'all' ? items : items.filter(isPublishedItem).filter(item=>!profile || belongsToProfile(item,profile)).map(item=>profileItem(item,profile))
       return send(response, 200, visible.sort((a, b) => a.label.localeCompare(b.label)))
     }
 
     if (request.method === 'GET' && url.pathname === '/api/stages') {
       const names = (await readdir(stageLibraryDir)).filter((name) => name.endsWith('.stageplot-stage.json'))
       const stages = await Promise.all(names.map(async (name) => JSON.parse(await readFile(join(stageLibraryDir, name), 'utf8'))))
-      return send(response, 200, stages.sort((a, b) => a.label.localeCompare(b.label)))
+      if (url.searchParams.get('scope') === 'all') return send(response, 200, stages.sort((a,b)=>a.label.localeCompare(b.label)))
+      const stageRef = url.searchParams.get('stage')
+      const visible = stages.filter(stage => {
+        if (!belongsToProfile(stage, profile || 'external')) return false
+        const visibility = stage.visibility || 'listed'
+        if (visibility === 'draft') return false
+        if (visibility === 'link-only') return stageRef !== null && stage.shareToken === stageRef
+        return stageRef === null || stage.id === stageRef
+      }).map(stage => { const visible = {...stage}; delete visible.shareToken; delete visible.editor; return visible })
+      return send(response, 200, visible.sort((a,b)=>a.label.localeCompare(b.label)))
     }
 
     if (url.pathname === '/api/groups') {
@@ -129,6 +143,7 @@ const server = createServer(async (request, response) => {
         if (raw.length > 2_000_000) return send(response, 413, { error: 'Item is too large' })
         const item = JSON.parse(raw)
         if (item.id !== match[1]) return send(response, 400, { error: 'Item ID does not match its filename' })
+        if (!validProfiles(item.profiles)) return send(response, 400, {error:'Invalid library profiles'})
         if (item.schema !== 'stageplot-item@3') return send(response, 400, { error: 'Unsupported Stageplot item format' })
         if (typeof item.label !== 'string' || !item.label.trim()) return send(response, 400, { error: 'Give the item a name before saving' })
         if (item.stockQuantity != null && (!Number.isSafeInteger(item.stockQuantity) || item.stockQuantity < 0)) return send(response, 400, { error: 'Stock quantity must be a non-negative whole number or blank' })
@@ -154,8 +169,17 @@ const server = createServer(async (request, response) => {
         for await (const chunk of request) raw += chunk
         if (raw.length > 15_000_000) return send(response, 413, { error: 'Stage is too large' })
         const stage = JSON.parse(raw)
+        if (!['listed','link-only','draft'].includes(stage.visibility || 'listed')) return send(response, 400, {error:'Invalid stage visibility'})
+        if (!validProfiles(stage.profiles)) return send(response, 400, {error:'Invalid library profiles'})
         if (stage.id !== stageMatch[1] || stage.schema !== 'stageplot-stage@1') return send(response, 400, { error: 'Invalid Stageplot stage' })
         if (!stage.label?.trim() || !stage.dimensions || !Array.isArray(stage.boundary?.nodes) || stage.boundary.nodes.length < 3 || !Array.isArray(stage.collisionBoundary)) return send(response, 400, { error: 'Stage boundary is invalid' })
+        let previous
+        try { previous = JSON.parse(await readFile(file,'utf8')) } catch(error) { if(error.code !== 'ENOENT') throw error }
+        stage.visibility ||= previous?.visibility || 'listed'
+        const resetLink = stage.resetShareLink === true
+        delete stage.resetShareLink
+        delete stage.shareToken
+        if (stage.visibility === 'link-only') stage.shareToken = !resetLink && previous?.visibility === 'link-only' && previous.shareToken || randomBytes(24).toString('hex')
         const temporary = `${file}.tmp`
         await writeFile(temporary, `${JSON.stringify(stage, null, 2)}\n`, 'utf8')
         await rename(temporary, file)

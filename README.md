@@ -76,6 +76,33 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 
 ## Stageplot usage
 
+### Empire and External libraries
+
+One planner and Library API serve both event profiles:
+
+- The normal planner URL (or `?profile=external`) opens the public External app, with no Empire labels, stock allocation, sourcing controls or stock/source columns in equipment reports.
+- `?profile=empire` opens Empire with its assigned library and stock tracking.
+- Profile links can also include `&stage=<stable-stage-id>` to lock a stage within that profile.
+- External is the default profile. For a dedicated Empire frontend build, set `VITE_LIBRARY_PROFILE=empire` when building. An explicit URL profile overrides the build default.
+
+In Shape Studio's **Library**, each equipment row has **Empire stock**, **Empire QTY** and **External** controls. Check either or both profiles; neither checked keeps the design in Studio only. Empire QTY is a non-negative whole number (blank means untracked), is disabled when Empire is unchecked, and never applies to External events. Stages have independent **Empire** and **External** checkboxes, without quantities. New equipment and stages start with neither profile checked; choose their profiles after saving. Existing published equipment and existing stages initially belong to Empire.
+
+Shared assets retain a single stable ID and artwork definition. Library reads, project opening and item refresh use the active profile. Browser recovery data is separate for each profile, and saved projects record their profile; opening a project from a different profile prompts you to use its original planner link. Both profiles use the same application build and receive the same feature updates.
+
+### Stage visibility and client links
+
+Create a stage in Shape Studio, save it, then open **Library** to assign its profiles and visibility:
+
+- **Listed**: appears in the stage picker for its assigned profiles. Stage-locked links use its stable stage ID.
+- **Link only**: excluded from public listings; clients need its random share token in their stage-locked URL. Knowing the stage ID does not grant access.
+- **Draft**: available only in Studio, without working client links. New stages and **Save stage as** copies start as drafts. Existing stages initially remain listed.
+
+Enter the client-facing app address in **Public planner URL** (for example, `https://stageplot.example/` or `http://localhost:5173/`). Studio remembers this browser preference; `VITE_STAGEPLOT_URL` can supply a build-time default. Choose **Copy External link** or **Copy Empire link** for an assigned profile. External links use `?stage=<id-or-token>`; Empire links also include `profile=empire`. Both lock the planner to that stage and use equipment from the selected profile.
+
+Anyone holding a link-only URL can access that stage. **Reset link** replaces its random token and invalidates previous links. Switching to Draft also stops link access; returning to Link only generates a fresh token. Normal artwork edits preserve the token. Saved client projects retain the stable stage ID and must be reopened using the current share link for a link-only stage.
+
+Public stage responses omit share tokens and Studio editor data. Studio requests the complete library with `scope=all`, which is blocked on the public Nginx endpoint. Keep Studio and the Library API on their intended private network; this feature uses the existing private Studio administration model and does not add public accounts or self-service stage creation.
+
 ### Canvas navigation
 
 - Scroll to zoom toward the pointer.

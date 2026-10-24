@@ -7,6 +7,8 @@
 .managed-stages-section { margin-top: 24px; border-top: 1px solid #cfcec7; }
 .managed-stage-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #deddd5; font-size: 12px; }
 .managed-stage-row .managed-item-name small { display: block; margin-top: 4px; color: #84867d; }
+.stage-sharing-controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.stage-sharing-controls label { display: flex; align-items: center; gap: 6px; }
 * { box-sizing: border-box; } html, body, #root { width: 100%; height: 100%; overflow: hidden; } body { margin: 0; min-width: 1050px; } button, input { font: inherit; } button { cursor: pointer; }
 header { height: 70px; display: grid; grid-template-columns: 280px 1fr auto; align-items: center; gap: 25px; padding: 0 22px; background: #181917; color: #f4f3eb; }
 .brand { display: flex; align-items: center; gap: 10px; font: 700 13px 'Space Mono'; letter-spacing: .1em; }.brand .app-mark { flex: none; width: 36px; height: 36px; display: block; }.brand small { display: block; color: #888a80; font-size: 7px; letter-spacing: .1em; margin-top: 3px; }
@@ -150,6 +152,9 @@ main { height: calc(100vh - 70px); min-height: 0; display: grid; grid-template-c
 @media (max-width: 700px) { .equipment-management-row { grid-template-columns: 48px minmax(0, 1fr) auto auto; } .managed-item-name { grid-column: 2 / -1; } .equipment-management-row > select { grid-column: 1 / 3; } .equipment-management-row > .publish-equipment-toggle { grid-column: 3 / -1; } .equipment-management-row > button { grid-row: 3; } .equipment-group-row { flex-wrap: wrap; } }
 .stock-quantity-field { display: grid; gap: 4px; min-width: 85px; font-size: 9px; }
 .stock-quantity-field input { width: 90px; padding: 6px; border: 1px solid #c8c7be; border-radius: 4px; }
+.equipment-management-row { grid-template-columns: 48px minmax(100px, 1fr) minmax(90px, 120px) 85px 90px 70px auto auto; }
+.managed-stage-row { grid-template-columns: 48px minmax(100px, 1fr) 85px 70px auto auto; }
+.equipment-management-modal input:disabled { opacity: .45; cursor: default; }
 .zone-group-settings { margin-bottom: 14px; padding: 10px; border: 1px solid #c8c7be; border-radius: 5px; }
 .equipment-management-modal { width: min(900px, 94vw); }
 @media (max-width: 700px) {
@@ -157,4 +162,7 @@ main { height: calc(100vh - 70px); min-height: 0; display: grid; grid-template-c
   .equipment-management-row > .stock-quantity-field { grid-column: 3 / -1; }
   .equipment-management-row > .publish-equipment-toggle { grid-column: 1 / 3; }
   .equipment-management-row > button { grid-row: auto; }
+  .managed-stage-row { grid-template-columns: 48px minmax(100px, 1fr) auto auto; }
+  .managed-stage-row > .publish-equipment-toggle { grid-row: 2; }
+  .managed-stage-row > button { grid-row: 2; }
 }

@@ -18,6 +18,18 @@ test('equipment list distinguishes custom deck sizes and excludes annotations',(
 const asset={id:'chair',label:'Chair',stockQuantity:2,dimensions:{widthMeters:1,depthMeters:1},shapes:[],collisionShapes:[]}
 const item=id=>({id,assetId:'chair',label:'Renamed placement',xMeters:id,yMeters:1})
 
+test('External events ignore quantities and sourcing flags and export requirements only',()=>{
+  const items=[item(1),{...item(2),useExternal:true},item(3)]
+  const allocation=allocateStock(items,[asset],false)
+  assert.equal(allocation.external.size,0)
+  assert.equal(allocation.remaining.get('chair'),null)
+  const rows=equipmentRows(items,[asset],allocation,false)
+  assert.equal(rows.length,1)
+  assert.equal(rows[0].quantity,3)
+  assert.equal(rows[0].source,'')
+  assert.equal(equipmentCsv(rows,false),'\uFEFF"Equipment","Quantity"\r\n"Chair","3"\r\n')
+})
+
 test('stock goes to oldest placements, independent of layer order or visibility',()=>{
   const items=[item(3),{...item(1),visible:false},item(2)]
   const allocation=allocateStock(items,[asset])
