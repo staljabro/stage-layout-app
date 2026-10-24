@@ -1,3 +1,8 @@
+import { pinProject } from './project-snapshots.js'
+import { ProjectShelf } from './project-shelf.jsx'
+import { accountRequest } from './account-api.js'
+import { API_BASE, apiFetch as fetch } from './account-api.js'
+import { AccountButton, useAccount } from './accounts.jsx'
 import { allocateStock, stockQuantity, equipmentRows } from './inventory.js'
 import { EquipmentList } from './equipment-list.jsx'
 import { toggleableParts, sharedParts, partState, setPart } from './part-toggles.js'
@@ -20,13 +25,13 @@ import { AppMark } from './app-mark.jsx'
 import { customStagingItem, customTextItem } from './custom-items.js'
 import { sizeText } from './text-layout.js'
 
-const API_BASE = (import.meta.env.VITE_LIBRARY_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8787/api' : '/api')).replace(/\/$/, '')
 const PROFILE = new URLSearchParams(window.location.search).get('profile') || import.meta.env.VITE_LIBRARY_PROFILE || 'external'
 const TRACK_STOCK = PROFILE === 'empire'
-const projectFile = (...args) => ({...createProjectFile(...args), profile: PROFILE})
-const LIBRARY_API = `${API_BASE}/items?profile=${encodeURIComponent(PROFILE)}`
+const projectFile = (...args) => pinProject({...createProjectFile(...args), profile: PROFILE},args[1],args[2])
 const GROUPS_API = `${API_BASE}/groups`
+const SHARED_PROJECT = new URLSearchParams(window.location.search).get('project')
 const STAGE_LINK = new URLSearchParams(window.location.search).get('stage')
+const LIBRARY_API = `${API_BASE}/items?profile=${encodeURIComponent(PROFILE)}${STAGE_LINK===null?'':`&stage=${encodeURIComponent(STAGE_LINK)}`}`
 const STAGES_API = `${API_BASE}/stages?profile=${encodeURIComponent(PROFILE)}${STAGE_LINK===null?'':`&stage=${encodeURIComponent(STAGE_LINK)}`}`
 
 const boundaryForSpace = (space) => space.collisionBoundary?.length >= 3 ? space.collisionBoundary : rectangleBoundary(space.width, space.depth)
@@ -146,9 +151,12 @@ function InspectorSection({ id, title, openSections, setOpenSections, children }
 }
 
 function App() {
+  const {user}=useAccount()
+  const [sharedProject,setSharedProject]=useState(null)
   const [lockedStageId,setLockedStageId] = useState(STAGE_LINK)
-  const draftKey=`stageplot:${PROFILE}:` + (STAGE_LINK===null?'stageplot:draft':`stageplot:draft:stage:${STAGE_LINK}`)
+  const draftKey=`stageplot:${user?.id || "anonymous"}:${PROFILE}:` + (STAGE_LINK===null?`stageplot:draft:${SHARED_PROJECT || ''}`:`stageplot:draft:stage:${STAGE_LINK}`)
   const [session] = useState(() => readSessionDraft(draftKey))
+  const [accountProject,setAccountProject]=useState(session.accountProject || null)
   const [project, setProject] = useState(session.project ?? 'Untitled stageplot')
   const [space, setSpace] = useState(lockedStageId!==null && session.space?.stageId!==lockedStageId ? null : session.space ?? null)
   const [preset, setPreset] = useState(session.preset ?? '')
@@ -219,7 +227,7 @@ function App() {
   const bootedRef = useRef(false)
   const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
-  const sessionError = useSessionDraft(draftKey, {project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled,savedProjectSnapshot,leftPanelOpen,rightPanelOpen,leftPanelWidth,rightPanelWidth,inspectorSections})
+  const sessionError = useSessionDraft(draftKey, {accountProject,project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled,savedProjectSnapshot,leftPanelOpen,rightPanelOpen,leftPanelWidth,rightPanelWidth,inspectorSections})
 
   const projectSnapshot=JSON.stringify(projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders))
   const dirty=projectSnapshot!==savedProjectSnapshot
@@ -265,6 +273,14 @@ function App() {
     let active = true
     const refresh = async () => {
       try {
+        if(SHARED_PROJECT){
+          const data=await accountRequest("/shared-projects/"+SHARED_PROJECT);
+          if(data.profile && data.profile!==PROFILE)throw new Error("Open this project using its original profile link");
+          const sharedStages=data.assetSnapshots?.stage ? [data.assetSnapshots.stage] : [];
+          if(active){setSharedProject(data);setLibrary(data.assetSnapshots?.equipment || []);setStages(sharedStages);setLockedStageId(data.stage?.id || null);setLibraryOnline(true);setLibraryLoading(false);
+            if(!bootedRef.current){const restored=resolveProject(data,data.assetSnapshots?.equipment || [],sharedStages,data.stage?.id || null);setProject(restored.project);setSpace(restored.space);setPreset(restored.preset);setItems(restored.items);setLayerFolders(restored.layerFolders);setEquipmentCollisionEnabled(restored.collisionSettings.equipment);setZoneCollisionEnabled(restored.collisionSettings.zone);setSnappingEnabled(restored.collisionSettings.snapping);nextIdRef.current=Math.max(100,...restored.items.map(item=>item.id+1));bootedRef.current=true}
+          }return
+        }
         const [itemsResponse, groupsResponse, stagesResponse] = await Promise.all([fetch(LIBRARY_API), fetch(GROUPS_API), fetch(STAGES_API)])
         if (!itemsResponse.ok || !groupsResponse.ok || !stagesResponse.ok) throw new Error()
         const [data, groupData, stageData] = await Promise.all([itemsResponse.json(), groupsResponse.json(), stagesResponse.json()])
@@ -557,11 +573,15 @@ function App() {
     if (tool) addItem({ ...tool, type: `library:${tool.id}`, tone: 'custom' }, viewportPointInStage(event.clientX, event.clientY))
   }
 
-  const save = () => {
+  const confirmProjectSave = () => {
     const zoneConflicts=space ? items.filter(item=>!isItemInsideSpace(item,boundaryForSpace(space)) || !itemAvoidsSolidZones(item,space.zones,space.partVisibility)) : []
     const equipmentConflicts=[]
     items.forEach((item,index)=>items.slice(index+1).forEach(other=>{if(item.collisionEnabled!==false && other.collisionEnabled!==false && itemsCollide(item,other))equipmentConflicts.push([item,other])}))
-    if((zoneConflicts.length || equipmentConflicts.length) && !window.confirm(`This layout has ${zoneConflicts.length} item${zoneConflicts.length===1?'':'s'} outside the usable stage or intersecting a solid zone, and ${equipmentConflicts.length} equipment collision${equipmentConflicts.length===1?'':'s'}.\n\nA saved stageplot may not be true to real life. Save anyway?`))return
+    if((zoneConflicts.length || equipmentConflicts.length) && !window.confirm(`This layout has ${zoneConflicts.length} item${zoneConflicts.length===1?'':'s'} outside the usable stage or intersecting a solid zone, and ${equipmentConflicts.length} equipment collision${equipmentConflicts.length===1?'':'s'}.\n\nA saved stageplot may not be true to real life. Save anyway?`))return false
+    return true
+  }
+  const save = () => {
+    if(!confirmProjectSave())return
     const data = JSON.stringify(projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders), null, 2)
     const link = document.createElement('a')
     link.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }))
@@ -579,6 +599,7 @@ function App() {
     if((items.length || space) && !window.confirm('Open this file and replace the current project? Save first if you want to keep your current work.'))return
     try {
       const data=JSON.parse(await file.text())
+      if(SHARED_PROJECT)throw new Error('Open the normal planner URL to load another project')
       if(data.profile && data.profile!==PROFILE)throw new Error('This project belongs to a different library profile. Open it using its original planner link.')
       const responses=await Promise.all([fetch(LIBRARY_API),fetch(STAGES_API)])
       if(responses.some(response=>!response.ok))throw new Error('The library could not be loaded. Your current project was not changed.')
@@ -593,24 +614,34 @@ function App() {
       nextIdRef.current=Math.max(100,...restored.items.map(item=>item.id+1))
       fitToSpace(restored.space)
       setNotice(`Project loaded${restored.dropped ? `; ${restored.dropped} unavailable items dropped` : ''}${restored.missingStage ? '; stage no longer available' : ''}`)
-    } catch(error) {setNotice(error.message || 'That file could not be opened')}
+      setAccountProject(null)
+      return true
+    } catch(error) {setNotice(error.message || 'That file could not be opened');return false}
   }
 
   const choosePreset = (value) => {
     const stage=stages.find(candidate=>candidate.id===value.slice(6))
+    if(SHARED_PROJECT && stage?.id!==sharedProject?.stage?.id)return
     if(!stage || (lockedStageId!==null && stage.id!==lockedStageId))return
     const nextSpace=stageSpace(stage)
     setPreset(value);setSpace(nextSpace);setStagePickerOpen(false);setHistory([]);setFuture([]);fitToSpace(nextSpace)
   }
   const newProject = () => {
     if(!window.confirm('Create a new project? This clears all placed equipment and the selected stage. Save first to keep a copy.'))return
+    setAccountProject(null)
     setSavedProjectSnapshot(JSON.stringify(projectFile('Untitled stageplot',null,[])))
     setProject('Untitled stageplot');setSpace(null);setPreset('');setItems([]);setLayerFolders([]);setHistory([]);setFuture([]);setEquipmentCollisionEnabled(true);setZoneCollisionEnabled(true);setSnappingEnabled(true)
     setSelected(null);setMultiSelected([]);setStagePickerOpen(true);setZoom(1);setPan({x:56,y:56})
     dragRef.current=null;rotateRef.current=null;panRef.current=null;marqueeRef.current=null;setMarquee(null)
   }
+  const refreshStage = async () => {
+    if(!space?.stageId || SHARED_PROJECT)return
+    if(!window.confirm("Update this project to the current stage revision? Equipment placements will be kept; stage boundaries may change."))return
+    try{const response=await fetch(STAGES_API);if(!response.ok)throw new Error();const latest=await response.json();const stage=latest.find(candidate=>candidate.id===space.stageId);if(!stage)throw new Error();setStages(latest);setSpace(stageSpace(stage,space.partVisibility));setNotice("Stage updated from library")}catch{setNotice("This stage is no longer available from the library")}
+  }
   const copyStageLink = async () => {
     if(!space?.stageId)return
+    if(SHARED_PROJECT){try{await navigator.clipboard.writeText(window.location.href);setNotice('Project link copied')}catch{window.prompt('Copy project link:',window.location.href)}return}
     const url=new URL(window.location.href);url.searchParams.set('stage',STAGE_LINK || space.stageId);url.searchParams.set('profile',PROFILE)
     try {await navigator.clipboard.writeText(url.href);setNotice('Stage-locked link copied')}
     catch {window.prompt('Copy this stage-locked link:',url.href)}
@@ -688,6 +719,7 @@ function App() {
 
   const refreshPlacedItems = async () => {
     try {
+    if(SHARED_PROJECT){setNotice("This shared project uses its saved asset revisions");return}
     const response=await fetch(LIBRARY_API,{cache:'no-store'})
     if(!response.ok)throw new Error()
     const latest=(await response.json()).filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
@@ -788,9 +820,9 @@ function App() {
       <header className="topbar">
         <div className="brand"><AppMark/><span className="brand-title"><b>STAGEPLOT</b><small>{APP_VERSION}</small></span></div>
         <input className="project-name" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
-        <div className="top-actions">
+        <div className="top-actions"><AccountButton/>{user&&!SHARED_PROJECT&&<ProjectShelf profile={PROFILE} current={accountProject} onSave={async update=>{if(!confirmProjectSave())return;const data=projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders);const result=await accountRequest(update?"/projects/"+accountProject.id:"/projects",update?"PUT":"POST",{name:project,data,...(update?{revision:accountProject.revision}:{})});setAccountProject(result);setSavedProjectSnapshot(projectSnapshot);setNotice("Project saved to your account")}} onLoad={async saved=>{const loaded=await load({target:{files:[{text:async()=>JSON.stringify(saved.data)}]}});if(loaded)setAccountProject({id:saved.id,revision:saved.revision});return loaded}}/>}
           <button className="btn ghost" onClick={()=>setHelpOpen(true)}>Help</button>
-          <button className="btn ghost" onClick={newProject}><Icon name="plus" /> New project</button>
+          <button className="btn ghost" hidden={!!SHARED_PROJECT} onClick={newProject}><Icon name="plus" /> New project</button>
           <button className="btn ghost" onClick={save}><Icon name="save" /> Save</button>
           <button className="btn ghost" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Open</button>
           <button className="btn ghost" onClick={()=>setEquipmentListOpen(true)}>Equipment list</button>
@@ -949,9 +981,10 @@ function App() {
             <label className="label-toggle"><input type="checkbox" checked={zoneCollisionEnabled} onChange={event=>setZoneCollisionEnabled(event.target.checked)} /> Stage and zone collision</label>
             <label className="label-toggle"><input type="checkbox" checked={snappingEnabled} onChange={event=>setSnappingEnabled(event.target.checked)} /> Corner snapping</label>
             <p className="inspector-hint">Turn constraints off temporarily to arrange equipment in narrow areas. Saving still checks the complete layout.</p>
-            {lockedStageId===null && <button className="fit-stage" onClick={()=>setStagePickerOpen(true)}>Choose stage</button>}
+            {lockedStageId===null && !SHARED_PROJECT && <button className="fit-stage" onClick={()=>setStagePickerOpen(true)}>Choose stage</button>}
+            {space?.stageId && !SHARED_PROJECT && <button className="fit-stage" onClick={refreshStage}>Update stage from library</button>}
             {space && <><div className="inspector-grid">
-              <label className="field">WIDTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.width} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,width:+e.target.value})}}} /></label>
+              <label className="field">WIDTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null || !!SHARED_PROJECT} value={space.width} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,width:+e.target.value})}}} /></label>
               <label className="field">DEPTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.depth} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,depth:+e.target.value})}}} /></label>
             </div><button className="fit-stage" onClick={fitStage}>Fit stage to viewport</button>
             {space.stageId && <button className="fit-stage" onClick={copyStageLink}>Copy stage-locked link</button>}</>}
@@ -967,7 +1000,7 @@ function App() {
             <svg viewBox={`0 0 ${stage.dimensions.widthMeters} ${stage.dimensions.depthMeters}`} aria-hidden="true"><path d={zonePath(stage.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>
             <span><b>{stage.label}</b><small>{stage.dimensions.widthMeters.toFixed(2)} × {stage.dimensions.depthMeters.toFixed(2)} m</small></span>
           </button>)}{!stages.some(stage=>lockedStageId===null || stage.id===lockedStageId) && <p role="status">{lockedStageId!==null ? 'The stage in this link is unavailable. Please ask the organiser for an updated link.' : 'No stages saved yet. Create one in Shape Studio, or use a rectangular space below.'}</p>}</div>}
-          {lockedStageId===null && <form className="stage-picker-custom" onSubmit={event=>{event.preventDefault();if(customWidth>0 && customDepth>0){const next={name:'Custom Space',width:customWidth,depth:customDepth};setSpace(next);setPreset('custom');setStagePickerOpen(false);fitToSpace(next)}}}>
+          {lockedStageId===null && !SHARED_PROJECT && <form className="stage-picker-custom" onSubmit={event=>{event.preventDefault();if(customWidth>0 && customDepth>0){const next={name:'Custom Space',width:customWidth,depth:customDepth};setSpace(next);setPreset('custom');setStagePickerOpen(false);fitToSpace(next)}}}>
             <h3>Custom rectangular space</h3><div className="inspector-grid"><label className="field">WIDTH (m)<input type="number" required min=".1" step=".01" value={customWidth} onChange={event=>setCustomWidth(+event.target.value)} /></label><label className="field">DEPTH (m)<input type="number" required min=".1" step=".01" value={customDepth} onChange={event=>setCustomDepth(+event.target.value)} /></label></div><button className="btn ghost" type="submit">Use rectangular space</button>
           </form>}
           <button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>

@@ -7,6 +7,10 @@ services:
     volumes:
       - ${LIBRARY_DATA_PATH:-.}/equipment-library:/data/equipment-library
       - ${LIBRARY_DATA_PATH:-.}/stage-library:/data/stage-library
+      - ${LIBRARY_DATA_PATH:-.}/account-data:/data/account-data
+    environment:
+      STAGEPLOT_SECURE_COOKIE: ${STAGEPLOT_SECURE_COOKIE:-false}
+      STAGEPLOT_ALLOWED_ORIGINS: ${STAGEPLOT_ALLOWED_ORIGINS:-}
     networks:
       - internal
 

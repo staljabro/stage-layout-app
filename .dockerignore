@@ -7,5 +7,12 @@ dist
 **/dist
 equipment-library
 stage-library
+account-data
+**/account-data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
 npm-debug.log*
 *.code-workspace

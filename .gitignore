@@ -3,3 +3,8 @@ dist
 .DS_Store
 *.local
 .env
+
+account-data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
