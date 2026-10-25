@@ -4,13 +4,13 @@ Stage Layout App is a two-part React/Vite system for designing accurate top-down
 
 - **Stageplot** is the client-facing planner. Users choose an approved stage, arrange current library equipment at real-world scale, validate collisions, save editable projects and export PDFs.
 - **Shape Studio** is the administrative editor. Theatre staff create vector equipment, collision footprints, articulated controls, reusable shapes and custom stages.
-- **Library API** stores accounts, personal and shared assets, projects, submissions and revision history in SQLite. Both apps use the same account sessions and server-enforced roles. Existing JSON libraries are imported on first startup.
+- **Library API** stores accounts, personal and shared assets, projects, submissions and revision history in SQLite. Both apps use GitHub-only sign-in, shared app sessions and server-enforced roles. Existing JSON libraries are imported on first startup.
 
 Both interfaces include a **Help** button with workflow-specific instructions.
 
-Current release: **Version 0.2.0 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
+Current release: **Version 0.2.1 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
 
-See [Accounts and collaboration](ACCOUNT_GUIDE.md) for first-run setup, roles, approvals, project storage and backups.
+See [Accounts and collaboration](ACCOUNT_GUIDE.md) for GitHub OAuth configuration, linking your Owner account, approvals, project storage and backups.
 
 ## Main capabilities
 
@@ -303,6 +303,6 @@ Change `APP_VERSION` in `src/version.js` for a user-facing release. That value i
 ## Security notes
 
 - Both frontends proxy account and library requests. The API checks authentication, role and ownership for every protected operation; proxy headers do not grant privileges.
-- Use HTTPS when exposing either app. Set STAGEPLOT_SECURE_COOKIE=true behind an HTTPS reverse proxy. Owner creates accounts; there is no anonymous registration. Keep the Library API unexposed.
+- Use HTTPS when exposing either app. Set STAGEPLOT_SECURE_COOKIE=true behind an HTTPS reverse proxy. Owner approves GitHub access requests; signing in with GitHub alone does not grant private access. Keep the Library API unexposed.
 - Listed stage IDs restrict the workflow. Private stage and project sharing require unguessable, revocable tokens. Removing a token from the URL does not reveal private assets.
 - Public GHCR images contain application code only, not the mounted equipment or stage library.

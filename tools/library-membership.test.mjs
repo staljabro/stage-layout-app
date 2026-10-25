@@ -7,6 +7,7 @@ import {join,resolve,dirname,basename} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import test from 'node:test'
 import {assetProfiles,withProfile,isPublishedItem,isEquipmentItem} from './library-membership.mjs'
+import {openStore,digest} from './account-store.mjs'
 
 test('profile membership supports either, both, neither and Studio-only building blocks',()=>{
   const empire=withProfile({id:'chair',profiles:[]},'empire',true)
@@ -22,35 +23,79 @@ test('accounts enforce roles, asset ownership, approvals, revisions, sharing and
   const chair={schema:'stageplot-item@3',id:'existing-chair',label:'Chair',profiles:['empire','external'],stockQuantity:2,dimensions:{widthMeters:1,depthMeters:1},shapes:[],collisionShapes:[],editor:{layers:[]}}
   await mkdir(join(directory,'equipment-library'))
   await writeFile(join(directory,'equipment-library','chair.stageplot-item.json'),JSON.stringify(chair))
-  const child=spawn(process.execPath,[fileURLToPath(new URL('./library-server.mjs',import.meta.url))],{env:{...process.env,STAGEPLOT_LIBRARY_ROOT:directory,STAGEPLOT_LIBRARY_PORT:'0',STAGEPLOT_SETUP_TOKEN:'test-setup-secret'},stdio:['ignore','pipe','pipe'],windowsHide:true})
+  const legacyOwnerId='a'.repeat(32),legacyEditorId='c'.repeat(32),legacyProjectId='b'.repeat(32)
+  const legacy=await openStore(directory)
+  legacy.run('INSERT INTO users VALUES(?,?,?,?,?,0)',legacyOwnerId,'owner@example.com','Existing Owner','owner','old-password-hash')
+  legacy.run('INSERT INTO users VALUES(?,?,?,?,?,0)',legacyEditorId,'editor@example.com','Existing Editor','editor','old-password-hash')
+  legacy.run('INSERT INTO sessions VALUES(?,?,?)',digest('legacy-cookie'),legacyOwnerId,Date.now()+600000)
+  legacy.run('INSERT INTO projects VALUES(?,?,?,?,?,0,NULL,?)',legacyProjectId,legacyOwnerId,'Existing show',JSON.stringify({items:[]}),1,new Date().toISOString())
+  legacy.db.close()
+  const child=spawn(process.execPath,['--import',new URL('./test-support/github-provider.mjs',import.meta.url).href,fileURLToPath(new URL('./library-server.mjs',import.meta.url))],{env:{...process.env,STAGEPLOT_LIBRARY_ROOT:directory,STAGEPLOT_LIBRARY_PORT:'0',STAGEPLOT_GITHUB_CLIENT_ID:'test-client',STAGEPLOT_GITHUB_CLIENT_SECRET:'test-secret',STAGEPLOT_GITHUB_OWNER_ID:'1',STAGEPLOT_GITHUB_CALLBACK_URL:'http://127.0.0.1:5173/api/auth/github/callback'},stdio:['ignore','pipe','pipe'],windowsHide:true})
   let stderr='';child.stderr.on('data',chunk=>stderr+=chunk)
   try {
     const base=await new Promise((resolve,reject)=>{let output='';child.stdout.on('data',chunk=>{output+=chunk;const url=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(url)resolve(url[0]+'/api')});child.once('error',reject);child.once('exit',code=>reject(new Error(`Server exited ${code}: ${stderr}`)))})
     const jar={}
+    const cookies=(actor,response)=>{const values=new Map((jar[actor] || "").split("; ").filter(Boolean).map(value=>[value.split("=")[0],value]));for(const cookie of response.headers.getSetCookie()){const value=cookie.split(";")[0];if(value.endsWith("="))values.delete(value.split("=")[0]);else values.set(value.split("=")[0],value)}jar[actor]=[...values.values()].join("; ")}
     const request=async(path,method='GET',data,actor='anonymous',status=200,extra={})=>{
       const response=await fetch(base+path,{method,headers:{...(method!=='GET'?{'X-Stageplot-Request':'1'}:{}),...(data!==undefined?{'Content-Type':'application/json'}:{}),...(jar[actor]?{Cookie:jar[actor]}:{}),...extra},...(data!==undefined?{body:JSON.stringify(data)}:{})})
       const value=await response.json()
       assert.equal(response.status,status,`${method} ${path} as ${actor}: ${JSON.stringify(value)}\n${stderr}`)
-      const cookie=response.headers.get('set-cookie');if(cookie)jar[actor]=cookie.split(';')[0]
+      cookies(actor,response)
       return value
     }
-    const password='testing-account-password'
-    assert.equal((await request('/auth/session')).setupRequired,true)
+    const login=async(actor,code,expected='signed-in')=>{
+      const {authorizationUrl}=await request('/auth/github/start','POST',{returnTo:'http://127.0.0.1:5173/?profile=empire'},actor)
+      const authorization=new URL(authorizationUrl)
+      assert.equal(authorization.origin,'https://github.com')
+      assert.equal(authorization.searchParams.get('scope'),'read:user user:email')
+      assert.equal(authorization.searchParams.get('code_challenge_method'),'S256')
+      assert.equal(authorization.searchParams.get('code_challenge').length,43)
+      const result=await fetch(base+'/auth/github/callback?code='+code+'&state='+authorization.searchParams.get('state'),{headers:{Cookie:jar[actor]},redirect:'manual'})
+      assert.equal(result.status,302,await result.text());cookies(actor,result)
+      assert.equal(new URL(result.headers.get('location')).searchParams.get('auth_result'),expected)
+      return authorization.searchParams.get('state')
+    }
+    assert.equal((await request('/auth/session')).githubConfigured,true)
     await request('/items/existing-chair','PUT',chair,'anonymous',401)
     await request('/items?scope=all','GET',undefined,'anonymous',401)
-    await request('/auth/setup','POST',{email:'owner@example.com',password,setupToken:'wrong'},'owner',403)
-    await request('/auth/setup','POST',{name:'Owner',email:'owner@example.com',password,setupToken:'test-setup-secret'},'owner',201)
-    await request('/auth/setup','POST',{email:'second@example.com',password,setupToken:'test-setup-secret'},'anonymous',409)
+    await request('/auth/setup','POST',{},'anonymous',404)
+    await request('/auth/login','POST',{},'anonymous',404)
+    jar.legacy='stageplot_session=legacy-cookie'
+    assert.equal((await request('/auth/session','GET',undefined,'legacy')).user,null,'password-era sessions are revoked')
+    await login('owner','1')
     assert.equal((await request('/auth/session','GET',undefined,'owner')).user.role,'owner')
+    assert.equal((await request('/auth/session','GET',undefined,'owner')).user.id,legacyOwnerId)
+    assert.equal((await request('/projects/'+legacyProjectId,'GET',undefined,'owner')).name,'Existing show')
+    await login('owner','1-renamed')
+    assert.equal((await request('/auth/session','GET',undefined,'owner')).user.githubLogin,'owner-renamed')
+    assert.equal((await request('/auth/session','GET',undefined,'owner')).user.id,legacyOwnerId,'GitHub username changes do not change ownership')
+    await request('/auth/github/start','POST',{returnTo:'https://untrusted.example/'},'anonymous',400)
+    const handshake=await request('/auth/github/start','POST',{returnTo:'http://127.0.0.1:5173/'},'browser')
+    const state=new URL(handshake.authorizationUrl).searchParams.get('state')
+    const callback=base+'/auth/github/callback?code=1&state='+state
+    assert.equal((await fetch(callback,{redirect:'manual'})).status,400,'callback requires the initiating browser cookie')
+    assert.equal((await fetch(callback,{redirect:'manual',headers:{Cookie:jar.browser}})).status,302)
+    assert.equal((await fetch(callback,{redirect:'manual',headers:{Cookie:jar.browser}})).status,400,'OAuth state can be used only once')
+    await login('bad-email','6-unverified','email-required')
+    await login('provider-error','broken','error')
+    await login('collision','6-collision','pending')
+    assert.equal((await request('/auth/session','GET',undefined,'collision')).user,null,'email matches do not grant access')
+    await request('/access-requests/6/approve','POST',{role:'owner'},'owner',409)
+    await request('/access-requests/6/approve','POST',{role:'owner',existingUserId:legacyOwnerId},'owner',409)
+    await request('/access-requests/6/reject','POST',{},'owner')
+    await login('collision','6-collision','denied')
     const members={}
-    for(const role of ['admin','contributor','editor']){
-      members[role]=await request('/users','POST',{email:role+'@example.com',name:role,role,password},'owner',201)
-      await request('/auth/login','POST',{email:role+'@example.com',password},role)
+    for(const [role,id] of [['admin','2'],['contributor','3'],['editor','4'],['other','5']]){
+      await login(role,id,'pending')
+      assert.equal((await request('/auth/session','GET',undefined,role)).user,null)
+      if(role==='editor')await request('/access-requests/'+id+'/approve','POST',{role},'owner',409)
+      members[role]=await request('/access-requests/'+id+'/approve','POST',{role:role==='other'?'contributor':role,...(role==='editor'?{existingUserId:legacyEditorId}:{})},'owner')
+      await login(role,id)
     }
-    members.other=await request('/users','POST',{email:'other@example.com',role:'contributor',password},'owner',201)
-    await request('/auth/login','POST',{email:'other@example.com',password},'other')
     await request('/users','GET',undefined,'admin',403)
-    await request('/users','POST',{email:'bad@example.com',role:'owner',password},'contributor',403)
+    await request('/access-requests','GET',undefined,'contributor',403)
+    await request('/access-requests/2/approve','POST',{role:'owner'},'contributor',403)
+    await request('/users','POST',{},'owner',404)
     await request('/items?scope=all','GET',undefined,'editor',403)
     await request('/items/existing-chair','PUT',chair,'editor',403)
     await request('/items/existing-chair','DELETE',undefined,'contributor',403)
@@ -135,12 +180,12 @@ test('accounts enforce roles, asset ownership, approvals, revisions, sharing and
     const owner=(await request('/auth/session','GET',undefined,'owner')).user
     await request('/users/'+owner.id,'PUT',{role:'admin'},'owner',409)
     const oldCookie=jar.contributor
-    await request('/auth/password','POST',{currentPassword:password,password:'new-testing-account-password'},'contributor')
-    await request('/auth/login','POST',{email:'contributor@example.com',password},'unused',401)
+    await request('/users/'+members.contributor.id,'PUT',{role:'editor'},'owner')
     jar.old=oldCookie;assert.equal((await request('/auth/session','GET',undefined,'old')).user,null)
+    await request('/auth/password','POST',{},'owner',404)
     await request('/users/'+members.editor.id,'PUT',{disabled:true},'owner')
     assert.equal((await request('/auth/session','GET',undefined,'editor')).user,null)
-    await request('/auth/login','POST',{email:'editor@example.com',password},'editor',401)
+    await login('editor','4','disabled')
     await request('/auth/logout','POST',{},'admin')
     await request('/items/'+chair.id,'DELETE',undefined,'admin',401)
     const badOrigin=await fetch(base+'/auth/session',{headers:{Origin:'https://untrusted.example'}});assert.equal(badOrigin.status,403)

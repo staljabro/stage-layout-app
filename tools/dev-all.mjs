@@ -7,7 +7,7 @@ const studio = join(root, 'tools', 'svg-shape-studio')
 const viteEntry = (directory) => join(directory, 'node_modules', 'vite', 'bin', 'vite.js')
 
 const processes = [
-  spawn(process.execPath, ['--watch', join(root, 'tools', 'library-server.mjs')], { cwd: root, stdio: 'inherit', windowsHide: true }),
+  spawn(process.execPath, ['--env-file-if-exists='+join(root,'.env'), '--watch', join(root, 'tools', 'library-server.mjs')], { cwd: root, stdio: 'inherit', windowsHide: true }),
   spawn(process.execPath, [viteEntry(root), '--port', '5173'], { cwd: root, stdio: 'inherit' }),
   spawn(process.execPath, [viteEntry(studio), '--port', '5174'], { cwd: studio, stdio: 'inherit' }),
 ]

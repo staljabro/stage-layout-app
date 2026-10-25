@@ -11,7 +11,7 @@ import {DatabaseSync} from 'node:sqlite'
 
 test('both frontend proxies share account sessions and live SQLite backups preserve data',{timeout:30000},async()=>{
   const directory=await mkdtemp(join(tmpdir(),'stageplot-proxy-'))
-  const backend=spawn(process.execPath,[fileURLToPath(new URL('./library-server.mjs',import.meta.url))],{env:{...process.env,STAGEPLOT_LIBRARY_ROOT:directory,STAGEPLOT_LIBRARY_PORT:'0',STAGEPLOT_SETUP_TOKEN:'proxy-test-token'},stdio:['ignore','pipe','pipe'],windowsHide:true})
+  const backend=spawn(process.execPath,['--import',new URL('./test-support/github-provider.mjs',import.meta.url).href,fileURLToPath(new URL('./library-server.mjs',import.meta.url))],{env:{...process.env,STAGEPLOT_LIBRARY_ROOT:directory,STAGEPLOT_LIBRARY_PORT:'0',STAGEPLOT_GITHUB_CLIENT_ID:'test-client',STAGEPLOT_GITHUB_CLIENT_SECRET:'test-secret',STAGEPLOT_GITHUB_OWNER_ID:'1',STAGEPLOT_GITHUB_CALLBACK_URL:'http://127.0.0.1:5173/api/auth/github/callback'},stdio:['ignore','pipe','pipe'],windowsHide:true})
   const frontends=[]
   let errors='';backend.stderr.on('data',data=>errors+=data)
   try {
@@ -23,9 +23,12 @@ test('both frontend proxies share account sessions and live SQLite backups prese
     }
     const urls=frontends.map(server=>'http://127.0.0.1:'+server.httpServer.address().port)
     for(const url of urls){assert.equal((await fetch(url+'/')).status,200);assert.equal((await fetch(url+'/src/main.jsx')).status,200)}
-    const setup=await fetch(urls[0]+'/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json','X-Stageplot-Request':'1',Origin:urls[0]},body:JSON.stringify({name:'Proxy Owner',email:'proxy@example.com',password:'proxy-account-password',setupToken:'proxy-test-token'})})
-    assert.equal(setup.status,201,await setup.text())
-    const cookie=setup.headers.get('set-cookie')
+    const start=await fetch(urls[0]+'/api/auth/github/start',{method:'POST',headers:{'Content-Type':'application/json','X-Stageplot-Request':'1',Origin:urls[0]},body:JSON.stringify({returnTo:'http://127.0.0.1:5173/'})})
+    assert.equal(start.status,200,await start.clone().text())
+    const state=new URL((await start.json()).authorizationUrl).searchParams.get('state')
+    const result=await fetch(urls[0]+'/api/auth/github/callback?code=1&state='+state,{redirect:'manual',headers:{Cookie:start.headers.getSetCookie()[0].split(';')[0]}})
+    assert.equal(result.status,302,await result.text())
+    const cookie=result.headers.getSetCookie().findLast(value=>value.startsWith('stageplot_session='))
     assert.ok(cookie.includes('HttpOnly'));assert.ok(cookie.includes('SameSite=Lax'));assert.ok(!cookie.includes('Domain='))
     const session=await (await fetch(urls[1]+'/api/auth/session',{headers:{Cookie:cookie.split(';')[0],Origin:urls[1]}})).json()
     assert.equal(session.user.role,'owner')
@@ -33,7 +36,7 @@ test('both frontend proxies share account sessions and live SQLite backups prese
     let backupError='';backup.stderr.on('data',data=>backupError+=data)
     assert.equal((await once(backup,'exit'))[0],0,backupError)
     const copy=new DatabaseSync(join(directory,'backup.sqlite'),{readOnly:true})
-    try{assert.equal(copy.prepare('SELECT email FROM users').get().email,'proxy@example.com')}finally{copy.close()}
+    try{assert.equal(copy.prepare('SELECT email FROM users').get().email,'owner@example.com')}finally{copy.close()}
   }finally {
     for(const server of frontends)await server.close()
     const exited=backend.exitCode===null?once(backend,'exit'):null;backend.kill();if(exited)await exited

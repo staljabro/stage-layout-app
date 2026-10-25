@@ -1,10 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
-import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto'
-import { promisify } from 'node:util'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { randomBytes, createHash } from 'node:crypto'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const derive = promisify(scrypt)
 export const uid = () => randomBytes(16).toString('hex')
 export const token = () => randomBytes(24).toString('hex')
 export const digest = value => createHash('sha256').update(value).digest('hex')
@@ -12,18 +10,7 @@ export const roles = ['owner','admin','contributor','editor']
 export const manager = user => ['owner','admin'].includes(user?.role)
 export const designer = user => manager(user) || user?.role === 'contributor'
 export const fail = (status,message) => {throw Object.assign(new Error(message),{status})}
-export const publicUser = row => row ? {id:row.id,email:row.email,name:row.name,role:row.role,disabled:!!row.disabled} : null
-export async function passwordHash(password) {
-  if(typeof password !== 'string' || password.length < 12 || password.length > 256) fail(400,'Use a password of 12–256 characters')
-  const salt=token()
-  const hash=await derive(password,salt,64,{N:32768,maxmem:64*1024*1024})
-  return salt+':'+hash.toString('hex')
-}
-export async function checkPassword(password,stored) {
-  const [salt,hex]=stored.split(':')
-  const hash=await derive(String(password).slice(0,256),salt,64,{N:32768,maxmem:64*1024*1024})
-  return typeof password==='string' && password.length<=256 && timingSafeEqual(hash,Buffer.from(hex,'hex'))
-}
+export const publicUser = row => row ? {id:row.id,email:row.email,name:row.name,role:row.role,disabled:!!row.disabled,githubId:row.github_id || null,githubLogin:row.github_login || null} : null
 export async function openStore(root) {
   const directory=join(root,'account-data')
   await mkdir(directory,{recursive:true})
@@ -64,10 +51,5 @@ export async function openStore(root) {
     run("INSERT OR REPLACE INTO settings VALUES('groups',?)",JSON.stringify(groups))
     run("INSERT INTO settings VALUES('imported','true')")
   }
-  let setupToken=process.env.STAGEPLOT_SETUP_TOKEN
-  if(!setupToken) {
-    const path=join(directory,'setup-token')
-    try{setupToken=(await readFile(path,'utf8')).trim()}catch(error){if(error.code!=='ENOENT')throw error;setupToken=token();await writeFile(path,setupToken,{mode:0o600})}
-  }
-  return {db,get,all,run,transaction,asset,saveAsset,setupToken}
+  return {db,get,all,run,transaction,asset,saveAsset}
 }

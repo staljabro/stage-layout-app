@@ -1,12 +1,14 @@
 ﻿import {createServer} from 'node:http'
 import {dirname,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
-import {openStore,uid,token,digest,roles,manager,designer,fail,publicUser,passwordHash,checkPassword} from './account-store.mjs'
+import {openStore,uid,token,digest,roles,manager,designer,fail,publicUser} from './account-store.mjs'
+import {createGithubAuth} from './github-auth.mjs'
 import {assetProfiles,belongsToProfile,isPublishedItem,isEquipmentItem,profileItem,validProfiles,LIBRARY_PROFILES} from './library-membership.mjs'
 
 const root=resolve(process.env.STAGEPLOT_LIBRARY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)),'..'))
 const store=await openStore(root)
 const {db,get,all,run,transaction,asset,saveAsset}=store
+const githubAuth=createGithubAuth(store)
 const validId=value=>typeof value==='string' && /^[a-z0-9][a-z0-9-]{0,79}$/.test(value)
 const parsed=row=>row ? {...JSON.parse(row.data),revision:row.revision,ownerId:row.owner_id,deleted:!!row.deleted} : null
 const canEdit=(user,row)=>designer(user) && (row?.owner_id ? row.owner_id===user.id || user.role==='owner' : manager(user))
@@ -37,10 +39,8 @@ const stageAccess=(row,user,profile,ref)=>{
   return row.owner_id===user?.id || (shared(row) && belongsToProfile(data,profile) && (data.visibility || 'listed')==='listed')
 }
 const linkedStage=(user,profile,ref)=>ref ? all("SELECT * FROM assets WHERE kind='stages' AND deleted=0").find(row=>stageAccess(row,user,profile,ref)) : null
-const loginAttempts=new Map()
-const dummyHash=await passwordHash(token())
 const allowedOrigins=new Set((process.env.STAGEPLOT_ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174').split(',').map(s=>s.trim()).filter(Boolean))
-const sessionCookie=(request,value,age)=>`stageplot_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${request.headers['x-forwarded-proto']==='https' || process.env.STAGEPLOT_SECURE_COOKIE==='true' ? '; Secure' : ''}`
+const sessionCookie=(request,value,age)=>`stageplot_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${request.headers['x-forwarded-proto']==='https' || process.env.STAGEPLOT_SECURE_COOKIE==='true' || process.env.STAGEPLOT_GITHUB_CALLBACK_URL?.startsWith('https://') ? '; Secure' : ''}`
 const server=createServer(async(request,response)=>{
   const send=(status,value)=>{response.writeHead(status,{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});response.end(value===undefined?'':JSON.stringify(value))}
   try {
@@ -56,54 +56,19 @@ const server=createServer(async(request,response)=>{
     const cookie=request.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('stageplot_session='))?.slice(18)
     const session=cookie ? get('SELECT users.* FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>? AND users.disabled=0',digest(cookie),Date.now()) : null
     const user=publicUser(session)
-    const startSession=account=>{const value=token();run('DELETE FROM sessions WHERE expires<?',Date.now());run('INSERT INTO sessions VALUES(?,?,?)',digest(value),account.id,Date.now()+7*86400000);response.setHeader('Set-Cookie',sessionCookie(request,value,7*86400));return publicUser(account)}
-    if(path==='/api/auth/session' && method==='GET')return send(200,{user,setupRequired:!get('SELECT id FROM users LIMIT 1')})
-    if(path==='/api/auth/setup' && method==='POST') {
-      const input=await body(request)
-      if(get('SELECT id FROM users LIMIT 1'))fail(409,'An Owner account already exists')
-      if(typeof input.setupToken!=='string' || digest(input.setupToken)!==digest(store.setupToken))fail(403,'Invalid setup token')
-      const email=String(input.email || '').trim().toLowerCase();if(!/^\S+@\S+\.\S+$/.test(email))fail(400,'Enter a valid email address')
-      const hash=await passwordHash(input.password)
-      if(get('SELECT id FROM users LIMIT 1'))fail(409,'An Owner account already exists')
-      const id=uid();run('INSERT INTO users VALUES(?,?,?,?,?,0)',id,email,String(input.name || email).slice(0,100),'owner',hash)
-      return send(201,{user:startSession(get('SELECT * FROM users WHERE id=?',id))})
-    }
-    if(path==='/api/auth/login' && method==='POST') {
-      const input=await body(request),email=String(input.email || '').trim().toLowerCase(),key=request.socket.remoteAddress+':'+email
-      if(loginAttempts.size>10000)loginAttempts.clear()
-      const attempt=loginAttempts.get(key)
-      if(attempt?.count>=10 && attempt.until>Date.now())fail(429,'Too many login attempts. Try again in 15 minutes')
-      const account=get('SELECT * FROM users WHERE email=?',email)
-      const matches=await checkPassword(input.password || '',account?.password || dummyHash)
-      if(!account || account.disabled || !matches){loginAttempts.set(key,{count:attempt?.until>Date.now()?attempt.count+1:1,until:Date.now()+900000});fail(401,'Email or password is incorrect')}
-      loginAttempts.delete(key);return send(200,{user:startSession(account)})
-    }
+    const startSession=account=>{const value=token();run('DELETE FROM sessions WHERE expires<?',Date.now());run('INSERT INTO sessions VALUES(?,?,?)',digest(value),account.id,Date.now()+7*86400000);response.setHeader('Set-Cookie',[...(response.getHeader('Set-Cookie')?[].concat(response.getHeader('Set-Cookie')):[]),sessionCookie(request,value,7*86400)]);return publicUser(account)}
+    if(await githubAuth({request,response,url,user,send,body,startSession}))return
     if(path==='/api/auth/logout' && method==='POST'){if(cookie)run('DELETE FROM sessions WHERE hash=?',digest(cookie));response.setHeader('Set-Cookie',sessionCookie(request,'',0));return send(200,{ok:true})}
-    if(path==='/api/auth/password' && method==='POST') {
-      requireUser(user);const input=await body(request)
-      if(!await checkPassword(input.currentPassword || '',session.password))fail(403,'Current password is incorrect')
-      const hash=await passwordHash(input.password);run('UPDATE users SET password=? WHERE id=?',hash,user.id);run('DELETE FROM sessions WHERE user_id=?',user.id)
-      return send(200,{user:startSession(get('SELECT * FROM users WHERE id=?',user.id))})
-    }
-    if(path==='/api/users' && method==='GET'){requireOwner(user);return send(200,all('SELECT * FROM users ORDER BY email').map(publicUser))}
-    if(path==='/api/users' && method==='POST') {
-      requireOwner(user);const input=await body(request),email=String(input.email || '').trim().toLowerCase()
-      if(!/^\S+@\S+\.\S+$/.test(email) || !roles.includes(input.role))fail(400,'Valid email and role are required')
-      if(get('SELECT id FROM users WHERE email=?',email))fail(409,'Email already has an account')
-      const hash=await passwordHash(input.password),id=uid()
-      run('INSERT INTO users VALUES(?,?,?,?,?,0)',id,email,String(input.name || email).slice(0,100),input.role,hash)
-      return send(201,publicUser(get('SELECT * FROM users WHERE id=?',id)))
-    }
     const userMatch=path.match(/^\/api\/users\/([a-f0-9]+)$/)
     if(userMatch && method==='PUT') {
       requireOwner(user);const input=await body(request),account=get('SELECT * FROM users WHERE id=?',userMatch[1]);if(!account)fail(404,'Account not found')
       const role=input.role || account.role,disabled=input.disabled===undefined?account.disabled:input.disabled?1:0
       if(!roles.includes(role))fail(400,'Invalid role')
-      const hash=input.password ? await passwordHash(input.password) : account.password
+      if(input.password!==undefined)fail(400,"Passwords are managed by GitHub")
       transaction(()=>{
         const latest=get('SELECT * FROM users WHERE id=?',account.id)
         if(latest.role==='owner' && !latest.disabled && (role!=='owner'||disabled) && get("SELECT count(*) AS n FROM users WHERE role='owner' AND disabled=0").n<=1)fail(409,'Keep at least one active Owner')
-        run('UPDATE users SET role=?,disabled=?,password=? WHERE id=?',role,disabled,hash,account.id);run('DELETE FROM sessions WHERE user_id=?',account.id)
+        run('UPDATE users SET role=?,disabled=? WHERE id=?',role,disabled,account.id);run('DELETE FROM sessions WHERE user_id=?',account.id)
       })
       return send(200,publicUser(get('SELECT * FROM users WHERE id=?',account.id)))
     }

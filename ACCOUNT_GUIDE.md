@@ -1,21 +1,35 @@
 # Accounts and collaboration
 
-Requires Node 24. The API uses built-in SQLite and salted scrypt password hashes; no external database or identity provider is required.
+Requires Node 24. GitHub is the only sign-in provider. Stageplot stores app roles, projects and library data in SQLite; it does not store GitHub passwords or retain GitHub access tokens. MFA is not required by this app.
 
-## First startup
+## Configure GitHub sign-in
 
-1. Persist `account-data/` alongside the existing equipment-library and stage-library volumes. Both Compose files include the new mount.
-2. Start the API and both apps (`npm run dev:all` locally). The initial JSON libraries are imported once into `account-data/stageplot.sqlite`; source JSON is left unchanged. All future library edits, accounts, approvals, projects and revision history live in SQLite.
-3. Read `account-data/setup-token` on the server. Open Sign in, enter that token, your name/email and a password of at least 12 characters to create the first Owner. Setup is disabled once any account exists. You can alternatively set `STAGEPLOT_SETUP_TOKEN` for the initial bootstrap. Never put the token in a public URL.
-4. Use the account button, then **Manage users**, to create accounts with an initial password and role. Share credentials with each person privately. They can change their password in their account panel. Owner can reset passwords and disable accounts; resetting passwords, changing roles and disabling an account revoke that account's sessions. The last active Owner cannot be disabled or demoted.
+1. Create an OAuth App in [GitHub Developer settings](https://github.com/settings/developers). Follow [GitHub's OAuth App instructions](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app). Use the public planner URL as the homepage and its `/api/auth/github/callback` endpoint as the authorization callback URL. Use a separate OAuth App for local development if production has a different callback address.
+2. Copy `.env.example` to your server's private `.env` if needed. Set `STAGEPLOT_GITHUB_CLIENT_ID`, `STAGEPLOT_GITHUB_CLIENT_SECRET` and `STAGEPLOT_GITHUB_CALLBACK_URL`. Keep the secret on the API server; never prefix it with VITE_ or put it into frontend code. The registered callback must match the configured URL exactly.
+3. Set `STAGEPLOT_APP_URL` and `STAGEPLOT_STUDIO_URL` to the two frontend addresses. These origins are the only permitted destinations after sign-in. For development use `http://localhost:5173/`, `http://localhost:5174/` and callback `http://localhost:5173/api/auth/github/callback`. Use the same hostname consistently. Outside localhost the configured addresses must use HTTPS.
+4. Find your permanent numeric GitHub account ID: open `https://api.github.com/users/YOUR_USERNAME` and use the `id` field, not `node_id` or your username. Put it in `STAGEPLOT_GITHUB_OWNER_ID`. The app does not make the first visitor Owner.
+5. Persist `account-data/` alongside the source equipment and stage libraries. Both Compose files pass the OAuth settings to the API and mount the database directory. Start or restart the stack. For development, `npm run dev:all` and `npm run library` load the root .env file.
+6. Choose **Sign in**, then **Continue with GitHub**. Your configured numeric identity becomes Owner on a new installation. GitHub must have at least one verified email address. The requested scopes are only `read:user` and `user:email`; no repository access is requested. GitHub handles credentials and account recovery; no email-delivery service is needed in Stageplot.
 
-There is no anonymous account registration, email delivery or email-based password recovery. Owner handles account provisioning and recovery.
+The initial JSON libraries are imported once into `account-data/stageplot.sqlite`, leaving source JSON unchanged. Future library edits, approvals, accounts and projects live in SQLite.
+
+## Link existing accounts without losing work
+
+The first startup of this release revokes password-era sessions and removes their stored password hashes. Password sign-in, password reset, setup-token bootstrap and direct account creation endpoints are removed. The old setup-token file is no longer used.
+
+If there is exactly one active existing Owner, the configured GitHub Owner identity is linked to that same app account. Its app user ID, projects, personal artwork and history stay unchanged. If there are multiple Owners, set `STAGEPLOT_OWNER_USER_ID` to the existing Owner's app user ID; the app refuses to guess. This optional ID can be read from the users table by the server administrator. It must refer to an active Owner.
+
+Other existing users sign in through GitHub to create an access request. As Owner, open **Manage users & access requests**, select the user's existing unlinked app account, choose the appropriate role, and approve. Matching emails never link accounts automatically. Linking preserves the original user ID and ownership. A GitHub identity and app account each have at most one link. Username changes update the display name without changing the permanent identity. Owner bootstrap configuration is used only for an unlinked identity; it does not override roles assigned later.
+
+## New users and approval
+
+A new person signs in with GitHub and receives a pending-approval message. They do not receive an app session or access to private data until approved. They can still use the anonymous public planner. In **Manage users & access requests**, Owner can approve them as Editor, Contributor, Admin or Owner, or deny the request. The person signs in again after approval. Existing users can be disabled or have their roles changed; either action revokes their app sessions. The last active Owner cannot be disabled or demoted. There is no automatic account linking by email or username and no automated invitation email.
 
 ## Shared login and deployment
 
 Host the two apps on the same hostname (different ports are supported), or route them under one origin. A host-only HttpOnly session cookie works across ports. The two Vite apps proxy `/api` to the local API, so `localhost:5173` and `localhost:5174` share login without cross-site cookies. Use the same hostname consistently; `localhost` and `127.0.0.1` are different hosts. Unrelated hostnames do not share login.
 
-Use HTTPS for remote accounts. Set `STAGEPLOT_SECURE_COOKIE=true` when TLS terminates at a reverse proxy. The Nginx configs preserve Host including the port and forward requests to the API. Do not expose the API port directly. The API requires a custom request header on mutations; cross-origin requests must match the explicit comma-separated `STAGEPLOT_ALLOWED_ORIGINS` list. No wildcard credentialed CORS is allowed. Same-origin deployments need no CORS configuration. Login is rate limited and sessions expire after seven days.
+Use HTTPS for remote accounts. Set `STAGEPLOT_SECURE_COOKIE=true` when TLS terminates at a reverse proxy. The Nginx configs preserve Host including the port and forward requests to the API. Do not expose the API port directly. The API requires a custom request header on mutations; cross-origin requests must match the explicit comma-separated `STAGEPLOT_ALLOWED_ORIGINS` list. No wildcard credentialed CORS is allowed. Same-origin deployments need no CORS configuration. Sign-in initiation is rate limited and app sessions expire after seven days. GitHub callbacks use single-use, browser-bound state and PKCE. GitHub tokens remain on the server only for the identity/email lookup and are not stored or sent to the browser.
 
 Both frontends may be exposed for collaborators once HTTPS and accounts are configured; Studio requires Owner, Admin or Contributor login. Hiding controls is only a usability measure: authorization is enforced on the API itself.
 
@@ -23,8 +37,8 @@ Both frontends may be exposed for collaborators once HTTPS and accounts are conf
 
 | Role | Planner | Studio | Shared library | Accounts |
 | --- | --- | --- | --- | --- |
-| Owner | Use, save and share own projects | Full | Add, edit, approve, delete and recover | Create accounts, assign roles, disable, reset passwords |
-| Admin | Use, save and share own projects | Full for shared assets and own drafts | Add, edit, approve, delete and recover | Own password |
+| Owner | Use, save and share own projects | Full | Add, edit, approve, delete and recover | Approve GitHub access, link existing accounts, assign roles, disable |
+| Admin | Use, save and share own projects | Full for shared assets and own drafts | Add, edit, approve, delete and recover | Own GitHub account |
 | Contributor | Use shared assets and own drafts immediately | Create and edit own assets; copy published designs | Submit fixed revisions for approval | Own password |
 | Editor | Use published assets, save and share own projects | None | Read published assets | Own password |
 
@@ -58,4 +72,4 @@ For a consistent running backup:
 node tools/backup-data.mjs account-data/stageplot.sqlite B:/Backups/stageplot-backup.sqlite
 ```
 
-Use paths appropriate to the server. The same script is included in the API image. Alternatively stop the API and copy the entire account-data directory, including any SQLite WAL files. Restore while the API is stopped. Database backups contain password hashes, private artwork and projects and must remain private. Account data and SQLite files are excluded from Git.
+Use paths appropriate to the server. The same script is included in the API image. Alternatively stop the API and copy the entire account-data directory, including any SQLite WAL files. Restore while the API is stopped. Database backups contain account identity links, private artwork, projects and share tokens and must remain private. Account data and SQLite files are excluded from Git.
