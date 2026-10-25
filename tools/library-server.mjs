@@ -3,12 +3,14 @@ import {dirname,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {openStore,uid,token,digest,roles,manager,designer,fail,publicUser} from './account-store.mjs'
 import {createGithubAuth} from './github-auth.mjs'
+import {createAuthCookies} from './auth-cookies.mjs'
 import {assetProfiles,belongsToProfile,isPublishedItem,isEquipmentItem,profileItem,validProfiles,LIBRARY_PROFILES} from './library-membership.mjs'
 
 const root=resolve(process.env.STAGEPLOT_LIBRARY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)),'..'))
 const store=await openStore(root)
 const {db,get,all,run,transaction,asset,saveAsset}=store
-const githubAuth=createGithubAuth(store)
+const authCookies=createAuthCookies()
+const githubAuth=createGithubAuth(store,authCookies)
 const validId=value=>typeof value==='string' && /^[a-z0-9][a-z0-9-]{0,79}$/.test(value)
 const parsed=row=>row ? {...JSON.parse(row.data),revision:row.revision,ownerId:row.owner_id,deleted:!!row.deleted} : null
 const canEdit=(user,row)=>designer(user) && (row?.owner_id ? row.owner_id===user.id || user.role==='owner' : manager(user))
@@ -40,7 +42,7 @@ const stageAccess=(row,user,profile,ref)=>{
 }
 const linkedStage=(user,profile,ref)=>ref ? all("SELECT * FROM assets WHERE kind='stages' AND deleted=0").find(row=>stageAccess(row,user,profile,ref)) : null
 const allowedOrigins=new Set((process.env.STAGEPLOT_ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174').split(',').map(s=>s.trim()).filter(Boolean))
-const sessionCookie=(request,value,age)=>`stageplot_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${request.headers['x-forwarded-proto']==='https' || process.env.STAGEPLOT_SECURE_COOKIE==='true' || process.env.STAGEPLOT_GITHUB_CALLBACK_URL?.startsWith('https://') ? '; Secure' : ''}`
+const sessionCookie=authCookies.session
 const server=createServer(async(request,response)=>{
   const send=(status,value)=>{response.writeHead(status,{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});response.end(value===undefined?'':JSON.stringify(value))}
   try {

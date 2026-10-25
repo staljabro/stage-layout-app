@@ -27,7 +27,21 @@ A new person signs in with GitHub and receives a pending-approval message. They 
 
 ## Shared login and deployment
 
-Host the two apps on the same hostname (different ports are supported), or route them under one origin. A host-only HttpOnly session cookie works across ports. The two Vite apps proxy `/api` to the local API, so `localhost:5173` and `localhost:5174` share login without cross-site cookies. Use the same hostname consistently; `localhost` and `127.0.0.1` are different hosts. Unrelated hostnames do not share login.
+Leave `STAGEPLOT_COOKIE_DOMAIN` blank when both apps use one hostname (different ports are supported). A host-only HttpOnly session cookie works across ports. The two Vite apps proxy `/api` to the local API, so `localhost:5173` and `localhost:5174` share login. Use the same hostname consistently; `localhost` and `127.0.0.1` are different hosts.
+
+For your sibling subdomains, set the following production values in the server's private `.env`:
+
+```dotenv
+STAGEPLOT_COOKIE_DOMAIN=braithwaite.work
+STAGEPLOT_APP_URL=https://stageplot.braithwaite.work/
+STAGEPLOT_STUDIO_URL=https://stageplotstudio.braithwaite.work/
+STAGEPLOT_GITHUB_CALLBACK_URL=https://stageplot.braithwaite.work/api/auth/github/callback
+STAGEPLOT_SECURE_COOKIE=true
+```
+
+Set the GitHub OAuth App's authorization callback to the same callback URL. Both Compose files pass the cookie domain to the API. Deploy the updated image (or rebuild for source deployments) and recreate the API container after changing `.env`; restarting an existing container alone does not apply new environment variables. Keep the existing HTTPS reverse-proxy routes for both frontends. Each frontend proxies its own `/api` requests, so no extra CORS configuration is needed.
+
+The domain setting applies to login, session creation, callback cleanup and logout. Shared-domain cookies always use Secure and require HTTPS. They are sent to the parent domain and all its subdomains, so use this only when those services are trusted. All configured frontend and callback hostnames must belong to that domain. Unrelated domains cannot share this cookie. After switching from host-only cookies, clear old site cookies for both app addresses once to avoid duplicate cookie names; subsequent sign-in and logout use the configured shared scope. Leave the domain blank for localhost development.
 
 Use HTTPS for remote accounts. Set `STAGEPLOT_SECURE_COOKIE=true` when TLS terminates at a reverse proxy. The Nginx configs preserve Host including the port and forward requests to the API. Do not expose the API port directly. The API requires a custom request header on mutations; cross-origin requests must match the explicit comma-separated `STAGEPLOT_ALLOWED_ORIGINS` list. No wildcard credentialed CORS is allowed. Same-origin deployments need no CORS configuration. Sign-in initiation is rate limited and app sessions expire after seven days. GitHub callbacks use single-use, browser-bound state and PKCE. GitHub tokens remain on the server only for the identity/email lookup and are not stored or sent to the browser.
 
