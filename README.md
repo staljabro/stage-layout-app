@@ -1,197 +1,46 @@
 # Stage Layout App
 
-Stage Layout App is a two-part React/Vite system for designing accurate top-down theatre band and equipment layouts.
+Stage Layout App combines two applications with one shared library and account service:
 
-- **Stageplot** is the client-facing planner. Users choose an approved stage, arrange current library equipment at real-world scale, validate collisions, save editable projects and export PDFs.
-- **Shape Studio** is the administrative editor. Theatre staff create vector equipment, collision footprints, articulated controls, reusable shapes and custom stages.
-- **Library API** stores accounts, personal and shared assets, projects, submissions and revision history in SQLite. Both apps use GitHub-only sign-in, shared app sessions and server-enforced roles. Existing JSON libraries are imported on first startup.
+- **Stageplot** arranges equipment on real-scale stages, saves private shows, shares client links and exports PDFs and equipment lists.
+- **Shape Studio** creates equipment artwork, collision footprints and stages. Contributors work on personal copies; Admins and the Owner can edit shared items and review submissions.
+- **Library API** stores accounts, assets, submissions, projects and revision data in SQLite. GitHub provides sign-in; the API enforces roles, ownership and Empire access.
 
-Both interfaces include a **Help** button with workflow-specific instructions.
+Current release: **Version 0.2.9 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
 
-Current release: **Version 0.2.4 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
+## Documentation
 
-See [Accounts and collaboration](ACCOUNT_GUIDE.md) for GitHub OAuth configuration, linking your Owner account, approvals, project storage and backups.
+Start with the [documentation index](docs/README.md) or the [comprehensive user guide](docs/USER_GUIDE.md).
 
-## Main capabilities
+| Guide | Contents |
+| --- | --- |
+| [User guide](docs/USER_GUIDE.md) | Stageplot, Studio, projects, equipment, stages, submissions and troubleshooting |
+| [Accounts and deployment](ACCOUNT_GUIDE.md) | GitHub OAuth, roles, Empire tags, server configuration, persistence and backups |
+| [Studio developer notes](tools/svg-shape-studio/README.md) | Running Studio locally and maintaining shared editor code |
 
-### Stageplot
+Both apps include **Help** with relevant instructions and a link to the full guide on GitHub.
 
-- Choose a saved custom stage or create a rectangular space.
-- Use stage-locked links such as `?stage=<stable-stage-id>` for client-specific workflows.
-- Click or drag real-scale vector equipment from a grouped library.
-- Use project-native custom text, or draw custom Prostage decks in whole-metre dimensions without adding them to the shared equipment library.
-- Move against and slide along accurate equipment, stage and solid-zone collision geometry.
-- Temporarily disable equipment collision, stage/zone collision or 30 cm corner snapping.
-- Disable equipment collision on an individual placement, such as a deck that must sit below other equipment.
-- Rotate whole items and independently configured articulated parts.
-- Show or hide named artwork groups and parts, including matching toggles across different selected equipment.
-- Show or hide toggleable stage zones and text per project. Hiding a solid zone also disables its collision.
-- Marquee-select objects or Shift-click layers for additive selection.
-- Shift-click items directly on the canvas for additive selection, copy/paste complete selections with `Ctrl/Cmd+C` and `Ctrl/Cmd+V`, or hold Alt while dragging to duplicate and position them in one action.
-- Organise the draw stack with collapsible, reorderable layer folders.
-- Search and filter large layer stacks, resize or hide the side panels, and collapse remembered Inspector sections.
-- Align or distribute multi-selections and use undo/redo for structural edits.
-- Hide individual layers or folders without changing their physical collision behaviour.
-- Automatically place equipment in the `Staging` group and custom staging behind other layers, with equipment collision off by default.
-- Track per-project stock allocation, allow external sourcing, and export equipment quantities as CSV or PDF.
-- Warn before closing or refreshing with unsaved changes, and recover work after an accidental refresh in the same browser tab.
-- Refresh placed library equipment from the canvas toolbar while preserving placement-specific settings and stable asset references.
-- Save `.stageplot` files with pinned asset revisions, store private account projects, and open legacy reference-based projects.
-- Warn before saving enabled collision objects that overlap, intersect solid zones or leave the usable stage.
-- Export the complete canvas, automatically fitted to one landscape A3 page with the project/show name as its header and a versioned creation footer.
+## Quick start
 
-### Shape Studio
+1. Open Stageplot and choose a listed stage or enter a rectangular space.
+2. Click or drag equipment into the layout. Move, rotate, group and arrange it using Layers and Inspector.
+3. Open **Save / Load** to update or save a cloud project, start a new project, load/download a project file, or export PDF.
+4. Signed-in users can open **My projects** to recall, share, restore or delete account projects.
+5. Contributors, Admins and the Owner can use the **Stageplot Studio** toolbar button to create equipment and stages.
 
-- Create equipment in centimetres and stages in metres.
-- Work in a CAD-style viewport with pointer-centred zoom, middle-button panning and marquee selection.
-- Use standard 10 cm snapping, advanced 1 cm snapping or no grid snapping.
-- Build artwork from rectangles, rounded rectangles, circles, ellipses, triangles, lines, text, tripods, arcs, polygons, trapezoids, chairs and custom vectors.
-- Convert basic shapes into editable vector paths.
-- Boolean-cut one closed layer from another, either consuming or retaining the upper cutter; the lower result becomes editable vector geometry and split results become separate layers.
-- Add dedicated light-grey collision shapes as editable vector layers. They always contribute collision geometry but are omitted from published equipment artwork and Stageplot rendering.
-- Group layers, draw open or closed paths and configure Point on Arc, Smooth and Bezier curves.
-- Mark only the required layers as physical collision geometry. All newly added layers default to collision off, and multi-selections or groups expose a tri-state control for changing collision together.
-- Mark layers as toggleable so each Stageplot placement can show or hide them.
-- Enable optional four-corner Stageplot snapping for rectangular equipment such as stage decks.
-- Add independent rotation parts with configurable pivots and angle limits.
-- Build curved or angled stage boundaries by editing nodes and segment modes.
-- Add aesthetic, solid-collision and outside-stage label zones.
-- Give zones a single-colour fill or two-colour diagonal stripes with adjustable stripe width.
-- Group stage zones and expose one Stageplot visibility toggle for the group, or mark zones and text individually toggleable.
-- Set optional stock quantities for equipment in the Library popup.
-- Add draggable stage text and multiple reorderable, lockable, crop-capable background images.
-- Save new assets, update stable asset IDs, save copies and maintain equipment groups.
-- Rename or delete library equipment and stages. Stage IDs remain stable across renames.
-- Maintain Studio-only custom shapes separately from published client equipment.
+The External planner is the normal URL. Empire access is an independent user tag assigned by the Owner. Tagged users can choose External or Empire when leaving Studio; Empire-only assets and the Empire planner require that access. External events do not track stock.
 
-## Typical workflow
+## Library and collaboration
 
-1. Open Shape Studio and create or edit an equipment item.
-2. Set its real-world canvas dimensions and build its top-down vector artwork.
-3. Mark the layers that define its collision footprint.
-4. Optionally configure corner snapping, toggleable artwork or additional rotation controls.
-5. Assign an equipment group, save the item and publish it to Stageplot.
-6. Create a stage boundary and any visual, solid or label zones, then save the stage.
-7. Optionally mark stage zones or labels toggleable and configure striped zone fills.
-8. Open Stageplot, choose the stage and arrange equipment or project-native custom staging/text.
-9. Save the editable `.stageplot` project and export a PDF for distribution.
+Studio has **Equipment** and **Stages** tabs. Admins and the Owner also have **New items** for new submissions. Existing shared items with pending updates are highlighted and offer **Review update**.
 
-## Stageplot usage
+All library rows use **Edit**. Contributors save a private working copy using **Save personal copy** or **Update personal copy**. Their active copies are shown alongside shared originals with ** - Personal copy** appended to the display name. Other users cannot browse those drafts. Admins and the Owner edit shared items directly using **Update shape** or **Update stage**.
 
-### Empire and External libraries
+Contributors submit their saved work for review. Resubmitting updates the proposal rather than adding another submission. A reviewer can approve a new item, update the fixed original, or decline. Opening a submission in the editor offers **Save new item**, **Update submitted item (without approving)** and **Approve changes**. Saving without approval updates the contributor's copy and the pending submission, with optional feedback signed by the reviewer's username. Conflict checks protect newer contributor edits.
 
-One planner and Library API serve both event profiles:
+Empire-tagged users see profile checkboxes and Empire stock quantities. Untagged users see neither; their new equipment and stages default to External. Updating an existing shared item preserves its memberships. Custom shapes remain Studio building blocks.
 
-- The normal planner URL (or `?profile=external`) opens the public External app, with no Empire labels, stock allocation, sourcing controls or stock/source columns in equipment reports.
-- `?profile=empire` opens Empire with its assigned library and stock tracking.
-- Profile links can also include `&stage=<stable-stage-id>` to lock a stage within that profile.
-- External is the default profile. For a dedicated Empire frontend build, set `VITE_LIBRARY_PROFILE=empire` when building. An explicit URL profile overrides the build default.
-
-In Shape Studio's **Library**, each equipment row has **Empire stock**, **Empire QTY** and **External** controls. Check either or both profiles; neither checked keeps the design in Studio only. Empire QTY is a non-negative whole number (blank means untracked), is disabled when Empire is unchecked, and never applies to External events. Stages have independent **Empire** and **External** checkboxes, without quantities. New equipment and stages start with neither profile checked; choose their profiles after saving. Existing published equipment and existing stages initially belong to Empire.
-
-Shared assets retain a single stable ID and artwork definition. Library reads, project opening and item refresh use the active profile. Browser recovery data is separate for each profile, and saved projects record their profile; opening a project from a different profile prompts you to use its original planner link. Both profiles use the same application build and receive the same feature updates.
-
-### Stage visibility and client links
-
-Create a stage in Shape Studio, save it, then open **Library** to assign its profiles and visibility:
-
-- **Listed**: appears in the stage picker for its assigned profiles. Stage-locked links use its stable stage ID.
-- **Link only**: excluded from public listings; clients need its random share token in their stage-locked URL. Knowing the stage ID does not grant access.
-- **Draft**: available only in Studio, without working client links. New stages and **Save stage as** copies start as drafts. Existing stages initially remain listed.
-
-Enter the client-facing app address in **Public planner URL** (for example, `https://stageplot.example/` or `http://localhost:5173/`). Studio remembers this browser preference; `VITE_STAGEPLOT_URL` can supply a build-time default. Choose **Copy External link** or **Copy Empire link** for an assigned profile. External links use `?stage=<id-or-token>`; Empire links also include `profile=empire`. Both lock the planner to that stage and use equipment from the selected profile.
-
-Anyone holding a link-only URL can access that stage. **Reset link** replaces its random token and invalidates previous links. Switching to Draft also stops link access; returning to Link only generates a fresh token. Normal artwork edits preserve the token. Saved client projects retain the stable stage ID and must be reopened using the current share link for a link-only stage.
-
-Public stage responses omit share tokens and Studio editor data. Studio requests its permitted assets with `scope=all`; the API requires Contributor, Admin or Owner access and filters results by ownership. A personal stage share link can explicitly include selected personal equipment without exposing other drafts. See [Accounts and collaboration](ACCOUNT_GUIDE.md) for setup and permissions.
-
-### Canvas navigation
-
-- Scroll to zoom toward the pointer.
-- Middle-drag to pan.
-- Left-drag empty canvas to select fully enclosed equipment.
-- Shift-click canvas items to add or remove them from the current selection.
-- Drag equipment to move it; collision-constrained movement stops at the nearest valid position and slides along obstacles.
-- Drag the lower handle to rotate an item. Hold **Shift** for 15-degree snapping. Ctrl-drag it to keep articulated parts at their current stage-facing orientations while the rest of the item turns. Differently coloured arm handles control individual articulated parts and remain distinct when an item has several controls.
-- Press an arrow key to nudge the selection by 1 cm, or Shift-arrow to move it by 10 cm.
-- Press **Ctrl/Cmd+Z** to undo and **Ctrl/Cmd+Shift+Z** or **Ctrl/Cmd+Y** to redo.
-- Press **Delete** or **Backspace** to remove the current selection.
-- Press **Ctrl/Cmd+C** and **Ctrl/Cmd+V** to copy and paste selected items. Copies retain library references, custom-item definitions, controls, visibility and folder membership.
-- Hold **Alt** while beginning a drag to duplicate the clicked item, or the complete selection when dragging a selected item.
-- Press **Escape** to cancel an active custom-staging drawing operation.
-
-### Layers and folders
-
-The top Layers row renders in front. Drag layers to reorder them. Use **New folder** to create an organisational folder, then drag layers onto it. Children can be reordered inside the folder, and the complete folder can be moved through the stack.
-
-Folders are created immediately with an automatic name; double-click the name to rename it inline. Click a folder name to select all its contents. Shift-click layers or folders to add/remove them from the current selection. Dragging any member of a multi-selection onto a folder moves the complete selection. Eye controls hide equipment layers or folders from the canvas and PDF but deliberately retain their equipment collision. Toggleable stage parts are controlled separately in the canvas inspector; hiding a solid stage zone also removes that zone’s collision.
-
-When multiple items are selected, the inspector exposes settings shared by the selection, including label display, equipment collision, visibility and compatible toggleable parts. A mixed checkbox displays an X; clicking it enables the setting for every selected item before normal on/off toggling resumes.
-
-Stock quantities are set in Shape Studio's **Library** popup; press Enter or leave the field to save the value. Leave the quantity blank for untracked stock, or enter a whole number including zero. Stageplot allocates stock to the earliest-added placements; layer reordering does not change the allocation. Hidden equipment still uses stock. When stock runs out, the library tile and overflow layers turn amber and remain available to add from external suppliers. Enable **Use external** in the placement inspector to exclude a placement from stock usage. Multi-selection also offers this control when every selected item has a stock quantity. Deleting placements or changing their source makes stock available to the next eligible placement. Stock is calculated within each project, not reserved across other clients' projects.
-
-On the canvas, hover and selection outlines are **orange for external equipment** and **blue for equipment with collision disabled**. External orange takes priority when both apply. These outlines do not appear in the canvas PDF.
-
-The **Equipment list** button shows quantities by equipment and source, with separate Stock and External rows. It includes hidden placements and custom staging (with dimensions), but excludes text annotations. Export a CSV or choose **Export PDF**, then **Save as PDF** in the browser print dialog. These exports do not save the editable project. Closing or refreshing Stageplot with unsaved project changes triggers the browser's standard warning; saving or opening a project clears it.
-
-### Collision and snapping
-
-Global movement controls appear in the canvas inspector when nothing is selected:
-
-- **Equipment collision** prevents enabled equipment from overlapping.
-- **Stage and zone collision** keeps equipment inside the main boundary and outside solid zones.
-- **Corner snapping** joins configured equipment snap points within 0.30 m.
-
-Each selected placement also has an **Equipment collision** override. Turning it off allows intentional overlap with that item while keeping stage and zone collision active. Saving always validates the layout, but intentional overlaps involving a placement-level disabled item are ignored.
-
-Equipment added from the **Staging** group starts behind other layers with its placement collision disabled. This is also the default for custom Prostage decks, allowing equipment to sit on top of them without disabling global equipment collision.
-
-### Custom project items
-
-The **Custom** library tab contains items that belong to the current project rather than the shared equipment library:
-
-- **Custom staging - Prostage** activates a drawing tool. Drag across the canvas to create a rectangular deck whose width and depth round to whole metres. The inspector controls width, depth, reference height in millimetres, annotation visibility, fill, boundary, metre-grid and text colours, plus transparency. Metre lines form snap points at every grid intersection, and the deck enters at the bottom of the layer stack with collision disabled.
-- **Custom Text** can be clicked into the viewport centre or dragged to an exact position. Its text-sized bounds update with the content, size, bold and italic settings; colour and rotation are also editable.
-
-These definitions are embedded in the `.stageplot` project because they do not have shared-library asset IDs.
-
-### Project files
-
-New `.stageplot` files contain stable references, placement settings and snapshots of the equipment and stage artwork used by the project. Opening them preserves those revisions even if the library changes or an asset is deleted. Use Refresh items to deliberately adopt newer equipment artwork. Legacy reference-only files continue to use current accessible library assets. Studio editor data and share tokens are excluded from snapshots.
-
-**New project** clears the selected stage and equipment. **Clear stage** removes equipment and folders but retains the selected stage. Browser session recovery is convenient but is not a replacement for downloading a project file.
-
-Use **Refresh items** beside the canvas dimensions to reload the latest artwork, dimensions, collision geometry, snapping points and articulated-part definitions for all placed library equipment. Placement transforms, custom labels, collision overrides and compatible part settings are retained; project-native custom staging and text are not altered.
-
-## Shape Studio usage
-
-Use **New item** to choose equipment or stage mode. The right inspector shows canvas settings when nothing is selected and selected-layer properties otherwise.
-
-Shift-click equipment layers or stage assets on the canvas or in their layer list for additive selection. **Ctrl/Cmd+C** copies the complete selected objects and **Ctrl/Cmd+V** pastes independent duplicates with geometry, styling, collision flags, toggle settings, group relationships and library-building metadata intact.
-
-Hold **Alt** while dragging an equipment layer or stage asset to create the same complete duplicate and immediately position it. Alt-dragging one member of a selected set duplicates the whole selection. The main stage boundary itself is not duplicated because a stage document has only one primary boundary.
-
-In stage mode, press **M** to activate the dedicated Move tool. Node, curve, crop, resize and canvas-size handles are temporarily suppressed, and the visible topmost asset under the pointer is dragged as one object. This is especially useful for small assets on large stages. Press **Escape** or click **Move (M)** again to return to normal geometry editing.
-
-The stage inspector is contextual: stage name, canvas dimensions and canvas-resize settings appear only when nothing is selected. A selected zone instead shows its own geometry and appearance controls. Each zone can use either its curve-aware **Top-left extremity** or **Bounds centre** as a positioning anchor; enter exact X/Y coordinates in metres to translate the complete zone without reshaping it. The inspector also reports the zone’s overall bounds width and depth, and a blue crosshair identifies the active anchor on the canvas.
-
-Use **Add dimension line** for Studio-only measurements. A dimension has an exact anchor X/Y position, length and rotation; its line extends from the anchor and rotates around that point. Dimension lines show metre labels and endpoint ticks, can be locked, layered, copied, Alt-dragged and moved with the Move tool, but are stored only in the stage’s editor data and never render in Stageplot.
-
-In stage mode, **Delete** or **Backspace** removes selected zones, text, dimensions or background-image layers. When a boundary node is selected, it removes that node instead; closed boundaries retain a minimum of three nodes.
-
-For a boolean subtraction, arrange the target below the cutter and select exactly those two equipment layers. Choose **Cut upper layer from lower layer** to consume the cutter, or **Cut and retain upper layer** to keep it. Closed primitives and vectors are supported. Curved cut boundaries are fitted back into editable Bezier segments, while genuine straight edges and hard corners remain straight. If subtraction separates the target, Studio creates multiple result layers. A fully enclosed cut that would require a vector hole is rejected because the current editable-vector model supports one outline per layer.
-
-Use **Collision shape** in Advanced Shapes for editable collision geometry that should not be visible to Stageplot users. It behaves like a normal closed vector in Studio, including node editing, curves, cuts, movement and layer ordering. Its light-grey Studio artwork is shown at 50% opacity and is only an editing guide: the layer is excluded from equipment artwork but always saved in the item collision geometry.
-
-For equipment, keep the canvas tightly fitted to the physical item. New basic shapes, advanced presets and closed custom vectors all begin with **Physical collision shape** off, so enable collision only on the minimum layers that define the real footprint. Collision and four-corner snapping use these real-world coordinates. Clear layer names are important because toggleable layer names are shown directly to Stageplot users. Select multiple layers and choose **Group selected layers**, then set a group name and enable **Toggleable in Stageplot** in the group inspector to expose one toggle for all its artwork. Save/publish the equipment and refresh existing Stageplot placements to receive the change. Toggles with the same name are combined; selecting different equipment exposes every toggle name shared by the entire selection.
-
-For stages, Shift-click a segment to insert a node and Ctrl-click a straight segment to convert it to a Point on Arc curve. Background images can extend beyond the stage and are editing references only. The main stage boundary clips normal stage assets in Stageplot; Label zones may render outside it, while visible Solid zones block equipment.
-
-Zones support single-colour and multicoloured diagonal-stripe fills. In multicoloured mode, set both colours and the stripe width; the existing fill transparency applies to the complete pattern. Zones and stage text can be marked **Toggleable in Stageplot**. Each client project then receives show/hide controls in the canvas inspector, and hiding a solid zone disables its collision for that project.
-
-Shift-select multiple zones in the stage editor and choose **Group selected zones**. Set the group name and enable **Toggleable in Stageplot** to expose one control for the complete group. Clicking a grouped zone selects the group's members for movement, copying or deletion; individual zone geometry remains editable. **Ungroup zones** restores independent selection and each zone's own toggle setting. Save the stage, then reopen it in Stageplot to receive the group controls.
-
-The Library dialog opens saved equipment and stages for editing. Updating an asset retains its stable ID; saving as new creates a new ID. Renaming a stage does not break its stage-locked URL.
+Stage **Sharing** settings offer Listed, Link only and Draft visibility. Stage links point to the fixed public planner at https://stageplot.braithwaite.work/. Share tokens grant access to specific stages or saved projects, subject to Empire access. See the [user guide](docs/USER_GUIDE.md) before sharing private artwork with clients.
 
 ## Local development
 
@@ -219,7 +68,7 @@ Run verification:
 
 ```powershell
 npm.cmd run lint
-node --test --test-isolation=none src/*.test.js tools/svg-shape-studio/src/*.test.js
+node --test --test-isolation=none src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
 npm.cmd run build
 npm.cmd run build --prefix tools/svg-shape-studio
 ```
@@ -235,7 +84,7 @@ docker compose up -d --build
 - Stageplot: `http://localhost:8088`
 - Shape Studio: `http://localhost:8089`
 
-For local repository-backed library data, set this in `.env`:
+For local persistent library data, set this in `.env`:
 
 ```env
 LIBRARY_DATA_PATH=.

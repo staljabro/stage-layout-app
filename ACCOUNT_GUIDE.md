@@ -23,7 +23,7 @@ Other existing users sign in through GitHub to create an access request. As Owne
 
 ## New users and approval
 
-A new person signs in with GitHub and receives a pending-approval message. They do not receive an app session or access to private data until approved. They can still use the anonymous public planner. In **Manage users & access requests**, Owner can approve them as Editor, Contributor, Admin or Owner, or deny the request. The person signs in again after approval. Existing users can be disabled or have their roles changed; either action revokes their app sessions. The last active Owner cannot be disabled or demoted. There is no automatic account linking by email or username and no automated invitation email.
+A new person signs in with GitHub and receives a pending-approval message. They do not receive an app session or access to private data until approved. They can still use the anonymous public planner. In **Manage users & access requests**, Owner can approve them as Editor, Contributor or Admin, or deny the request. The person signs in again after approval. Existing users can be disabled or have their roles changed; either action revokes their app sessions. The configured Owner cannot be disabled or demoted. There is no automatic account linking by email or username and no automated invitation email.
 
 ## Shared login and deployment
 
@@ -51,20 +51,27 @@ Both frontends may be exposed for collaborators once HTTPS and accounts are conf
 
 | Role | Planner | Studio | Shared library | Accounts |
 | --- | --- | --- | --- | --- |
-| Owner | Use, save and share own projects | Full | Add, edit, approve, delete and recover | Approve GitHub access, link existing accounts, assign roles, disable |
+| Owner | Use, save and share own projects | Full | Add, edit, approve, delete and recover | Approve GitHub access, link existing accounts, assign non-Owner roles, disable non-Owners |
 | Admin | Use, save and share own projects | Full for shared assets and own drafts | Add, edit, approve, delete and recover | Own GitHub account |
-| Contributor | Use shared assets and own drafts immediately | Create and edit own assets; copy published designs | Submit fixed revisions for approval | Own password |
+| Contributor | Use shared assets and own drafts immediately | Create and edit own assets; copy published designs | Submit and update proposals for approval | Own GitHub account |
 | Editor | Use published assets, save and share own projects | None | Read published assets | Own password |
 
-Projects are private to their creator, including against Owner/Admin account access. Admin cannot browse another user's personal drafts. Owner can manage all library assets for recovery/administration. Submission reviewers can inspect the exact submitted snapshot without access to the creator's other drafts.
+Projects are private to their creator, including against Owner/Admin account access. Admin cannot browse another user's personal drafts. Personal working copies are private to their creator, including against Owner access. Submission reviewers can inspect the exact submitted snapshot without access to the creator's other drafts.
 
 ## Personal assets and approvals
 
-Contributor saves automatically create personal assets. They appear immediately in that user's planner; personal stock is never tracked. Opening a shared design for editing creates a personal copy with a proposed replacement reference. The original stays unchanged. Personal designs can request profile membership, but only approval makes them shared. Shared stock quantities are preserved when approving a proposed replacement.
+Contributor saves automatically create personal assets. They appear immediately in that user's planner; personal stock is never tracked. Contributors opening a shared design for editing create a personal copy with a proposed replacement reference. All library rows use **Edit**. Contributors editing a shared item save through **Save personal copy**; an existing personal copy uses **Update personal copy**. A private copy is created on save, not on opening the editor. Admins and Owners use **Edit** to update the shared item directly. The original stays unchanged. Personal designs can request profile membership, but only approval makes them shared. Shared stock quantities are preserved when approving a proposed replacement.
 
-**Submit for approval** captures the saved revision. The contributor can continue editing and using the personal draft while it is pending. **Submissions & recovery** shows status, reviewer notes and the submitted snapshot. Admin/Owner can preview it in the canvas, approve it, or return it with a note. Approval publishes a separate shared asset or updates the proposed shared target; the creator keeps their personal draft. Approval never silently uses a newer private edit. If a replacement target changed after submission, approval fails and a new proposal is required. There can be one pending submission per personal asset.
+**Submit for review** captures the latest saved draft. **Update proposal** replaces the snapshot in the same submission, including after changes were requested or an earlier proposal was published. Matching uses the draft identity, proposed shared target, or a matching name within the same user's equipment or stage proposals. Different users and asset types keep separate proposals. Renaming the same draft does not create another proposal.
 
-**History** restores an earlier asset revision as a new revision. Delete moves assets to recoverable storage. **Submissions & recovery** restores deleted assets. The API does not expose permanent deletion. Restoring a link-only stage generates a new token.
+The workflow labels are **Draft**, **Pending review**, **Declined** and **Published**. Saving does not change the submitted snapshot: submit again to send the latest edits. Personal drafts stay usable immediately. Revision data remains stored for recovery, but version history is not shown in the library or review interface.
+
+The Studio library has **Equipment** and **Stages** tabs. Admins and Owners also see **New items**, containing new equipment and stages awaiting review. Pending updates highlight the existing shared item in amber, with **Review update** on the same row. Personal working copies use a flat blue background. Rows remain one line high; narrow windows scroll horizontally. Stage link controls are available through **Sharing**.
+
+**Review submission** and **Review update** show the submitted design and three decisions: **Approve as new item**, **Approve item update**, or **Decline**. Updates are locked to the original shared item. The current library artwork and submitted artwork are shown together in the review window. Updating preserves its identity and stock quantity; creating a new item leaves the original unchanged. Optional feedback accompanies a decline. Review messages appear under **View feedback** beside the contributor's draft, including approval and decline messages. Contributors can read the message and resubmit. A **Submit saved draft** button is also available while editing a personal design. Save before submitting. Revisions and JSON details are not part of the review interface.
+
+The configured Owner is fixed. Owner is absent from role choices, and the Owner account has no role or disable controls. The API also rejects attempts to assign Owner or modify or disable the existing Owner. Initial Owner setup still uses the configured GitHub identity.
+
 
 ## Projects and client sharing
 
@@ -87,3 +94,23 @@ node tools/backup-data.mjs account-data/stageplot.sqlite B:/Backups/stageplot-ba
 ```
 
 Use paths appropriate to the server. The same script is included in the API image. Alternatively stop the API and copy the entire account-data directory, including any SQLite WAL files. Restore while the API is stopped. Database backups contain account identity links, private artwork, projects and share tokens and must remain private. Account data and SQLite files are excluded from Git.
+
+Approved working copies do not appear as duplicate library rows. Contributors see the shared original and their own active working copies together. Personal rows append ** - Personal copy** to the display name without changing the stored name. Personal edits made after submission are kept visible until submitted and approved.
+
+For Admins and Owners, an existing shared item uses **Update shape** or **Update stage**. Opening a submission in the editor retains its submission context. Saving opens three choices: **Save new item** creates a separate shared asset and leaves the submission pending; **Update submitted item (without approving)** updates the proposal snapshot and the contributor's personal copy, while keeping the submission pending; **Approve changes** publishes the edited proposal to its fixed target. Reviewer messages are visible through **View feedback** beside the contributor's personal copy. Reviewer saves preserve ownership, private stage links and equipment grants. If the contributor has saved newer changes since submitting, reviewer updates are blocked until they resubmit. Studio refreshes library data when its window regains focus; an already open editor keeps its local work and checks for conflicts when saving.
+
+Stageplot groups PDF export, local project saving/loading and New project in **Save / Load**. The **Stageplot Studio** and **Stageplot** toolbar buttons link between the apps for Contributors, Admins and Owners, using the configured frontend URLs. In **My projects**, first delete a project, then choose **Delete permanently** to remove it and all revisions. This action is restricted to the project owner and cannot be undone; the API rejects stale project revisions or projects that have not been deleted first.
+
+## Empire access
+
+In **Manage users & access requests**, the Owner can toggle **Empire** beside any account. This tag is independent of role. Existing and newly configured Owners start with Empire access; other accounts start without it. Untagged users and anonymous visitors cannot access the Empire profile or Empire-only equipment/stages, including through direct asset URLs, Studio listings, submissions or share links. Items tagged both Empire and External remain available externally.
+
+For tagged users, Studio's **Stageplot** button opens an **External Stageplot / Empire Stageplot** chooser. Untagged users go straight to External Stageplot. Access is checked on every API request, so changing the tag does not require recreating the account or logging out. Existing data is migrated automatically; keep the existing account-data volume.
+
+Untagged Studio users do not see Empire/External membership controls or Empire quantities. New equipment and stages are assigned External automatically. Editing a shared item preserves its existing profiles and stock; approving an update also preserves the shared target's membership.
+
+For everyday workflows and screenshots-independent instructions, see the [comprehensive user guide](docs/USER_GUIDE.md).
+
+### Friendly names
+
+The Owner can set **Friendly name** beside any account in user management, including their own. Leave the field or press Enter to save; clear it to fall back to the GitHub username. Submission author labels use the current friendly name when present. New or edited feedback uses it in the reviewer signature; existing saved feedback retains its recorded signature. This changes display names only, not GitHub identity, roles or ownership.

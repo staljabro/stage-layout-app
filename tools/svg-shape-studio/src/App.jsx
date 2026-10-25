@@ -1,7 +1,8 @@
-import { StudioWorkflow, AssetHistory } from '../../../src/studio-workflow.jsx'
+import {AccountModal} from '../../../src/account-modal.jsx'
+import { SubmissionReview } from '../../../src/studio-workflow.jsx'
 import { accountRequest } from '../../../src/account-api.js'
 import { API_BASE, apiFetch as fetch } from '../../../src/account-api.js'
-import { AccountButton, useAccount } from '../../../src/accounts.jsx'
+import { AccountButton, AppNavigation, useAccount } from '../../../src/accounts.jsx'
 import { stageGroupIds, copyStageGroups } from "../../../src/zone-groups.js";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { segmentMode, segmentMidpoint, smoothControl, arcOffset, pointOnArc, bezierGeometry, stageSegmentPath, stagePath, sampleStageBoundary } from "../../../src/stage-geometry.js";
@@ -871,8 +872,24 @@ function CollisionGuide({ item }) {
 function App() {
   const {user}=useAccount();
   const isManager=["owner","admin"].includes(user.role);
-  const editable=asset=>asset.ownerId ? asset.ownerId===user.id || user.role==="owner" : isManager;
-  const submitAsset=async(kind,asset)=>{try{await accountRequest("/submissions","POST",{kind,assetId:asset.id});flash("Revision submitted for approval. Your personal design is still usable.")}catch(error){flash(error.message)}};
+  const [managedTab,setManagedTab]=useState('items');
+  const [submissions,setSubmissions]=useState([]);
+  const [reviewIds,setReviewIds]=useState(null);
+  const [personalSource,setPersonalSource]=useState(null);
+  const [editingSubmission,setEditingSubmission]=useState(null);
+  const [submissionSaveOpen,setSubmissionSaveOpen]=useState(false);
+  const [reviewerMessage,setReviewerMessage]=useState('');
+  const [submissionFeedback,setSubmissionFeedback]=useState(null);
+  const [stageSettingsId,setStageSettingsId]=useState(null);
+  const pendingUpdates=(kind,id)=>submissions.filter(s=>s.status==='pending'&&s.kind===kind&&s.target_id===id);
+  const draftStatus=(kind,asset)=>{
+    const proposal=submissions.find(s=>s.kind===kind&&s.asset_id===asset.id);
+    return {label:({pending:'Pending review',rejected:'Declined',approved:'Published'}[proposal?.status] || 'Draft'),note:proposal?.review_note || ''};
+  };
+  const showManagedAsset=asset=>!isManager || !asset.ownerId || !submissions.some(s=>s.status==='pending'&&s.asset_id===asset.id);
+
+  const editable=asset=>asset.ownerId ? asset.ownerId===user.id : isManager;
+  const submitAsset=async(kind,asset)=>{try{await accountRequest("/submissions","POST",{kind,assetId:asset.id});await refreshLibrary();flash("Proposal submitted or updated. Your personal draft is still usable.")}catch(error){flash(error.message)}};
   const [session] = useState(() => readSessionDraft("shape-studio:"+user.id+":draft"));
   const [documentMode, setDocumentMode] = useState(session.documentMode ?? "item");
   const [shapeName, setShapeName] = useState(session.shapeName ?? "Untitled Item");
@@ -997,9 +1014,10 @@ function App() {
     window.addEventListener("pointermove",move);window.addEventListener("pointerup",finish);
     return()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",finish);};
   },[panelResize,documentMode]);
+  const newSubmissions=submissions.filter(s=>s.status==='pending' && !(s.kind==='items'?library:stageLibrary).some(a=>!a.ownerId&&a.id===s.target_id));
   const equipmentItems = library.filter(isEquipmentItem);
-  const matchingManagedStages = stageLibrary.filter(stage => stage.label.toLowerCase().includes(managedItemSearch.trim().toLowerCase())).sort((a,b)=>a.label.localeCompare(b.label));
-  const matchingManagedItems = equipmentItems.filter(item => {
+  const matchingManagedStages = stageLibrary.filter(showManagedAsset).filter(stage => stage.label.toLowerCase().includes(managedItemSearch.trim().toLowerCase())).sort((a,b)=>a.label.localeCompare(b.label));
+  const matchingManagedItems = equipmentItems.filter(showManagedAsset).filter(item => {
     const groupName = groups.find(group=>group.id===item.groupId)?.label || "Uncategorised";
     return (item.label + " " + groupName).toLowerCase().includes(managedItemSearch.trim().toLowerCase());
   }).sort((a,b)=>a.label.localeCompare(b.label,undefined,{sensitivity:"base"}));
@@ -1122,15 +1140,15 @@ function App() {
     () => JSON.stringify(itemData, null, 2),
     [itemData],
   );
-  const [plannerUrl,setPlannerUrl] = useState(()=>{try{return localStorage.getItem("stageplot:planner-url") || import.meta.env.VITE_STAGEPLOT_URL || ""}catch{return ""}});
+  const plannerUrl = "https://stageplot.braithwaite.work/";
   const copyManagedStageLink = async (stage,profile) => {
     try {
       const url=new URL(plannerUrl);
-      if(!["http:","https:"].includes(url.protocol))throw new Error("Enter the public planner URL first");
+      if(!["http:","https:"].includes(url.protocol))throw new Error("Invalid public planner URL");
       url.search="";url.hash="";url.searchParams.set("stage",stage.visibility==="link-only"?stage.shareToken:stage.id);
       if(profile==="empire")url.searchParams.set("profile","empire");
       try{await navigator.clipboard.writeText(url.href);flash("Stage-locked link copied")}catch{window.prompt("Copy this stage-locked link:",url.href)}
-    }catch{flash("Enter the public planner URL above the library first")}
+    }catch{flash("Unable to create the stage link")}
   };
   const stageData = useMemo(
     () => ({
@@ -1180,6 +1198,7 @@ function App() {
       setLibrary(await itemsResponse.json());
       setGroups(await groupsResponse.json());
       setStageLibrary(await stagesResponse.json());
+      setSubmissions(await accountRequest("/submissions"));
       setLibraryError("");
     } catch {
       setLibraryError("Start the library server with npm run dev:all");
@@ -1187,6 +1206,8 @@ function App() {
   };
   useEffect(() => {
     refreshLibrary();
+    window.addEventListener("focus",refreshLibrary);
+    return ()=>window.removeEventListener("focus",refreshLibrary);
   }, []);
 
   const editorSnapshot=()=>({
@@ -2074,6 +2095,15 @@ function App() {
   };
   const saveToLibrary = async () => {
     if (shapeSaving) return;
+    if(editingSubmission){setReviewerMessage(editingSubmission.review_note || '');setSubmissionSaveOpen(true);return;}
+    if(personalSource){
+      try {
+        const copy=await accountRequest('/'+personalSource.kind+'/'+personalSource.asset.id+'/fork','POST',{});
+        const data={...(documentMode==='stage'?stageData:itemData),id:copy.id,revision:copy.revision,profiles:copy.profiles};
+        if(documentMode==='stage')await persistStage(data,projectSnapshot,'Personal copy saved');else await persistEquipment(data,projectSnapshot);
+      }catch(error){flash(error.message)}
+      return;
+    }
     if (documentMode === "stage") {
       await persistStage(stageData, projectSnapshot, activeLibraryId ? "Stage updated" : "Stage added to Stageplot");
       return;
@@ -2133,6 +2163,7 @@ function App() {
       const response = await fetch(`${STAGES_API}/${encodeURIComponent(data.id)}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data,null,2)});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
+      setPersonalSource(null);
       savedProject.current = snapshot;
       setShapeName(result.label);
       setActiveLibraryId(result.id);
@@ -2164,6 +2195,7 @@ function App() {
       );
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
+      setPersonalSource(null);
       savedProject.current = snapshot;
       setActiveLibraryId(result.id);
       setSaveChoice(null);
@@ -2173,15 +2205,21 @@ function App() {
       flash(error.message || "Could not save item");
     } finally { setShapeSaving(false); }
   };
-  const editLibraryItem = async (item, preview=false) => {
-    if(!preview && !editable(item)){try{item=await accountRequest("/items/"+item.id+"/fork","POST",{});await refreshLibrary()}catch(error){flash(error.message);return}}
+  const editLibraryItem = async (item, preview=false, propose=false) => {
+    let newPersonal=false;
+    setEditingSubmission(null);
+    if(!preview && (propose || !editable(item))){
+      const ownCopy=(library).find(a=>a.ownerId===user.id&&a.proposedReplacementId===item.id);
+      if(ownCopy)item=ownCopy;else newPersonal=true;
+    }
+    setPersonalSource(newPersonal?{kind:'items',asset:item}:null);
     setVectorDrawing(null);setVectorPreview(null);
     setCanvasResizeView(null);
     resetProjectBaseline.current = true;
     setDocumentMode("item");
     setAdvancedShapeRole(item.editor?.advancedShapeRole || null);
-    setActiveLibraryId(preview?null:item.id);
-    if(preview)setDraftAssetId(newAssetId());
+    setActiveLibraryId(preview||newPersonal?null:item.id);
+    if(preview||newPersonal)setDraftAssetId(newAssetId());
     setShapeName(preview?item.label+" - Review copy":item.label);
     setGroupId(item.groupId || "");
     setRealWidth(item.dimensions.widthMeters);
@@ -2203,8 +2241,14 @@ function App() {
     );
     flash(`Editing ${item.label}`);
   };
-  const editLibraryStage = async (stage, preview=false) => {
-    if(!preview && !editable(stage)){try{stage=await accountRequest("/stages/"+stage.id+"/fork","POST",{});await refreshLibrary()}catch(error){flash(error.message);return}}
+  const editLibraryStage = async (stage, preview=false, propose=false) => {
+    let newPersonal=false;
+    setEditingSubmission(null);
+    if(!preview && (propose || !editable(stage))){
+      const ownCopy=(stageLibrary).find(a=>a.ownerId===user.id&&a.proposedReplacementId===stage.id);
+      if(ownCopy)stage=ownCopy;else newPersonal=true;
+    }
+    setPersonalSource(newPersonal?{kind:'stages',asset:stage}:null);
     setVectorDrawing(null);setVectorPreview(null);
     setCanvasResizeView(null);
     resetProjectBaseline.current = true;
@@ -2229,8 +2273,8 @@ function App() {
       };
     });
     setDocumentMode("stage");
-    setActiveLibraryId(preview?null:stage.id);
-    if(preview)setDraftAssetId(newAssetId("stage"));
+    setActiveLibraryId(preview||newPersonal?null:stage.id);
+    if(preview||newPersonal)setDraftAssetId(newAssetId("stage"));
     setShapeName(preview?stage.label+" - Review copy":stage.label);
     setRealWidth(stage.dimensions.widthMeters);
     setRealDepth(stage.dimensions.depthMeters);
@@ -2252,6 +2296,7 @@ function App() {
   };
   const newItem = (mode) => {
     if (projectSnapshot !== savedProject.current && !window.confirm("This project has unsaved changes. Discard them and create a new " + (mode === "stage" ? "stage" : "equipment item") + "?")) return;
+    setPersonalSource(null);setEditingSubmission(null);setSubmissionSaveOpen(false);
     setDocumentMode(mode);
     setDraftAssetId(newAssetId(mode === "stage" ? "stage" : "item"));
     setVectorDrawing(null);setVectorPreview(null);
@@ -2625,7 +2670,7 @@ function App() {
           onChange={(e) => setShapeName(e.target.value)}
           aria-label="Shape name"
         />
-        <div className="actions"><AccountButton/><StudioWorkflow onChanged={refreshLibrary} onPreview={(kind,data)=>{if(projectSnapshot!==savedProject.current&&!window.confirm("Discard unsaved changes and preview the submitted revision as a new copy?"))return;if(kind==="items")editLibraryItem(data,true);else editLibraryStage(data,true);}}/>
+        <div className="actions"><AccountButton/><AppNavigation studio/>{(documentMode==='stage'?stageLibrary:library).find(a=>a.id===activeLibraryId&&a.ownerId===user.id)&&<button onClick={()=>{const kind=documentMode==='stage'?'stages':'items';submitAsset(kind,(kind==='stages'?stageLibrary:library).find(a=>a.id===activeLibraryId))}}>Submit saved draft</button>}
           <button onClick={()=>setHelpOpen(true)}>Help</button>
           <button onClick={() => setNewItemOpen(true)}>New item</button>
           <button
@@ -2638,7 +2683,7 @@ function App() {
           </button>
           {documentMode === "stage" && activeLibraryId && <button disabled={shapeSaving} onClick={()=>{setStageSaveAsName(`${shapeName} Copy`);setStageSaveAsOpen(true);}}>Save stage as</button>}
           <button className="accent" disabled={shapeSaving} onClick={saveToLibrary}>
-            {shapeSaving ? "Saving..." : documentMode === "item" ? "Save shape" : activeLibraryId ? "Update stage" : "Add stage to Stageplot"}
+            {shapeSaving ? "Saving..." : personalSource ? "Save personal copy" : (documentMode==='stage'?stageLibrary:library).find(a=>a.id===activeLibraryId&&a.ownerId===user.id) ? "Update personal copy" : editingSubmission ? "Save submission changes" : activeLibraryId ? (documentMode==='item'?"Update shape":"Update stage") : documentMode==='item'?"Save shape":"Save stage"}
           </button>
         </div>
       </header>
@@ -3955,7 +4000,7 @@ function App() {
               {selected.type === "text" ? <>
                 <label className="field">TEXT<textarea rows="4" value={selected.text} onChange={event=>update({text:event.target.value})} /></label>
                 <label className="field">TEXT SIZE ({documentMode === "stage" ? "M" : "CM"})<LiveNumberInput centimetres key={`text-size-${selected.id}`} min={.01} step=".01" value={selected.fontSize} onChange={fontSize=>update({fontSize})}/></label>
-                <div className="field-row"><label><input type="checkbox" checked={selected.bold} onChange={event=>update({bold:event.target.checked})}/> Bold</label><label><input type="checkbox" checked={selected.italic} onChange={event=>update({italic:event.target.checked})}/> Italic</label></div>
+                <div className="field-row text-format-options"><label><input type="checkbox" checked={selected.bold} onChange={event=>update({bold:event.target.checked})}/> Bold</label><label><input type="checkbox" checked={selected.italic} onChange={event=>update({italic:event.target.checked})}/> Italic</label></div>
                 <label className="field">HORIZONTAL ALIGNMENT<select value={selected.textAlign} onChange={event=>update({textAlign:event.target.value})}><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
                 <label className="field">LINE SPACING<LiveNumberInput key={`text-spacing-${selected.id}`} min={.1} step=".1" value={selected.lineSpacing} onChange={lineSpacing=>update({lineSpacing})}/></label>
                 <label className="field">TEXT COLOUR<ColourPicker value={selected.fill} onChange={event=>update({fill:event.target.value})}/></label>
@@ -4266,44 +4311,54 @@ function App() {
         </section>
       </div>}
       {manageStageplotOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !removingStageplotId)setManageStageplotOpen(false);}}>
-        <section className="library-modal equipment-management-modal" role="dialog" aria-modal="true" aria-label="Library">
+        <section className={`library-modal equipment-management-modal${user.empire?"":" external-library"}`} role="dialog" aria-modal="true" aria-label="Library">
           <div className="modal-header"><h2>Library</h2><button disabled={Boolean(removingStageplotId)} onClick={()=>setManageStageplotOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
-          <div className="preset-modal-body custom-shape-list"><p className="handle-help">Manage saved equipment and stages here. Tick Empire or External to publish to that library. Empire quantities apply only to Empire events; External events do not track stock. Custom shapes are building blocks and live in Custom shapes, not this library.</p>
+          <div className="preset-modal-body custom-shape-list"><p className="handle-help">Manage saved equipment and stages here. New personal items can be submitted for review.</p>
             <label className="management-search">Search library<input type="search" placeholder="Search equipment, groups or stages" value={managedItemSearch} onChange={event=>setManagedItemSearch(event.target.value)}/></label>
-            {matchingManagedItems.length ? managedEquipmentSections.map(group=><section className="managed-equipment-section" key={group.id || "uncategorised"}><h3>{group.label}</h3>{group.items.map(item=><div className="equipment-management-row" key={item.id}>
+            <nav className="library-tabs" role="tablist" aria-label="Library sections">{[["items","Equipment"],["stages","Stages"],...(isManager?[["new","New items"]]:[])].map(([id,label])=><button key={id} role="tab" aria-selected={managedTab===id} aria-controls={"library-panel-"+id} id={"library-tab-"+id} onClick={()=>setManagedTab(id)}>{label}{id==="new"?" ("+newSubmissions.length+")":""}</button>)}</nav>
+            <div id="library-panel-items" role="tabpanel" aria-labelledby="library-tab-items" hidden={managedTab!=="items"}>
+            {matchingManagedItems.length ? managedEquipmentSections.map(group=><section className="managed-equipment-section" key={group.id || "uncategorised"}><h3>{group.label}</h3>{group.items.map(item=><div className={`equipment-management-row${item.ownerId ? " personal-library-row" : pendingUpdates("items",item.id).length?" pending-update-row":""}`} key={item.id}>
               <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + item.label} viewBox={"0 0 " + item.dimensions.widthMeters + " " + item.dimensions.depthMeters}>{(item.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg></span>
-              <div className="managed-item-name">{editingItemNameId===item.id ? <form onSubmit={event=>{event.preventDefault();if(itemNameDraft.trim())updateManagedItem(item,{label:itemNameDraft.trim()});}}><input aria-label={"Item name for " + item.label} autoFocus value={itemNameDraft} onChange={event=>setItemNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !itemNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingItemNameId(null)}>Cancel</button></form> : <><span>{item.label}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} hidden={!editable(item)} aria-label={"Rename " + item.label} title="Rename item" onClick={()=>{setEditingItemNameId(item.id);setItemNameDraft(item.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}</div>
+              <div className="managed-item-name">{editingItemNameId===item.id ? <form onSubmit={event=>{event.preventDefault();if(itemNameDraft.trim())updateManagedItem(item,{label:itemNameDraft.trim()});}}><input aria-label={"Item name for " + item.label} autoFocus value={itemNameDraft} onChange={event=>setItemNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !itemNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingItemNameId(null)}>Cancel</button></form> : <><span>{item.label}{item.ownerId?" - Personal copy":""}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} hidden={!editable(item)} aria-label={"Rename " + item.label} title="Rename item" onClick={()=>{setEditingItemNameId(item.id);setItemNameDraft(item.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}</div>
               <select aria-label={"Equipment group for " + item.label} value={item.groupId || ""} disabled={Boolean(removingStageplotId) || !editable(item)} onChange={event=>updateManagedItem(item,{groupId:event.target.value || null})}><option value="">Uncategorised</option>{groups.map(group=><option key={group.id} value={group.id}>{group.label}</option>)}</select>
-              <label className="publish-equipment-toggle"><input type="checkbox" checked={belongsToProfile(item,"empire")} disabled={Boolean(removingStageplotId) || !editable(item)} onChange={event=>updateManagedItem(item,{profiles:withProfile(item,"empire",event.target.checked).profiles})}/>Empire stock</label>
-              <label className="stock-quantity-field">Empire QTY<input key={item.id+':'+item.stockQuantity} type="number" min="0" step="1" placeholder="Not tracked" defaultValue={item.stockQuantity ?? ''} disabled={Boolean(removingStageplotId) || !belongsToProfile(item,"empire") || !isManager || Boolean(item.ownerId)} aria-label={"Empire quantity for " + item.label} onBlur={event=>{const raw=event.target.value,quantity=raw===''?null:Number(raw);if(quantity!==null&&(!Number.isSafeInteger(quantity)||quantity<0)){event.target.value=item.stockQuantity ?? '';flash('Stock must be a whole number of zero or more');return;}if(quantity!==(item.stockQuantity??null))updateManagedItem(item,{stockQuantity:quantity});}} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}} /></label>
-              <label className="publish-equipment-toggle"><input type="checkbox" checked={belongsToProfile(item,"external")} disabled={Boolean(removingStageplotId) || !editable(item)} onChange={event=>updateManagedItem(item,{profiles:withProfile(item,"external",event.target.checked).profiles})}/>External</label>
-              <button disabled={Boolean(removingStageplotId)} onClick={()=>editManagedItem(item)}>{editable(item)?"EDIT":"EDIT A PERSONAL COPY"}</button>
+              {user.empire&&<label className="publish-equipment-toggle"><input type="checkbox" checked={belongsToProfile(item,"empire")} disabled={Boolean(removingStageplotId) || !editable(item)} onChange={event=>updateManagedItem(item,{profiles:withProfile(item,"empire",event.target.checked).profiles})}/>Empire stock</label>}
+              {user.empire&&<label className="stock-quantity-field">Empire QTY<input key={item.id+':'+item.stockQuantity} type="number" min="0" step="1" placeholder="Not tracked" defaultValue={item.stockQuantity ?? ''} disabled={Boolean(removingStageplotId) || !belongsToProfile(item,"empire") || !isManager || Boolean(item.ownerId)} aria-label={"Empire quantity for " + item.label} onBlur={event=>{const raw=event.target.value,quantity=raw===''?null:Number(raw);if(quantity!==null&&(!Number.isSafeInteger(quantity)||quantity<0)){event.target.value=item.stockQuantity ?? '';flash('Stock must be a whole number of zero or more');return;}if(quantity!==(item.stockQuantity??null))updateManagedItem(item,{stockQuantity:quantity});}} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}} /></label>}
+              {user.empire&&<label className="publish-equipment-toggle"><input type="checkbox" checked={belongsToProfile(item,"external")} disabled={Boolean(removingStageplotId) || !editable(item)} onChange={event=>updateManagedItem(item,{profiles:withProfile(item,"external",event.target.checked).profiles})}/>External</label>}
+              <button disabled={Boolean(removingStageplotId)} onClick={()=>editManagedItem(item)}>Edit</button>
               <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + item.label} aria-label={"Delete " + item.label} hidden={!editable(item)} onClick={()=>removeStageplotItem(item)}>&times;</button>
-              <div className="equipment-workflow">{item.ownerId===user.id&&<button onClick={()=>submitAsset("items",item)}>Submit for approval</button>}{editable(item)&&<AssetHistory kind="items" asset={item} onChanged={refreshLibrary}/>}<small>{item.ownerId?"Personal":"Shared"} / revision {item.revision}</small></div>
+              <div className="library-row-actions">{item.ownerId===user.id&&<button className="library-row-status" title={draftStatus('items',item).note || 'Submission status'} onClick={()=>setSubmissionFeedback({name:item.label,...draftStatus('items',item)})}>{draftStatus('items',item).note?'View feedback':draftStatus('items',item).label}</button>}{item.ownerId===user.id?<button title={item.workflowStatus==='rejected'?'Declined: check feedback before resubmitting':undefined} onClick={()=>submitAsset("items",item)}>{item.workflowStatus==='pending'?"Update submission":"Submit"}</button>:null}{isManager&&pendingUpdates("items",item.id).length>0&&<button onClick={()=>setReviewIds(pendingUpdates("items",item.id).map(s=>s.id))}>Review update ({pendingUpdates("items",item.id).length})</button>}</div>
             </div>)}</section>) : <p className="empty">{equipmentItems.length ? "No equipment matches your search." : "No equipment saved yet."}</p>}
-            <section className="managed-equipment-section managed-stages-section"><h3>Stages</h3>
-              <label className="management-search">Public planner URL<input type="url" placeholder="https://your-public-planner.example/" value={plannerUrl} onChange={event=>{setPlannerUrl(event.target.value);try{localStorage.setItem("stageplot:planner-url",event.target.value)}catch{/* optional browser preference */}}}/></label>
+            </div>
+            <section id="library-panel-stages" role="tabpanel" aria-labelledby="library-tab-stages" hidden={managedTab!=="stages"} className="managed-equipment-section managed-stages-section"><h3>Stages</h3>
               <p className="handle-help">Listed stages appear in the assigned libraries. Link only stages require their share link. Drafts stay in Studio. Anyone with a share link can use it.</p>
-              {matchingManagedStages.length ? matchingManagedStages.map(stage=><div className="managed-stage-row" key={stage.id}>
+              {matchingManagedStages.length ? matchingManagedStages.map(stage=><div className={`managed-stage-row${stage.ownerId ? " personal-library-row" : pendingUpdates("stages",stage.id).length?" pending-update-row":""}`} key={stage.id}>
                 <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + stage.label} viewBox={`0 0 ${stage.dimensions.widthMeters} ${stage.dimensions.depthMeters}`}><path d={stagePath(stage.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg></span>
-                <div className="managed-item-name">{editingStageNameId === stage.id ? <form onSubmit={event=>{event.preventDefault();if(stageNameDraft.trim())manageStage(stage,stageNameDraft);}}><input autoFocus aria-label={"Stage name for " + stage.label} value={stageNameDraft} onChange={event=>setStageNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !stageNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingStageNameId(null)}>Cancel</button></form> : <><span>{stage.label}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} hidden={!editable(stage)} aria-label={"Rename " + stage.label} title="Rename stage" onClick={()=>{setEditingStageNameId(stage.id);setStageNameDraft(stage.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}<small>{stage.dimensions.widthMeters.toFixed(2)} × {stage.dimensions.depthMeters.toFixed(2)} m</small></div>
-                {["empire","external"].map(profile=><label className="publish-equipment-toggle" key={profile}><input type="checkbox" checked={belongsToProfile(stage,profile)} disabled={Boolean(removingStageplotId) || !editable(stage)} onChange={event=>manageStage(stage,stage.label,{profiles:withProfile(stage,profile,event.target.checked).profiles})}/>{profile==="empire"?"Empire":"External"}</label>)}
+                <div className="managed-item-name">{editingStageNameId === stage.id ? <form onSubmit={event=>{event.preventDefault();if(stageNameDraft.trim())manageStage(stage,stageNameDraft);}}><input autoFocus aria-label={"Stage name for " + stage.label} value={stageNameDraft} onChange={event=>setStageNameDraft(event.target.value)} disabled={Boolean(removingStageplotId)}/><button disabled={Boolean(removingStageplotId) || !stageNameDraft.trim()}>Save</button><button type="button" disabled={Boolean(removingStageplotId)} onClick={()=>setEditingStageNameId(null)}>Cancel</button></form> : <><span>{stage.label}{stage.ownerId?" - Personal copy":""}</span><button className="pencil-button" disabled={Boolean(removingStageplotId)} hidden={!editable(stage)} aria-label={"Rename " + stage.label} title="Rename stage" onClick={()=>{setEditingStageNameId(stage.id);setStageNameDraft(stage.label);}}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4Z M14 6l4 4" fill="none" stroke="currentColor" strokeWidth="2"/></svg></button></>}<small>{stage.dimensions.widthMeters.toFixed(2)} × {stage.dimensions.depthMeters.toFixed(2)} m</small></div>
+                {user.empire&&["empire","external"].map(profile=><label className="publish-equipment-toggle" key={profile}><input type="checkbox" checked={belongsToProfile(stage,profile)} disabled={Boolean(removingStageplotId) || !editable(stage)} onChange={event=>manageStage(stage,stage.label,{profiles:withProfile(stage,profile,event.target.checked).profiles})}/>{profile==="empire"?"Empire":"External"}</label>)}
                 <button disabled={Boolean(removingStageplotId)} onClick={()=>{
                   if(projectSnapshot!==savedProject.current && !window.confirm("This project has unsaved changes. Discard them and load " + stage.label + " for editing?"))return;
                   editLibraryStage(stage);setManageStageplotOpen(false);
-                }}>{editable(stage)?"EDIT":"EDIT A PERSONAL COPY"}</button>
+                }}>Edit</button>
                 <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + stage.label} aria-label={"Delete " + stage.label} hidden={!editable(stage)} onClick={()=>manageStage(stage)}>&times;</button>
-                <div className="stage-sharing-controls" hidden={!editable(stage)}><label>Visibility <select aria-label={"Visibility for " + stage.label} value={stage.visibility || "listed"} disabled={Boolean(removingStageplotId) || !editable(stage)} onChange={event=>manageStage(stage,stage.label,{visibility:event.target.value})}><option value="listed" disabled={Boolean(stage.ownerId)}>Listed</option><option value="link-only">Link only</option><option value="draft">Draft</option></select></label>
-                  {["external","empire"].filter(profile=>belongsToProfile(stage,profile)).map(profile=><button key={profile} disabled={Boolean(removingStageplotId) || stage.visibility==="draft"} onClick={()=>copyManagedStageLink(stage,profile)}>Copy {profile==="empire"?"Empire":"External"} link</button>)}
-                  {stage.visibility==="link-only"&&<button disabled={Boolean(removingStageplotId)} onClick={()=>{if(window.confirm("Reset this stage link? Previously shared links will stop working."))manageStage(stage,stage.label,{resetShareLink:true})}}>Reset link</button>}
-                  {stage.ownerId&&<label>Personal equipment included with this link<select multiple aria-label={"Equipment shared with " + stage.label} value={stage.shareEquipmentIds || []} disabled={Boolean(removingStageplotId)} onChange={event=>manageStage(stage,stage.label,{shareEquipmentIds:Array.from(event.target.selectedOptions,option=>option.value)})}>{equipmentItems.filter(item=>item.ownerId===stage.ownerId).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
-                </div>
-                <div className="stage-sharing-controls">{stage.ownerId===user.id&&<button onClick={()=>submitAsset("stages",stage)}>Submit for approval</button>}{editable(stage)&&<AssetHistory kind="stages" asset={stage} onChanged={refreshLibrary}/>}</div>
+                {editable(stage)&&<button onClick={()=>setStageSettingsId(stage.id)}>Sharing</button>}
+                <div className="library-row-actions">{stage.ownerId===user.id&&<button className="library-row-status" title={draftStatus('stages',stage).note || 'Submission status'} onClick={()=>setSubmissionFeedback({name:stage.label,...draftStatus('stages',stage)})}>{draftStatus('stages',stage).note?'View feedback':draftStatus('stages',stage).label}</button>}{stage.ownerId===user.id?<button onClick={()=>submitAsset("stages",stage)}>{stage.workflowStatus==='pending'?"Update submission":"Submit"}</button>:null}{isManager&&pendingUpdates("stages",stage.id).length>0&&<button onClick={()=>setReviewIds(pendingUpdates("stages",stage.id).map(s=>s.id))}>Review update ({pendingUpdates("stages",stage.id).length})</button>}</div>
               </div>) : <p className="empty">{stageLibrary.length ? "No stages match your search." : "No stages saved yet."}</p>}
             </section>
+            {isManager&&<section id="library-panel-new" role="tabpanel" aria-labelledby="library-tab-new" hidden={managedTab!=="new"}>
+              {newSubmissions.filter(s=>s.snapshot.label.toLowerCase().includes(managedItemSearch.trim().toLowerCase())).map(submission=><div className="new-submission-row" key={submission.id}><span>{submission.snapshot.label}</span><small>{submission.kind==='items'?'Equipment':'Stage'} - {submission.owner_name || 'Contributor'}</small><button onClick={()=>setReviewIds([submission.id])}>Review submission</button></div>)}
+              {!newSubmissions.length&&<p className="empty">No new items awaiting approval.</p>}
+            </section>}
           </div>
         </section>
       </div>}
+      {stageLibrary.filter(stage=>stage.id===stageSettingsId).map(stage=><AccountModal key={stage.id}><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Stage sharing"><header><h2>{stage.label} - Sharing</h2><button onClick={()=>setStageSettingsId(null)}>Close</button></header>                <div className="stage-sharing-controls" hidden={!editable(stage)}><label>Visibility <select aria-label={"Visibility for " + stage.label} value={stage.visibility || "listed"} disabled={Boolean(removingStageplotId) || !editable(stage)} onChange={event=>manageStage(stage,stage.label,{visibility:event.target.value})}><option value="listed" disabled={Boolean(stage.ownerId)}>Listed</option><option value="link-only">Link only</option><option value="draft">Draft</option></select></label>
+                  {(user.empire?["external","empire"]:["external"]).filter(profile=>belongsToProfile(stage,profile)).map(profile=><button key={profile} disabled={Boolean(removingStageplotId) || stage.visibility==="draft"} onClick={()=>copyManagedStageLink(stage,profile)}>Copy {profile==="empire"?"Empire":"External"} link</button>)}
+                  {stage.visibility==="link-only"&&<button disabled={Boolean(removingStageplotId)} onClick={()=>{if(window.confirm("Reset this stage link? Previously shared links will stop working."))manageStage(stage,stage.label,{resetShareLink:true})}}>Reset link</button>}
+                  {stage.ownerId&&<label>Personal equipment included with this link<select multiple aria-label={"Equipment shared with " + stage.label} value={stage.shareEquipmentIds || []} disabled={Boolean(removingStageplotId)} onChange={event=>manageStage(stage,stage.label,{shareEquipmentIds:Array.from(event.target.selectedOptions,option=>option.value)})}>{equipmentItems.filter(item=>item.ownerId===stage.ownerId).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
+                </div></section></AccountModal>)}
+      {submissionSaveOpen&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Save submission changes"><header><h2>Save submission changes</h2><button disabled={shapeSaving} onClick={()=>setSubmissionSaveOpen(false)}>Close</button></header><p>Updating without approval saves your edits back to the contributor's personal copy and keeps the submission pending. The shared library item stays unchanged.</p><label>Message to contributor<textarea rows="3" maxLength={2000} value={reviewerMessage} onChange={event=>setReviewerMessage(event.target.value)} placeholder="Explain what you changed or what still needs fixing"/></label>{['new','update','approve'].map(action=><button key={action} disabled={shapeSaving} onClick={async()=>{setShapeSaving(true);try{const result=await accountRequest('/submissions/'+editingSubmission.id+'/edit','POST',{action,note:reviewerMessage,data:{...(documentMode==='stage'?stageData:itemData),profiles:editingSubmission.snapshot.profiles},submittedAt:editingSubmission.created,snapshotRevision:editingSubmission.snapshot.revision});await refreshLibrary();savedProject.current=projectSnapshot;if(action==='update')setEditingSubmission(result);else{setEditingSubmission(null);setActiveLibraryId(result.id)}setSubmissionSaveOpen(false);flash(action==='approve'?'Changes approved':action==='update'?'Personal copy and submission updated; awaiting approval':'New library item saved')}catch(error){flash(error.message)}finally{setShapeSaving(false)}}}>{action==='new'?'Save new item':action==='update'?'Update submitted item (without approving)':'Approve changes'}</button>)}</section></AccountModal>}
+      {submissionFeedback&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Submission feedback"><header><h2>{submissionFeedback.name} - {submissionFeedback.label}</h2><button onClick={()=>setSubmissionFeedback(null)}>Close</button></header><p className="submission-feedback">{submissionFeedback.note || 'No reviewer message yet.'}</p></section></AccountModal>}
+      {reviewIds&&<SubmissionReview key={reviewIds.join(',')} submissions={submissions.filter(s=>reviewIds.includes(s.id)&&s.status==='pending')} targets={(submissions.find(s=>reviewIds.includes(s.id))?.kind==='items'?library:stageLibrary).filter(a=>!a.ownerId)} renderDesign={(kind,data)=><svg className="submission-artwork" role="img" aria-label={data.label+" design"} viewBox={"0 0 "+data.dimensions.widthMeters+" "+data.dimensions.depthMeters}>{kind==='stages'?<path d={stagePath(data.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke"/>:(data.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg>} onChanged={refreshLibrary} onClose={()=>setReviewIds(null)} onPreview={(kind,data,submission)=>{if(projectSnapshot!==savedProject.current&&!window.confirm("Discard unsaved changes and preview this submission?"))return;if(kind==="items")editLibraryItem(data,true);else editLibraryStage(data,true);setShapeName(data.label);setEditingSubmission(submission);setManageStageplotOpen(false);setReviewIds(null);}}/>}
       {manageGroupsOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !groupsSaving)setManageGroupsOpen(false);}}>
         <section className="library-modal equipment-management-modal" role="dialog" aria-modal="true" aria-label="Manage equipment groups">
           <div className="modal-header"><h2>Manage equipment groups</h2><button disabled={groupsSaving} onClick={()=>setManageGroupsOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>

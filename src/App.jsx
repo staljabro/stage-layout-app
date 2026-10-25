@@ -1,8 +1,9 @@
+import {ProjectFileMenu} from './project-file-menu.jsx'
 import { pinProject } from './project-snapshots.js'
 import { ProjectShelf } from './project-shelf.jsx'
 import { accountRequest } from './account-api.js'
 import { API_BASE, apiFetch as fetch } from './account-api.js'
-import { AccountButton, useAccount } from './accounts.jsx'
+import { AccountButton, AppNavigation, useAccount } from './accounts.jsx'
 import { allocateStock, stockQuantity, equipmentRows } from './inventory.js'
 import { EquipmentList } from './equipment-list.jsx'
 import { toggleableParts, sharedParts, partState, setPart } from './part-toggles.js'
@@ -151,7 +152,7 @@ function InspectorSection({ id, title, openSections, setOpenSections, children }
 }
 
 function App() {
-  const {user}=useAccount()
+  const {user,showAccount,studioUrl}=useAccount()
   const [sharedProject,setSharedProject]=useState(null)
   const [lockedStageId,setLockedStageId] = useState(STAGE_LINK)
   const draftKey=`stageplot:${user?.id || "anonymous"}:${PROFILE}:` + (STAGE_LINK===null?`stageplot:draft:${SHARED_PROJECT || ''}`:`stageplot:draft:stage:${STAGE_LINK}`)
@@ -815,18 +816,16 @@ function App() {
     <span className="layer-grip" aria-hidden="true">&#9776;</span><button className="layer-name" onClick={event=>changeLayerSelection([item.id],event.shiftKey)}>{item.label}</button><small>{allocation.external.has(item.id)?'External':item.collisionEnabled===false?'collision off':item.showLabel?'label':''}</small><button className="layer-visibility" title={item.visible===false?'Show layer':'Hide layer'} aria-label={item.visible===false?`Show ${item.label}`:`Hide ${item.label}`} onClick={()=>toggleItemVisibility(item)}><Icon name={item.visible===false?'eyeOff':'eye'} /></button>
   </div>
 
+  const saveCloudProject=async update=>{if(!confirmProjectSave())return;const data=projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders);const result=await accountRequest(update?"/projects/"+accountProject.id:"/projects",update?"PUT":"POST",{name:project,data,...(update?{revision:accountProject.revision}:{})});setAccountProject(result);setSavedProjectSnapshot(projectSnapshot);setNotice("Project saved to your account")}
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><AppMark/><span className="brand-title"><b>STAGEPLOT</b><small>{APP_VERSION}</small></span></div>
         <input className="project-name" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
-        <div className="top-actions"><AccountButton/>{user&&!SHARED_PROJECT&&<ProjectShelf profile={PROFILE} current={accountProject} onSave={async update=>{if(!confirmProjectSave())return;const data=projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders);const result=await accountRequest(update?"/projects/"+accountProject.id:"/projects",update?"PUT":"POST",{name:project,data,...(update?{revision:accountProject.revision}:{})});setAccountProject(result);setSavedProjectSnapshot(projectSnapshot);setNotice("Project saved to your account")}} onLoad={async saved=>{const loaded=await load({target:{files:[{text:async()=>JSON.stringify(saved.data)}]}});if(loaded)setAccountProject({id:saved.id,revision:saved.revision});return loaded}}/>}
+        <div className="top-actions"><AccountButton/><AppNavigation/>{user&&!SHARED_PROJECT&&<ProjectShelf onDeleted={id=>{if(accountProject?.id===id)setAccountProject(null)}} profile={PROFILE} current={accountProject} onSave={saveCloudProject} onLoad={async saved=>{const loaded=await load({target:{files:[{text:async()=>JSON.stringify(saved.data)}]}});if(loaded)setAccountProject({id:saved.id,revision:saved.revision});return loaded}}/>}
           <button className="btn ghost" onClick={()=>setHelpOpen(true)}>Help</button>
-          <button className="btn ghost" hidden={!!SHARED_PROJECT} onClick={newProject}><Icon name="plus" /> New project</button>
-          <button className="btn ghost" onClick={save}><Icon name="save" /> Save</button>
-          <button className="btn ghost" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Open</button>
           <button className="btn ghost" onClick={()=>setEquipmentListOpen(true)}>Equipment list</button>
-          <button className="btn primary" disabled={!space} onClick={exportPdf}><Icon name="print" /> Export PDF</button>
+          <ProjectFileMenu signedIn={!!user} cloudProject={accountProject} onCloudSave={saveCloudProject} onNew={newProject} onSave={save} onLoad={()=>fileRef.current?.click()} onExport={exportPdf} canExport={!!space} canCreate={!SHARED_PROJECT}/>
           <input ref={fileRef} type="file" accept=".stageplot,.stageplot.json,.json,application/json" onChange={load} hidden />
         </div>
       </header>
@@ -1003,7 +1002,7 @@ function App() {
           {lockedStageId===null && !SHARED_PROJECT && <form className="stage-picker-custom" onSubmit={event=>{event.preventDefault();if(customWidth>0 && customDepth>0){const next={name:'Custom Space',width:customWidth,depth:customDepth};setSpace(next);setPreset('custom');setStagePickerOpen(false);fitToSpace(next)}}}>
             <h3>Custom rectangular space</h3><div className="inspector-grid"><label className="field">WIDTH (m)<input type="number" required min=".1" step=".01" value={customWidth} onChange={event=>setCustomWidth(+event.target.value)} /></label><label className="field">DEPTH (m)<input type="number" required min=".1" step=".01" value={customDepth} onChange={event=>setCustomDepth(+event.target.value)} /></label></div><button className="btn ghost" type="submit">Use rectangular space</button>
           </form>}
-          <button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>
+          <div className="stage-picker-actions"><button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>{user ? studioUrl&&<a className="btn ghost" href={studioUrl}>Stageplot Studio</a> : <button className="btn ghost" onClick={showAccount}>Sign in</button>}</div>
         </section>
       </div>}
       {equipmentListOpen&&<EquipmentList trackStock={TRACK_STOCK} project={project} rows={equipmentListRows} onClose={()=>setEquipmentListOpen(false)}/>}

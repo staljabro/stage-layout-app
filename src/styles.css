@@ -283,3 +283,13 @@ select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #
   .top-actions { gap: 5px; }
   .top-actions .btn { padding: 9px 7px; font-size: 11px; }
 }
+
+/* Light overlays need their own button palette; toolbar buttons use light text. */
+.stage-picker .btn.ghost,
+.help-dialog .btn.ghost { color: #30312c; border-color: #aaa99e; background: #fff; }
+.stage-picker .btn.ghost:hover,
+.help-dialog .btn.ghost:hover { color: #30312c; background: #e8e7de; }
+.stage-picker-list button { color: #30312c; }
+.stage-picker-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.stage-picker-actions a { text-decoration: none; }
+.stage-picker .btn:focus-visible { outline: 2px solid #71851f; outline-offset: 3px; }

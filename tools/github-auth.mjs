@@ -39,9 +39,10 @@ export function createGithubAuth(store,authCookies) {
       if(process.env.STAGEPLOT_OWNER_USER_ID && !owner)fail(409,'The configured Owner account was not found')
       if(!owner) {
         if(get('SELECT id FROM users WHERE email=?',identity.email))fail(409,'An existing account uses this email. Configure its Owner account explicitly')
-        const id=uid();run('INSERT INTO users VALUES(?,?,?,?,?,0)',id,identity.email,identity.name,'owner','github-only')
+        const id=uid();run('INSERT INTO users(id,email,name,role,password,disabled) VALUES(?,?,?,?,?,0)',id,identity.email,identity.name,'owner','github-only');run('UPDATE users SET empire=1 WHERE id=?',id)
         owner=get('SELECT * FROM users WHERE id=?',id)
       }
+      run('UPDATE users SET empire=1 WHERE id=?',owner.id);owner={...owner,empire:1}
       attach(identity.id,owner.id,identity.login)
       run('DELETE FROM github_requests WHERE github_id=?',identity.id)
       return {account:owner}
@@ -62,7 +63,7 @@ export function createGithubAuth(store,authCookies) {
     const path=url.pathname,method=request.method
     if(path==='/api/auth/session'&&method==='GET') {
       const identity=user?get('SELECT * FROM github_identities WHERE user_id=?',user.id):null
-      send(200,{user:user?{...user,githubId:identity?.github_id || null,githubLogin:identity?.login || null}:null,githubConfigured:configured,ownerConfigured:/^\d+$/.test(ownerGithubId)||!!get("SELECT users.id FROM github_identities JOIN users ON users.id=github_identities.user_id WHERE users.role='owner' AND users.disabled=0 LIMIT 1")});return true
+      send(200,{appUrl:app?.href || null,studioUrl:studio?.href || null,user:user?{...user,githubId:identity?.github_id || null,githubLogin:identity?.login || null}:null,githubConfigured:configured,ownerConfigured:/^\d+$/.test(ownerGithubId)||!!get("SELECT users.id FROM github_identities JOIN users ON users.id=github_identities.user_id WHERE users.role='owner' AND users.disabled=0 LIMIT 1")});return true
     }
     if(path==='/api/auth/github/start'&&method==='POST') {
       if(!configured)fail(503,'GitHub sign-in has not been configured on this server')
@@ -120,10 +121,12 @@ export function createGithubAuth(store,authCookies) {
       const result=transaction(()=>{
         const pending=get('SELECT * FROM github_requests WHERE github_id=?',approval[1]);if(!pending)fail(404,'Access request not found')
         if(approval[2]==='reject'){run("UPDATE github_requests SET status='rejected' WHERE github_id=?",pending.github_id);return {status:'rejected'}}
+        if(input.role==='owner')fail(409,'The Owner role is reserved for the configured GitHub identity')
         if(!roles.includes(input.role))fail(400,'Choose a valid role')
         let account=input.existingUserId?get('SELECT * FROM users WHERE id=?',input.existingUserId):null
         if(input.existingUserId&&!account)fail(404,'Existing account not found')
-        if(!account){if(get('SELECT id FROM users WHERE email=?',pending.email))fail(409,'Select the existing account to link; matching email never links accounts automatically');const id=uid();run('INSERT INTO users VALUES(?,?,?,?,?,0)',id,pending.email,pending.name,input.role,'github-only');account=get('SELECT * FROM users WHERE id=?',id)}
+        if(account?.role==='owner')fail(409,'The Owner account cannot be changed')
+        if(!account){if(get('SELECT id FROM users WHERE email=?',pending.email))fail(409,'Select the existing account to link; matching email never links accounts automatically');const id=uid();run('INSERT INTO users(id,email,name,role,password,disabled) VALUES(?,?,?,?,?,0)',id,pending.email,pending.name,input.role,'github-only');account=get('SELECT * FROM users WHERE id=?',id)}
         if(account.role==='owner'&&input.role!=='owner'&&!account.disabled&&get("SELECT count(*) AS n FROM users WHERE role='owner' AND disabled=0").n<=1)fail(409,'Keep at least one active Owner')
         attach(pending.github_id,account.id,pending.login)
         run('UPDATE users SET role=?,disabled=0 WHERE id=?',input.role,account.id)
