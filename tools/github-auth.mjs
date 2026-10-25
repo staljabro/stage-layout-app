@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {uid,token,digest,fail,roles,publicUser} from './account-store.mjs'
 
-export function createGithubAuth(store) {
+export function createGithubAuth(store,authCookies) {
   const {db,get,all,run,transaction}=store
   db.exec(`CREATE TABLE IF NOT EXISTS github_identities(github_id TEXT PRIMARY KEY,user_id TEXT UNIQUE NOT NULL REFERENCES users(id),login TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS github_requests(github_id TEXT PRIMARY KEY,login TEXT NOT NULL,email TEXT NOT NULL,name TEXT NOT NULL,status TEXT NOT NULL,updated TEXT NOT NULL);
@@ -57,7 +57,7 @@ export function createGithubAuth(store) {
     if(!response.ok)fail(502,'GitHub sign-in could not be completed')
     return response.json()
   }
-  const oauthCookie=(request,value,age)=>`stageplot_oauth=${value}; Path=/api/auth/github; HttpOnly; SameSite=Lax; Max-Age=${age}${callback?.protocol==='https:' || request.headers['x-forwarded-proto']==='https' || process.env.STAGEPLOT_SECURE_COOKIE==='true' ? '; Secure' : ''}`
+  const oauthCookie=authCookies.oauth
   return async({request,response,url,user,send,body,startSession})=>{
     const path=url.pathname,method=request.method
     if(path==='/api/auth/session'&&method==='GET') {
@@ -90,7 +90,7 @@ export function createGithubAuth(store) {
       run('DELETE FROM github_oauth_states WHERE hash=?',digest(state))
       const previousSession=request.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('stageplot_session='))?.slice(18)
       if(previousSession)run('DELETE FROM sessions WHERE hash=?',digest(previousSession))
-      response.setHeader('Set-Cookie',[oauthCookie(request,'',0),`stageplot_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${callback.protocol==='https:' || process.env.STAGEPLOT_SECURE_COOKIE==='true' ? '; Secure' : ''}`])
+      response.setHeader('Set-Cookie',[oauthCookie(request,'',0),authCookies.session(request,'',0)])
       const target=new URL(saved.return_to)
       let status
       try {
