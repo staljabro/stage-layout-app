@@ -1,3 +1,4 @@
+import {AccountModal} from './account-modal.jsx'
 import {createContext,useContext,useEffect,useState} from 'react'
 import {accountRequest} from './account-api.js'
 import './accounts.css'
@@ -24,7 +25,7 @@ function AccountDialog({account,onClose,onChanged}) {
   const [busy,setBusy]=useState(false),[users,setUsers]=useState([]),[requests,setRequests]=useState([]),[manage,setManage]=useState(false)
   const reload=async()=>{const [accounts,pending]=await Promise.all([accountRequest('/users'),accountRequest('/access-requests')]);setUsers(accounts);setRequests(pending)}
   const perform=async fn=>{setError('');setBusy(true);try{await fn()}catch(e){setError(e.message)}finally{setBusy(false)}}
-  return <div className="account-backdrop"><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Account">
+  return <AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Account">
     <header><h2>{user?'Your account':'Sign in with GitHub'}</h2><button onClick={onClose} aria-label="Close account">×</button></header>
     {error&&<p role="alert">{error}</p>}
     {!user ? <>
@@ -51,5 +52,5 @@ function AccountDialog({account,onClose,onChanged}) {
         </div>)}
       </>}
     </>}
-  </section></div>
+  </section></AccountModal>
 }
