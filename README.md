@@ -8,7 +8,7 @@ Stage Layout App is a two-part React/Vite system for designing accurate top-down
 
 Both interfaces include a **Help** button with workflow-specific instructions.
 
-Current release: **Version 0.2.3 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
+Current release: **Version 0.2.4 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
 
 See [Accounts and collaboration](ACCOUNT_GUIDE.md) for GitHub OAuth configuration, linking your Owner account, approvals, project storage and backups.
 
