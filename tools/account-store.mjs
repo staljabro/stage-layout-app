@@ -10,7 +10,7 @@ export const roles = ['owner','admin','contributor','editor']
 export const manager = user => ['owner','admin'].includes(user?.role)
 export const designer = user => manager(user) || user?.role === 'contributor'
 export const fail = (status,message) => {throw Object.assign(new Error(message),{status})}
-export const publicUser = row => row ? {id:row.id,email:row.email,name:row.name,role:row.role,disabled:!!row.disabled,githubId:row.github_id || null,githubLogin:row.github_login || null} : null
+export const publicUser = row => row ? {id:row.id,email:row.email,name:row.name,friendlyName:row.friendly_name || '',role:row.role,disabled:!!row.disabled,empire:!!row.empire,githubId:row.github_id || null,githubLogin:row.github_login || null} : null
 export async function openStore(root) {
   const directory=join(root,'account-data')
   await mkdir(directory,{recursive:true})
@@ -24,6 +24,10 @@ export async function openStore(root) {
     CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,data TEXT NOT NULL,revision INTEGER NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,share_token TEXT UNIQUE,updated TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS project_revisions(project_id TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,name TEXT NOT NULL,created TEXT NOT NULL,PRIMARY KEY(project_id,revision));
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`)
+  if(!db.prepare('PRAGMA table_info(users)').all().some(column=>column.name==='empire')) {
+    db.exec("ALTER TABLE users ADD COLUMN empire INTEGER NOT NULL DEFAULT 0; UPDATE users SET empire=1 WHERE role='owner'")
+  }
+  if(!db.prepare('PRAGMA table_info(users)').all().some(column=>column.name==='friendly_name'))db.exec("ALTER TABLE users ADD COLUMN friendly_name TEXT NOT NULL DEFAULT ''")
   const get=(sql,...args)=>db.prepare(sql).get(...args)
   const all=(sql,...args)=>db.prepare(sql).all(...args)
   const run=(sql,...args)=>db.prepare(sql).run(...args)

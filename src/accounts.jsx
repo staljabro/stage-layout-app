@@ -19,6 +19,19 @@ export function AccountProvider({children,studio=false}) {
   </AccountContext.Provider>
 }
 export function AccountButton(){const {user,showAccount}=useAccount();return <button className="btn ghost" onClick={showAccount}>{user?`${user.name} · ${user.role}`:'Sign in'}</button>}
+export function AppNavigation({studio=false}) {
+  const {user,studioUrl,appUrl}=useAccount()
+  const [chooseProfile,setChooseProfile]=useState(false)
+  if(!['owner','admin','contributor'].includes(user?.role))return null
+  const href=studio?appUrl:studioUrl
+  if(!href)return null
+  if(studio&&user.empire){
+    const external=new URL(appUrl,window.location.href);external.searchParams.delete('profile')
+    const empire=new URL(external);empire.searchParams.set('profile','empire')
+    return <><button className="btn ghost app-navigation" onClick={()=>setChooseProfile(true)}>Stageplot</button>{chooseProfile&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Choose Stageplot profile"><header><h2>Choose Stageplot</h2><button onClick={()=>setChooseProfile(false)}>Close</button></header><nav><a className="profile-choice" href={external.href}>External Stageplot</a><a className="profile-choice" href={empire.href}>Empire Stageplot</a></nav></section></AccountModal>}</>
+  }
+  return <a className="btn ghost app-navigation" href={href}>{studio?'Stageplot':'Stageplot Studio'}</a>
+}
 function AccountDialog({account,onClose,onChanged}) {
   const {user,githubConfigured,ownerConfigured}=account
   const [error,setError]=useState(()=>({pending:'Your GitHub account is awaiting Owner approval. You can still use the public planner.',denied:'Your access request has not been approved. Contact the Owner.',disabled:'Your app account has been disabled. Contact the Owner.','email-required':'Add and verify an email address on GitHub, then try again.',error:'GitHub sign-in could not be completed. Try again or contact the Owner.',cancelled:'GitHub sign-in was cancelled.'}[new URLSearchParams(window.location.search).get('auth_result')] || ''))
@@ -42,13 +55,15 @@ function AccountDialog({account,onClose,onChanged}) {
         {!requests.length&&<p>No pending access requests.</p>}
         {requests.map(member=><form className="account-access-request" key={member.github_id} onSubmit={event=>{event.preventDefault();const input=Object.fromEntries(new FormData(event.currentTarget));perform(async()=>{await accountRequest('/access-requests/'+member.github_id+'/approve','POST',input);await reload()})}}>
           <strong>@{member.login} · GitHub ID {member.github_id}</strong><small>{member.name} · {member.email} · {member.status}</small>
-          <label>App account<select name="existingUserId" defaultValue=""><option value="">Create a new account</option>{users.filter(existing=>!existing.githubId).map(existing=><option key={existing.id} value={existing.id}>{existing.name} ({existing.email}) · {existing.role}</option>)}</select></label>
-          <label>Role<select name="role" defaultValue="editor">{['editor','contributor','admin','owner'].map(role=><option key={role}>{role}</option>)}</select></label>
+          <label>App account<select name="existingUserId" defaultValue=""><option value="">Create a new account</option>{users.filter(existing=>!existing.githubId && existing.role!=='owner').map(existing=><option key={existing.id} value={existing.id}>{existing.name} ({existing.email}) · {existing.role}</option>)}</select></label>
+          <label>Role<select name="role" defaultValue="editor">{['editor','contributor','admin'].map(role=><option key={role}>{role}</option>)}</select></label>
           <div><button disabled={busy}>Approve and link</button> <button type="button" disabled={busy} onClick={()=>perform(async()=>{await accountRequest('/access-requests/'+member.github_id+'/reject','POST',{});await reload()})}>Deny</button></div>
         </form>)}
         <h3>Accounts</h3>{users.map(member=><div className="account-row" key={member.id}><span>{member.name}<small>{member.email}</small><small>{member.githubLogin?`GitHub @${member.githubLogin} · ID ${member.githubId}`:'Not linked to GitHub yet'}</small></span>
-          <select aria-label={'Role for '+member.email} value={member.role} disabled={busy} onChange={event=>{const role=event.target.value;perform(async()=>{await accountRequest('/users/'+member.id,'PUT',{role});await reload();await onChanged()})}}>{['editor','contributor','admin','owner'].map(role=><option key={role}>{role}</option>)}</select>
-          <button disabled={busy} onClick={()=>perform(async()=>{await accountRequest('/users/'+member.id,'PUT',{disabled:!member.disabled});await reload();await onChanged()})}>{member.disabled?'Enable':'Disable'}</button>
+          <label className="account-friendly-name">Friendly name<input key={member.id+':'+(member.friendlyName || '')} aria-label={'Friendly name for '+member.email} maxLength={100} defaultValue={member.friendlyName || ''} placeholder={member.githubLogin || member.name} disabled={busy} onBlur={event=>{const friendlyName=event.target.value.trim();if(friendlyName!==(member.friendlyName || ''))perform(async()=>{await accountRequest('/users/'+member.id,'PUT',{friendlyName});await reload();await onChanged()})}} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}}}/></label>
+          <label className="account-empire-toggle"><input type="checkbox" checked={!!member.empire} disabled={busy} onChange={event=>{const empire=event.target.checked;perform(async()=>{await accountRequest('/users/'+member.id,'PUT',{empire});await reload();await onChanged()})}}/>Empire</label>
+          {member.role==='owner'?<strong>Owner</strong>:<><select aria-label={'Role for '+member.email} value={member.role} disabled={busy} onChange={event=>{const role=event.target.value;perform(async()=>{await accountRequest('/users/'+member.id,'PUT',{role});await reload();await onChanged()})}}>{['editor','contributor','admin'].map(role=><option key={role}>{role}</option>)}</select>
+          <button disabled={busy} onClick={()=>perform(async()=>{await accountRequest('/users/'+member.id,'PUT',{disabled:!member.disabled});await reload();await onChanged()})}>{member.disabled?'Enable':'Disable'}</button></>}
         </div>)}
       </>}
     </>}
