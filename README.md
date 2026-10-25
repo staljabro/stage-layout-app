@@ -4,11 +4,13 @@ Stage Layout App is a two-part React/Vite system for designing accurate top-down
 
 - **Stageplot** is the client-facing planner. Users choose an approved stage, arrange current library equipment at real-world scale, validate collisions, save editable projects and export PDFs.
 - **Shape Studio** is the administrative editor. Theatre staff create vector equipment, collision footprints, articulated controls, reusable shapes and custom stages.
-- **Library API** stores the shared equipment, groups and stages as JSON. Stageplot receives read-only access; Shape Studio receives full library access.
+- **Library API** stores accounts, personal and shared assets, projects, submissions and revision history in SQLite. Both apps use GitHub-only sign-in, shared app sessions and server-enforced roles. Existing JSON libraries are imported on first startup.
 
 Both interfaces include a **Help** button with workflow-specific instructions.
 
-Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
+Current release: **Version 0.2.1 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
+
+See [Accounts and collaboration](ACCOUNT_GUIDE.md) for GitHub OAuth configuration, linking your Owner account, approvals, project storage and backups.
 
 ## Main capabilities
 
@@ -34,7 +36,7 @@ Current release: **Version 0.1.2 (Alpha)**. The shared version appears beneath b
 - Track per-project stock allocation, allow external sourcing, and export equipment quantities as CSV or PDF.
 - Warn before closing or refreshing with unsaved changes, and recover work after an accidental refresh in the same browser tab.
 - Refresh placed library equipment from the canvas toolbar while preserving placement-specific settings and stable asset references.
-- Save reference-based `.stageplot` project files and open legacy `.stageplot.json`/JSON projects.
+- Save `.stageplot` files with pinned asset revisions, store private account projects, and open legacy reference-based projects.
 - Warn before saving enabled collision objects that overlap, intersect solid zones or leave the usable stage.
 - Export the complete canvas, automatically fitted to one landscape A3 page with the project/show name as its header and a versioned creation footer.
 
@@ -101,7 +103,7 @@ Enter the client-facing app address in **Public planner URL** (for example, `htt
 
 Anyone holding a link-only URL can access that stage. **Reset link** replaces its random token and invalidates previous links. Switching to Draft also stops link access; returning to Link only generates a fresh token. Normal artwork edits preserve the token. Saved client projects retain the stable stage ID and must be reopened using the current share link for a link-only stage.
 
-Public stage responses omit share tokens and Studio editor data. Studio requests the complete library with `scope=all`, which is blocked on the public Nginx endpoint. Keep Studio and the Library API on their intended private network; this feature uses the existing private Studio administration model and does not add public accounts or self-service stage creation.
+Public stage responses omit share tokens and Studio editor data. Studio requests its permitted assets with `scope=all`; the API requires Contributor, Admin or Owner access and filters results by ownership. A personal stage share link can explicitly include selected personal equipment without exposing other drafts. See [Accounts and collaboration](ACCOUNT_GUIDE.md) for setup and permissions.
 
 ### Canvas navigation
 
@@ -155,7 +157,7 @@ These definitions are embedded in the `.stageplot` project because they do not h
 
 ### Project files
 
-`.stageplot` files contain stable stage/equipment IDs, placement transforms, layer folders, visibility, stage-part visibility and control settings. They do not embed shared-library artwork. Opening a project therefore uses the newest asset versions; missing assets are dropped safely. Project-native custom staging and text carry only their compact definitions inside the file.
+New `.stageplot` files contain stable references, placement settings and snapshots of the equipment and stage artwork used by the project. Opening them preserves those revisions even if the library changes or an asset is deleted. Use Refresh items to deliberately adopt newer equipment artwork. Legacy reference-only files continue to use current accessible library assets. Studio editor data and share tokens are excluded from snapshots.
 
 **New project** clears the selected stage and equipment. **Clear stage** removes equipment and folders but retains the selected stage. Browser session recovery is convenient but is not a replacement for downloading a project file.
 
@@ -275,20 +277,22 @@ The same stack can be managed through Unraid Compose Manager. For individual Web
 ```text
 /mnt/user/appdata/stage-layout-app-data/equipment-library -> /data/equipment-library
 /mnt/user/appdata/stage-layout-app-data/stage-library     -> /data/stage-library
+/mnt/user/appdata/stage-layout-app-data/account-data      -> /data/account-data
 ```
 
 ## Data persistence and backups
 
-Production images deliberately exclude `equipment-library/` and `stage-library/`. Live data resides in `LIBRARY_DATA_PATH`, outside the application checkout, so Git pulls and container replacements cannot overwrite it.
+Production images exclude library and account data. On first API startup the mounted JSON libraries are imported into `account-data/stageplot.sqlite`. SQLite becomes authoritative: subsequent saves do not rewrite the source JSON files. Persist the new account-data volume before replacing a container. See [Accounts and collaboration](ACCOUNT_GUIDE.md) for setup and backup instructions.
 
-Back up these directories regularly:
+Retain the import source folders and back up the SQLite database regularly:
 
 ```text
 equipment-library/
 stage-library/
+account-data/
 ```
 
-A separate private Git repository is suitable for manual data backups. Do not routinely pull into the live data directory unless intentionally restoring a backup.
+Do not copy only the live SQLite file while it is running: use `node tools/backup-data.mjs account-data/stageplot.sqlite /path/to/backup.sqlite`, or stop the API before copying the entire account-data directory. Backups contain private account and project information; keep them out of Git and container images.
 
 ## Branding and release metadata
 
@@ -298,7 +302,7 @@ Change `APP_VERSION` in `src/version.js` for a user-facing release. That value i
 
 ## Security notes
 
-- Stageplot exposes only approved read-only library endpoints through its Nginx proxy.
-- Shape Studio can create, update and delete library data. Keep port 8089 private or protect it with authenticated HTTPS access.
-- A stage-locked query parameter is a workflow restriction, not an authorization boundary; a user can remove it from the URL.
+- Both frontends proxy account and library requests. The API checks authentication, role and ownership for every protected operation; proxy headers do not grant privileges.
+- Use HTTPS when exposing either app. Set STAGEPLOT_SECURE_COOKIE=true behind an HTTPS reverse proxy. Owner approves GitHub access requests; signing in with GitHub alone does not grant private access. Keep the Library API unexposed.
+- Listed stage IDs restrict the workflow. Private stage and project sharing require unguessable, revocable tokens. Removing a token from the URL does not reveal private assets.
 - Public GHCR images contain application code only, not the mounted equipment or stage library.

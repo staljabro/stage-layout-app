@@ -6,7 +6,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 export default [
   { ignores: ['**/dist/**', '**/node_modules/**', 'tools/svg-shape-studio/**'] },
   {
-    files: ['tools/*.mjs'],
+    files: ['tools/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   js.configs.recommended,

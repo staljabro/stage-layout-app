@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix tools/svg-shape-studio
       - run: npm run lint
-      - run: node --test --test-isolation=none src/*.test.js tools/svg-shape-studio/src/*.test.js
+      - run: node --test --test-isolation=none src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
 
   publish:
     needs: verify

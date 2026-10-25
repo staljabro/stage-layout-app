@@ -5,7 +5,7 @@ export function stageSpace(stage, savedVisibility = {}) {
   const zones=(stage.zones||[]).map(stageZone);
   const textItems=(stage.textItems||[]).map(stageText);
   const toggleable=[...zones,...textItems].filter(part=>part.toggleable).map(part=>String(part.id));
-  return {stageId:stage.id,name:stage.label,width:stage.dimensions.widthMeters,depth:stage.dimensions.depthMeters,collisionBoundary:stage.collisionBoundary,boundary:stage.boundary,zones,textItems,partVisibility:Object.fromEntries(toggleable.map(id=>[id,savedVisibility[id]!==false]))};
+  return {assetSnapshot:stage,stageId:stage.id,name:stage.label,width:stage.dimensions.widthMeters,depth:stage.dimensions.depthMeters,collisionBoundary:stage.collisionBoundary,boundary:stage.boundary,zones,textItems,partVisibility:Object.fromEntries(toggleable.map(id=>[id,savedVisibility[id]!==false]))};
 }
 export function assetReference(item) {
   return item.assetId || (item.type?.startsWith('library:') ? item.type.slice(8) : null);
@@ -24,13 +24,15 @@ export function resolveProject(data,equipment,stages,lockedStageId=null) {
   if(lockedStageId!==null && (stageRef?.kind!=='library' || stageRef.id!==lockedStageId))throw new Error('This link only allows its designated stage. Open this project from an unrestricted link.');
   let space=null,preset='';
   if(stageRef?.kind==='library') {
-    const stage=stages.find(stage=>stage.id===stageRef.id);
+    const snapshot=data.assetSnapshots?.stage;
+    const stage=(lockedStageId===null && snapshot?.id===stageRef.id ? snapshot : null) || stages.find(stage=>stage.id===stageRef.id);
     if(stage){space=stageSpace(stage,stageRef.partVisibility);preset='stage:'+stage.id;}
   } else if(stageRef?.kind==='rectangle') {
     if(!Number.isFinite(stageRef.width) || !Number.isFinite(stageRef.depth) || stageRef.width<=0 || stageRef.depth<=0)throw new Error('Invalid stage dimensions');
     space={name:stageRef.name || 'Custom Space',width:stageRef.width,depth:stageRef.depth};preset='custom';
   } else if(stageRef!==null && stageRef!==undefined)throw new Error('Invalid stage reference');
   const assets=new Map(equipment.map(asset=>[asset.id,asset]));
+  for(const snapshot of data.assetSnapshots?.equipment || [])if(snapshot?.id && Array.isArray(snapshot.shapes) && snapshot.dimensions?.widthMeters>0 && snapshot.dimensions?.depthMeters>0)assets.set(snapshot.id,{...snapshot,stockQuantity:assets.get(snapshot.id)?.stockQuantity ?? null});
   const usedIds=new Set(),idMap=new Map();
   const items=data.items.flatMap((placement,index)=>{
     const xMeters=Number.isFinite(placement.xMeters)?placement.xMeters:data.version===1 && space ? (placement.x ?? 50)/100*space.width : NaN;
