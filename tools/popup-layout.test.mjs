@@ -245,10 +245,18 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
 
 
   }finally {
+    if(child&&child.exitCode===null&&child.signalCode===null) {
+      const closed=once(child,'close')
+      // Let Chromium flush and stop its profile writers before deleting files.
+      // Killing only its main process can leave those writers running on Linux.
+      if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:2147483647,method:'Browser.close'}))
+      else child.kill()
+      const fallback=setTimeout(()=>child.kill('SIGKILL'),3000)
+      try{await closed}finally{clearTimeout(fallback)}
+    }
     socket?.close()
-    if(child&&child.exitCode===null){const exited=once(child,'exit');child.kill();await exited}
     await server.close()
     assert.equal(dirname(resolve(directory)),resolve(tmpdir()));assert.ok(basename(directory).startsWith('stageplot-popups-'))
-    await rm(directory,{recursive:true,force:true})
+    await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100})
   }
 })
