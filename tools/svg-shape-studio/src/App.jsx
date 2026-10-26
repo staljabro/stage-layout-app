@@ -18,7 +18,7 @@ import { selectionBox, enclosedItems, containsBounds } from "../../../src/marque
 import { stageControlPoints, nearestControl } from "./stage-controls.js";
 import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { subtractLayers, unionLayers, vectorFromCutRing } from "./shape-cut.js";
-import { boundaryBounds, translateBoundaryNodes } from "./stage-zone.js";
+import { boundaryBounds, translateBoundaryNodes, resizeRectangularZone } from "./stage-zone.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
 import { StudioHelp } from "../../../src/help-dialog.jsx";
 import { APP_VERSION } from "../../../src/version.js";
@@ -1075,7 +1075,7 @@ function App() {
   const updateStageGroup=changes=>{checkpoint();const update=old=>old.map(asset=>asset.editorGroupId===stageGroupId?{...asset,...changes}:asset);setZones(update);setTextItems(update);setDimensionLines(update);setReferenceImages(update);};
   const groupStageAssets=()=>{checkpoint();const ids=new Set(selectedStageAssets.flatMap(asset=>stageGroupIds(orderedAssets,asset.id))),id='stage-group-'+Date.now()+'-'+nextGroupId.current++;const update=old=>old.map(asset=>ids.has(asset.id)?{...asset,editorGroupId:id,editorGroupName:'Stage group',editorGroupToggleable:false}:asset);setZones(update);setTextItems(update);setDimensionLines(update);setReferenceImages(update);setSelectedStageAssetIds([...ids]);setSelectedZoneId(null);setSelectedTextId(null);setSelectedDimensionId(null);setSelectedReferenceId(null);};
   const hasStageInspectorSelection=Boolean(selectedZone||selectedText||selectedDimension||referenceSelected||stageNode||selectedStageAssetIds.length);
-  const activeStageControls = documentMode === "stage" && !stageMoveMode && !selectedZone?.locked && (selectedZone || !stageBoundaryLocked) ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
+  const activeStageControls = documentMode === "stage" && !stageMoveMode && !selectedZone?.locked && selectedZone?.zoneShape!=="rectangle" && (selectedZone || !stageBoundaryLocked) ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
   const selectedGroupItems = selectedGroupId
     ? items.filter((item) => item.editorGroupId === selectedGroupId)
     : [];
@@ -2652,7 +2652,7 @@ function App() {
   };
   const addStageText=()=>{const id=`text-${Date.now()}`;checkpoint();setTextItems(old=>[...old,{id,name:`Text ${old.length+1}`,text:"Stage label",x:realWidth/2,y:realDepth/2,fontSize:.3,color:"#25261f",opacity:1,locked:false,toggleable:false,zOrder:orderedAssets.length}]);setSelectedTextId(id);setSelectedDimensionId(null);setSelectedZoneId(null);setSelectedReferenceId(null);setSelectedStageNode(null);setSelectedStageAssetIds([id]);};
   const addStageDimension=()=>{const id=`dimension-${Date.now()}`;checkpoint();setDimensionLines(old=>[...old,{id,name:`Dimension ${old.length+1}`,x:realWidth/2-.5,y:realDepth/2,length:1,rotation:0,color:"#287aa5",locked:false,zOrder:orderedAssets.length}]);setSelectedDimensionId(id);setSelectedTextId(null);setSelectedZoneId(null);setSelectedReferenceId(null);setSelectedStageNode(null);setSelectedStageAssetIds([id]);};
-  const addStageZone=()=>{const id=`zone-${Date.now()}`,x=realWidth*.25,y=realDepth*.25;checkpoint();setZones(old=>[...old,{id,name:`Zone ${old.length+1}`,solid:false,label:false,locked:false,toggleable:false,fill:"#8eb6d8",fillMode:"single",fill2:"#25261f",stripeSpacing:.5,fillOpacity:.25,stroke:"#447799",strokeWidth:2,strokeOpacity:1,zOrder:orderedAssets.length,nodes:[{x,y,curveMode:"line"},{x:x+realWidth*.3,y,curveMode:"line"},{x:x+realWidth*.3,y:y+realDepth*.3,curveMode:"line"},{x,y:y+realDepth*.3,curveMode:"line"}]}]);setSelectedZoneId(id);setSelectedDimensionId(null);setSelectedTextId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([id]);setSelectedStageNode(null);};
+  const addStageZone=(rectangular=false)=>{const id=`zone-${Date.now()}`,x=realWidth*.25,y=realDepth*.25;checkpoint();setZones(old=>[...old,{id,zoneShape:rectangular?"rectangle":undefined,name:`${rectangular?"Rectangular zone":"Zone"} ${old.length+1}`,solid:false,label:false,locked:false,toggleable:false,fill:"#8eb6d8",fillMode:"single",fill2:"#25261f",stripeSpacing:.5,fillOpacity:.25,stroke:"#447799",strokeWidth:2,strokeOpacity:1,zOrder:orderedAssets.length,nodes:[{x,y,curveMode:"line"},{x:x+realWidth*.3,y,curveMode:"line"},{x:x+realWidth*.3,y:y+realDepth*.3,curveMode:"line"},{x,y:y+realDepth*.3,curveMode:"line"}]}]);setSelectedZoneId(id);setSelectedDimensionId(null);setSelectedTextId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([id]);setSelectedStageNode(null);};
 
   return (
     <MeasurementUnit.Provider value={documentMode === "stage" ? "m" : "cm"}>
@@ -2791,49 +2791,8 @@ function App() {
                 ))}
               </div>}
               <p className="eyebrow advanced-title palette-create-control">ZONES</p>
-              <button
-                className="group-button palette-create-control"
-                onClick={() => {
-                  const id = `zone-${Date.now()}`;
-                  const x = realWidth * 0.25;
-                  const y = realDepth * 0.25;
-                  setZones((old) => [
-                    ...old,
-                    {
-                      id,
-                      name: `Zone ${old.length + 1}`,
-                      solid: false,
-                      label: false,
-                      locked: false,
-                      toggleable: false,
-                      fill: "#8eb6d8",
-                      fillMode: "single",
-                      fill2: "#25261f",
-                      stripeSpacing: 0.5,
-                      fillOpacity: 0.25,
-                      stroke: "#447799",
-                      strokeWidth: 2,
-                      strokeOpacity: 1,
-                      zOrder: old.length + referenceImages.length,
-                      nodes: [
-                        { x, y, curveMode: "line" },
-                        { x: x + realWidth * 0.3, y, curveMode: "line" },
-                        {
-                          x: x + realWidth * 0.3,
-                          y: y + realDepth * 0.3,
-                          curveMode: "line",
-                        },
-                        { x, y: y + realDepth * 0.3, curveMode: "line" },
-                      ],
-                    },
-                  ]);
-                  setSelectedZoneId(id);
-                  setSelectedDimensionId(null);setSelectedTextId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([id]);
-                  setSelectedStageNode(null);
-                }}
-              >
-                Add zone
-              </button>
+              <button className="group-button palette-create-control" onClick={()=>addStageZone()}>Add zone</button>
+              <button className="group-button palette-create-control" onClick={()=>addStageZone(true)}>Add rectangular zone</button>
             </>
           ) : (
             <>
@@ -2940,7 +2899,8 @@ function App() {
           <div className="creation-toolbar">
             <span className="creation-label">INSERT</span>
             {documentMode==="stage"?<>
-              <button onClick={addStageZone}>Zone</button>
+              <button onClick={()=>addStageZone()}>Zone</button>
+              <button onClick={()=>addStageZone(true)}>Rectangular zone</button>
               <button onClick={addStageText}>Text</button>
               <button onClick={addStageDimension}>Dimension</button>
               <button onClick={()=>imageFileRef.current?.click()}>Background image</button>
@@ -3122,7 +3082,7 @@ function App() {
                           strokeWidth={zone.solid ? 2 : zone.strokeWidth}
                           vectorEffect="non-scaling-stroke"
                         />
-                        {!stageMoveMode && !zone.locked && zone.nodes.map((node, index) => {
+                        {!stageMoveMode && !zone.locked && zone.zoneShape!=="rectangle" && zone.nodes.map((node, index) => {
                           const previous =
                             zone.nodes[
                               (index - 1 + zone.nodes.length) %
@@ -3523,10 +3483,17 @@ function App() {
                       }
                     />
                   </label>
-                  <label className="field">POSITION ANCHOR<select value={selectedZone.anchorMode||"topLeft"} onChange={event=>updateSelectedZone({anchorMode:event.target.value})}><option value="topLeft">Top-left extremity</option><option value="centre">Bounds centre</option></select></label>
+                  {selectedZone.zoneShape==="rectangle" && <>
+                    <div className="field-row">
+                      <label className="field">WIDTH (M)<CommittedNumberInput type="number" min="0.01" step="0.01" value={+selectedZoneBounds.width.toFixed(3)} onChange={event=>{checkpoint();setZones(old=>old.map(zone=>zone.id===selectedZoneId?resizeRectangularZone(zone,+event.target.value,selectedZoneBounds.height):zone));}}/></label>
+                      <label className="field">LENGTH (M)<CommittedNumberInput type="number" min="0.01" step="0.01" value={+selectedZoneBounds.height.toFixed(3)} onChange={event=>{checkpoint();setZones(old=>old.map(zone=>zone.id===selectedZoneId?resizeRectangularZone(zone,selectedZoneBounds.width,+event.target.value):zone));}}/></label>
+                    </div>
+                    <button onClick={()=>{checkpoint();updateSelectedZone({zoneShape:undefined});setSelectedStageNode(null);}}>Convert to normal zone</button>
+                  </>}
+                  <label className="field">{selectedZone.zoneShape==="rectangle"?"ORIGIN":"POSITION ANCHOR"}<select value={selectedZone.anchorMode||"topLeft"} onChange={event=>updateSelectedZone({anchorMode:event.target.value})}><option value="topLeft">Top-left extremity</option><option value="centre">Bounds centre</option></select></label>
                   <div className="field-row">
-                    <label className="field">ANCHOR X (M)<CommittedNumberInput type="number" step="0.01" value={+selectedZoneAnchor.x.toFixed(3)} onChange={event=>updateSelectedZoneAnchor("x",+event.target.value)}/></label>
-                    <label className="field">ANCHOR Y (M)<CommittedNumberInput type="number" step="0.01" value={+selectedZoneAnchor.y.toFixed(3)} onChange={event=>updateSelectedZoneAnchor("y",+event.target.value)}/></label>
+                    <label className="field">{selectedZone.zoneShape==="rectangle"?"ORIGIN X (M)":"ANCHOR X (M)"}<CommittedNumberInput type="number" step="0.01" value={+selectedZoneAnchor.x.toFixed(3)} onChange={event=>updateSelectedZoneAnchor("x",+event.target.value)}/></label>
+                    <label className="field">{selectedZone.zoneShape==="rectangle"?"ORIGIN Y (M)":"ANCHOR Y (M)"}<CommittedNumberInput type="number" step="0.01" value={+selectedZoneAnchor.y.toFixed(3)} onChange={event=>updateSelectedZoneAnchor("y",+event.target.value)}/></label>
                   </div>
                   <div className="zone-dimensions"><span>Bounds width <b>{selectedZoneBounds.width.toFixed(3)} m</b></span><span>Bounds depth <b>{selectedZoneBounds.height.toFixed(3)} m</b></span></div>
                   <p className="handle-help">Coordinates use the selected anchor. Changing X or Y translates the complete zone without changing its geometry.</p>

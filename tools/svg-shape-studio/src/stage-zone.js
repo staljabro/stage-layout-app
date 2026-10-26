@@ -1,5 +1,20 @@
 import { sampleStageBoundary } from '../../../src/stage-geometry.js';
 
+export const rectangularZoneNodes=(x,y,width,length)=>[
+  {x,y,curveMode:'line'},
+  {x:x+width,y,curveMode:'line'},
+  {x:x+width,y:y+length,curveMode:'line'},
+  {x,y:y+length,curveMode:'line'},
+];
+
+export const resizeRectangularZone=(zone,width,length)=>{
+  if(!Number.isFinite(width)||!Number.isFinite(length)||width<=0||length<=0)return zone;
+  const bounds=boundaryBounds(zone.nodes);
+  const x=zone.anchorMode==='centre'?bounds.centreX-width/2:bounds.x;
+  const y=zone.anchorMode==='centre'?bounds.centreY-length/2:bounds.y;
+  return {...zone,nodes:rectangularZoneNodes(x,y,width,length)};
+};
+
 const coordinatePairs=[['x','y'],['cx','cy'],['arcX','arcY'],['mx','my'],['startOutX','startOutY'],['midInX','midInY'],['midOutX','midOutY'],['endInX','endInY']];
 
 export const translateBoundaryNodes=(nodes,dx,dy)=>nodes.map(node=>{

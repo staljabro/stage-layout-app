@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { boundaryBounds, translateBoundaryNodes } from './stage-zone.js';
+import { boundaryBounds, translateBoundaryNodes, rectangularZoneNodes, resizeRectangularZone } from './stage-zone.js';
+
+test('rectangle resizing preserves its origin and zone options',()=>{
+  const zone={nodes:rectangularZoneNodes(1,2,4,6),solid:true,fill:'#123456'};
+  const resized=resizeRectangularZone(zone,8,10);
+  assert.deepEqual(resized.nodes,rectangularZoneNodes(1,2,8,10));
+  assert.equal(resized.solid,true);
+  assert.equal(resized.fill,zone.fill);
+  const centred=resizeRectangularZone({...zone,anchorMode:'centre'},8,10);
+  assert.deepEqual(centred.nodes,rectangularZoneNodes(-1,0,8,10));
+  for(const width of [0,-1,NaN,Infinity])assert.equal(resizeRectangularZone(zone,width,2),zone);
+});
 
 test('translating a zone moves nodes and every curved-segment control',()=>{
   const nodes=[{x:0,y:0},{x:2,y:0,curveMode:'bezier',mx:1,my:-1,startOutX:.3,startOutY:0,midInX:.7,midInY:-1,midOutX:1.3,midOutY:-1,endInX:1.7,endInY:0},{x:2,y:2},{x:0,y:2,cx:-.5,cy:1,arcX:-.2,arcY:1}];
