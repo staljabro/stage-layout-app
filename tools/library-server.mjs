@@ -1,4 +1,6 @@
-﻿import {createServer} from 'node:http'
+import {createEventRoutes} from './event-routes.mjs'
+import {validFixedEquipment} from '../src/stage-equipment.js'
+import {createServer} from 'node:http'
 import {dirname,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {openStore,uid,token,digest,roles,manager,designer,fail,publicUser} from './account-store.mjs'
@@ -9,6 +11,7 @@ import {assetProfiles,belongsToProfile,isPublishedItem,isEquipmentItem,profileIt
 const root=resolve(process.env.STAGEPLOT_LIBRARY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)),'..'))
 const store=await openStore(root)
 const {db,get,all,run,transaction,asset,saveAsset}=store
+const eventRoutes=createEventRoutes(store)
 const userLabel=id=>{
   const account=get('SELECT users.name,users.friendly_name,github_identities.login FROM users LEFT JOIN github_identities ON github_identities.user_id=users.id WHERE users.id=?',id)
   return account?.friendly_name || (account?.login?'@'+account.login:account?.name) || 'Contributor'
@@ -40,6 +43,7 @@ const validateAsset=(kind,data)=>{
     if(data.schema!=='stageplot-item@3' || !Array.isArray(data.shapes) || !Array.isArray(data.collisionShapes))fail(400,'Invalid equipment artwork')
     if(data.stockQuantity!=null && (!Number.isSafeInteger(data.stockQuantity)||data.stockQuantity<0))fail(400,'Stock must be a non-negative whole number or blank')
   }else if(data.schema!=='stageplot-stage@1' || !Array.isArray(data.boundary?.nodes) || data.boundary.nodes.length<3 || !Array.isArray(data.collisionBoundary) || !['listed','link-only','draft'].includes(data.visibility || 'listed'))fail(400,'Invalid stage boundary or visibility')
+  if(kind==='stages'&&!validFixedEquipment(data.fixedEquipment))fail(400,'Invalid fixed stage equipment')
 }
 const stageAccess=(row,user,profile,ref)=>{
   if(!row || row.deleted)return false
@@ -68,6 +72,7 @@ const server=createServer(async(request,response)=>{
     if(profile==='empire'&&!user?.empire)fail(403,'Empire access is required')
     const startSession=account=>{const value=token();run('DELETE FROM sessions WHERE expires<?',Date.now());run('INSERT INTO sessions VALUES(?,?,?)',digest(value),account.id,Date.now()+7*86400000);response.setHeader('Set-Cookie',[...(response.getHeader('Set-Cookie')?[].concat(response.getHeader('Set-Cookie')):[]),sessionCookie(request,value,7*86400)]);return publicUser(account)}
     if(await githubAuth({request,response,url,user,send,body,startSession}))return
+    if(await eventRoutes({path,method,user,body:()=>body(request),send}))return
     if(path==='/api/auth/logout' && method==='POST'){if(cookie)run('DELETE FROM sessions WHERE hash=?',digest(cookie));response.setHeader('Set-Cookie',sessionCookie(request,'',0));return send(200,{ok:true})}
     const userMatch=path.match(/^\/api\/users\/([a-f0-9]+)$/)
     if(userMatch && method==='PUT') {

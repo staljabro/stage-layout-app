@@ -2,9 +2,9 @@
 
 Stage Layout App combines two applications with one shared library and account service:
 
-- **Stageplot** arranges equipment on real-scale stages, saves private shows, shares client links and exports PDFs and equipment lists.
-- **Shape Studio** creates equipment artwork, collision footprints and stages. Contributors work on personal copies; Admins and the Owner can edit shared items and review submissions.
-- **Library API** stores accounts, assets, submissions, projects and revision data in SQLite. GitHub provides sign-in; the API enforces roles, ownership and Empire access.
+- **Stageplot** maintains reusable venue spaces, creates theatre productions and festival/eisteddfod events, and gives each client or group its own editable layout and link.
+- **Shape Studio** creates equipment artwork and collision footprints. Stage building lives in Stageplot. Contributors work on personal copies; Admins and the Owner can edit shared items and review submissions.
+- **Library API** stores accounts, events, stages, band plots, equipment, submissions and revision data in SQLite. GitHub provides sign-in; the API enforces roles, ownership and Empire access.
 
 Current release: **Version 0.2.9 (Alpha)**. The shared version appears beneath both app titles, in help dialogs and in PDF footers. Update the single user-facing release value in `src/version.js` when preparing a new version; npm-compatible package versions are stored in the two `package.json` files.
 
@@ -22,25 +22,37 @@ Both apps include **Help** with relevant instructions and a link to the full gui
 
 ## Quick start
 
-1. Open Stageplot and choose a listed stage or enter a rectangular space.
-2. Click or drag equipment into the layout. Move, rotate, group and arrange it using Layers and Inspector.
-3. Open **Save / Load** to update or save a cloud project, start a new project, load/download a project file, or export PDF.
-4. Signed-in users can open **My projects** to recall, share, restore or delete account projects.
-5. Contributors, Admins and the Owner can use the **Stageplot Studio** toolbar button to create equipment and stages.
+1. Sign in to Stageplot and create an event. Any approved account can organise events.
+2. Add a stage. Edit its **Outline & zones**, then place **House equipment** directly in Stageplot. Save a stage version.
+3. Add each band by name and assign its stage. Copy the band's unique edit link and send it yourself.
+4. Bands open their link without signing in, add equipment and notes, autosave, submit for review and export PDF.
+5. Review the separate plots from the event overview. Approve or request changes, restore saved revisions, or replace/revoke a band's link.
 
-The External planner is the normal URL. Empire access is an independent user tag assigned by the Owner. Tagged users can choose External or Empire when leaving Studio; Empire-only assets and the Empire planner require that access. External events do not track stock.
+Existing band plots keep their assigned stage version. Preview and apply a newer stage explicitly; band placements remain in place for review. A stage can be copied into another event as a reusable template.
+
+**Quick plot** remains available for an ad hoc drawing. Equipment authors use **Shape Studio**; ordinary event owners do not need Contributor access.
+
+The External equipment library is the default. Empire-tagged owners can choose Empire when creating an event. A band's edit link grants access to its assigned plot and the event's equipment palette. It does not provide account or event-management access.
+
+## Theatre and eisteddfod workflows
+
+Use **Spaces** to maintain regular venue stages independently of events, including fixed equipment and quantities of available movable stock. Use **Productions** to assign a space to a client and automatically create its one layout. Productions retain their own version, notes, reviews and client link.
+
+For an eisteddfod, create one event with one space and choose **Eisteddfod / groups**. Bulk-add group names, optionally copy a common chair/percussion layout, then review and reorder the separate group layouts. Venue quantities apply to each layout, so sequential groups reuse the same stock.
+
+Space updates are applied explicitly to event/production stages, and stage updates are then applied explicitly to individual layouts. The equipment report separates venue requests and client-supplied items.
 
 ## Library and collaboration
 
-Studio has **Equipment** and **Stages** tabs. Admins and the Owner also have **New items** for new submissions. Existing shared items with pending updates are highlighted and offer **Review update**.
+Shape Studio maintains equipment. Event stages are managed in Stageplot. Admins and the Owner also have **New items** for new submissions. Existing shared items with pending updates are highlighted and offer **Review update**.
 
-All library rows use **Edit**. Contributors save a private working copy using **Save personal copy** or **Update personal copy**. Their active copies are shown alongside shared originals with ** - Personal copy** appended to the display name. Other users cannot browse those drafts. Admins and the Owner edit shared items directly using **Update shape** or **Update stage**.
+All library rows use **Edit**. Contributors save a private working copy using **Save personal copy** or **Update personal copy**. Their active copies are shown alongside shared originals with ** - Personal copy** appended to the display name. Other users cannot browse those drafts. Admins and the Owner edit shared items directly using **Update shape** .
 
 Contributors submit their saved work for review. Resubmitting updates the proposal rather than adding another submission. A reviewer can approve a new item, update the fixed original, or decline. Opening a submission in the editor offers **Save new item**, **Update submitted item (without approving)** and **Approve changes**. Saving without approval updates the contributor's copy and the pending submission, with optional feedback signed by the reviewer's username. Conflict checks protect newer contributor edits.
 
 Empire-tagged users see profile checkboxes and Empire stock quantities. Untagged users see neither; their new equipment and stages default to External. Updating an existing shared item preserves its memberships. Custom shapes remain Studio building blocks.
 
-Stage **Sharing** settings offer Listed, Link only and Draft visibility. Stage links point to the fixed public planner at https://stageplot.braithwaite.work/. Share tokens grant access to specific stages or saved projects, subject to Empire access. See the [user guide](docs/USER_GUIDE.md) before sharing private artwork with clients.
+Event band links keep the same address as bands save new work. Replacing or revoking a link stops guest access while keeping the organiser's saved plot. Stage versions are applied deliberately, with an equipment-conflict preview.
 
 ## Local development
 
@@ -52,7 +64,7 @@ Install both frontend dependency sets:
 npm.cmd run setup
 ```
 
-Run setup again after pulling dependency changes. Shape Studio has its own dependency set, including `polygon-clipping` and `fit-curve`; installing only at the repository root does not install these.
+Run setup again after pulling dependency changes. The shared stage editor uses `polygon-clipping` and `fit-curve`. Setup installs the dependency sets for both applications.
 
 Run Stageplot, Shape Studio and the library API together:
 

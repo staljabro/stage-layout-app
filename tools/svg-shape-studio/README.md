@@ -1,6 +1,6 @@
 # Shape Studio
 
-Shape Studio is Stageplot's equipment and stage editor. The Library API persists live data in SQLite; repository JSON files are first-start import inputs, not the live library.
+Shape Studio is Stageplot's equipment artwork editor. The stage editor is reused inside Stageplot's event workspace; standalone Studio is reserved for equipment. The Library API persists live data in SQLite; repository JSON files are first-start import inputs, not the live library.
 
 For end-user instructions, read the [comprehensive user guide](../../docs/USER_GUIDE.md#shape-studio). For GitHub sign-in and deployment, see [Accounts and deployment](../../ACCOUNT_GUIDE.md).
 

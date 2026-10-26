@@ -5,6 +5,16 @@ import { customStagingItem, customTextItem, stagingSnapPoints } from './custom-i
 const stage={id:'pit',label:'Orchestra Pit',dimensions:{widthMeters:10,depthMeters:5},boundary:{nodes:[{x:0,y:0},{x:10,y:0},{x:0,y:5}]},zones:[]};
 const asset={id:'chair',label:'Chair',dimensions:{widthMeters:.5,depthMeters:.6},shapes:[{type:'rect',fill:'#ffffff'}],collisionShapes:[]};
 const placement={...asset,id:123,type:'library:chair',assetId:'chair',xMeters:2,yMeters:3,rotation:35,label:'First violin',showLabel:true};
+
+test('movable venue stock and equipment sources survive layout saving without sharing inventory state',()=>{
+  const venueStage={...stage,availableEquipment:[{assetId:'chair',quantity:40}]};
+  const venueSpace=stageSpace(venueStage),file=projectFile('Choir',venueSpace,[{...placement,supply:'venue'},{...placement,id:124,supply:'client'}]);
+  const restored=resolveProject(file,[asset],[venueStage]);
+  assert.deepEqual(restored.items.map(item=>item.supply),['venue','client']);
+  restored.space.availableEquipment[0].quantity=1;
+  assert.equal(venueStage.availableEquipment[0].quantity,40);
+  assert.equal(venueSpace.availableEquipment[0].quantity,40);
+});
 test('downloads contain references and placement data, never equipment or stage artwork',()=>{
   const file=projectFile('Concert',stageSpace(stage),[placement]);
   assert.deepEqual(file.stage,{kind:'library',id:'pit'});

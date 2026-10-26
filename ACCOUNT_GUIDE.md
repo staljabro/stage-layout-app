@@ -1,6 +1,6 @@
 # Accounts and collaboration
 
-Requires Node 24. GitHub is the only sign-in provider. Stageplot stores app roles, projects and library data in SQLite; it does not store GitHub passwords or retain GitHub access tokens. MFA is not required by this app.
+Requires Node 24. GitHub is the only sign-in provider. Stageplot stores app roles, events, band plots, projects and library data in SQLite; it does not store GitHub passwords or retain GitHub access tokens. MFA is not required by this app.
 
 ## Configure GitHub sign-in
 
@@ -54,9 +54,19 @@ Both frontends may be exposed for collaborators once HTTPS and accounts are conf
 | Owner | Use, save and share own projects | Full | Add, edit, approve, delete and recover | Approve GitHub access, link existing accounts, assign non-Owner roles, disable non-Owners |
 | Admin | Use, save and share own projects | Full for shared assets and own drafts | Add, edit, approve, delete and recover | Own GitHub account |
 | Contributor | Use shared assets and own drafts immediately | Create and edit own assets; copy published designs | Submit and update proposals for approval | Own GitHub account |
-| Editor | Use published assets, save and share own projects | None | Read published assets | Own password |
+| Editor | Manage own events, stages and band plots; use published equipment | None | Read published assets | Own GitHub account |
 
 Projects are private to their creator, including against Owner/Admin account access. Admin cannot browse another user's personal drafts. Personal working copies are private to their creator, including against Owner access. Submission reviewers can inspect the exact submitted snapshot without access to the creator's other drafts.
+
+## Event ownership and guest editing
+
+Every approved account role can create reusable spaces, theatre productions, events and event stages in Stageplot. Spaces and productions are owned by the account, with the same private ownership rules as events. Equipment authoring still requires Contributor, Admin or Owner access. Events and band plots are private to their owner, including against other Admin and Owner accounts.
+
+Each band receives a unique, high-entropy edit token. It grants access to that plot, its pinned stage, and the event's published equipment palette. Guests cannot browse the organiser's account, other bands or unrelated personal drafts. Event invitations explicitly grant their event palette; ordinary Empire library access still requires an Empire tag. Guest writes cannot replace the server-owned stage or provide arbitrary library artwork.
+
+Band links remain stable across saves. Replace or revoke a link to end access. Revocation is checked again before committing a guest write. Plot revisions use optimistic concurrency; stale saves return a conflict. Submissions, reviews, stage updates and restoration create revisions. New stage versions do not alter plots until deliberately applied.
+
+The API creates the event tables automatically at startup. Reusable spaces, space versions, productions, events, stage versions, client/group layouts and their revisions live in the existing SQLite database and are included in its normal backup. No separate storage service or mail sender is required. Organisers copy and send invitations themselves.
 
 ## Personal assets and approvals
 
@@ -66,7 +76,7 @@ Contributor saves automatically create personal assets. They appear immediately 
 
 The workflow labels are **Draft**, **Pending review**, **Declined** and **Published**. Saving does not change the submitted snapshot: submit again to send the latest edits. Personal drafts stay usable immediately. Revision data remains stored for recovery, but version history is not shown in the library or review interface.
 
-The Studio library has **Equipment** and **Stages** tabs. Admins and Owners also see **New items**, containing new equipment and stages awaiting review. Pending updates highlight the existing shared item in amber, with **Review update** on the same row. Personal working copies use a flat blue background. Rows remain one line high; narrow windows scroll horizontally. Stage link controls are available through **Sharing**.
+Shape Studio maintains equipment. Event stages are built and versioned directly in Stageplot. Admins and Owners also see **New items**, containing new equipment and stages awaiting review. Pending updates highlight the existing shared item in amber, with **Review update** on the same row. Personal working copies use a flat blue background. Rows remain one line high; narrow windows scroll horizontally. Stage link controls are available through **Sharing**.
 
 **Review submission** and **Review update** show the submitted design and three decisions: **Approve as new item**, **Approve item update**, or **Decline**. Updates are locked to the original shared item. The current library artwork and submitted artwork are shown together in the review window. Updating preserves its identity and stock quantity; creating a new item leaves the original unchanged. Optional feedback accompanies a decline. Review messages appear under **View feedback** beside the contributor's draft, including approval and decline messages. Contributors can read the message and resubmit. A **Submit saved draft** button is also available while editing a personal design. Save before submitting. Revisions and JSON details are not part of the review interface.
 
@@ -99,7 +109,7 @@ Approved working copies do not appear as duplicate library rows. Contributors se
 
 For Admins and Owners, an existing shared item uses **Update shape** or **Update stage**. Opening a submission in the editor retains its submission context. Saving opens three choices: **Save new item** creates a separate shared asset and leaves the submission pending; **Update submitted item (without approving)** updates the proposal snapshot and the contributor's personal copy, while keeping the submission pending; **Approve changes** publishes the edited proposal to its fixed target. Reviewer messages are visible through **View feedback** beside the contributor's personal copy. Reviewer saves preserve ownership, private stage links and equipment grants. If the contributor has saved newer changes since submitting, reviewer updates are blocked until they resubmit. Studio refreshes library data when its window regains focus; an already open editor keeps its local work and checks for conflicts when saving.
 
-Stageplot groups PDF export, local project saving/loading and New project in **Save / Load**. The **Stageplot Studio** and **Stageplot** toolbar buttons link between the apps for Contributors, Admins and Owners, using the configured frontend URLs. In **My projects**, first delete a project, then choose **Delete permanently** to remove it and all revisions. This action is restricted to the project owner and cannot be undone; the API rejects stale project revisions or projects that have not been deleted first.
+Stageplot groups PDF export, local project saving/loading and New project in **Save / Load**. The **Shape Studio** and **Stageplot** toolbar buttons link between the apps for Contributors, Admins and Owners, using the configured frontend URLs. In **My projects**, first delete a project, then choose **Delete permanently** to remove it and all revisions. This action is restricted to the project owner and cannot be undone; the API rejects stale project revisions or projects that have not been deleted first.
 
 ## Empire access
 

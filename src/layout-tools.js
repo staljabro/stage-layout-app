@@ -2,6 +2,21 @@ import { rotatedBounds } from '../tools/svg-shape-studio/src/rotation.js'
 
 const boundsFor = item => rotatedBounds([{x:item.xMeters-item.widthMeters/2,y:item.yMeters-item.depthMeters/2,width:item.widthMeters,height:item.depthMeters,rotation:item.rotation||0}])
 
+export function availablePlacement(item,space,isValid) {
+  if(isValid(item))return item
+  // Prefer the requested location, then search nearby before scanning the stage.
+  for(let ring=1;ring<=32;ring++)for(let direction=0;direction<16;direction++){
+    const angle=direction*Math.PI/8,radius=ring*.25
+    const candidate={...item,xMeters:item.xMeters+Math.cos(angle)*radius,yMeters:item.yMeters+Math.sin(angle)*radius}
+    if(isValid(candidate))return candidate
+  }
+  for(let row=0;row<=24;row++)for(let column=0;column<=24;column++){
+    const candidate={...item,xMeters:item.widthMeters/2+(space.width-item.widthMeters)*column/24,yMeters:item.depthMeters/2+(space.depth-item.depthMeters)*row/24}
+    if(isValid(candidate))return candidate
+  }
+  return null
+}
+
 export function alignItems(items, mode) {
   if (items.length < 2) return items
   const bounds=items.map(item=>[item,boundsFor(item)])

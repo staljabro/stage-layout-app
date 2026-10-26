@@ -70,7 +70,7 @@ export function customItemData(item) {
 
 export function restoreCustomItem(placement, id) {
   const common = {
-    id, xMeters: placement.xMeters, yMeters: placement.yMeters,
+    id, supply:'client', xMeters: placement.xMeters, yMeters: placement.yMeters,
     rotation: Number.isFinite(placement.rotation) ? placement.rotation : 0,
     label: typeof placement.label === 'string' ? placement.label : undefined,
     showLabel: placement.showLabel === true, visible: placement.visible !== false,

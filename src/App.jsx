@@ -7,28 +7,27 @@ import { AccountButton, AppNavigation, useAccount } from './accounts.jsx'
 import { allocateStock, stockQuantity, equipmentRows } from './inventory.js'
 import { EquipmentList } from './equipment-list.jsx'
 import { toggleableParts, sharedParts, partState, setPart } from './part-toggles.js'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { sampleStageBoundary, stagePath as zonePath } from './stage-geometry.js'
-import { TextArtwork } from './text-shape.jsx'
+import { VectorArtwork, CustomItemArtwork, FixedEquipmentArtwork } from './equipment-artwork.jsx'
+import { avoidsFixedEquipment } from './stage-equipment.js'
 import { readSessionDraft, useSessionDraft } from './session-draft.js'
 import { selectionBox, enclosedItems } from './marquee.js'
 import { belongsToStagingGroup, insertAtDefaultLayer } from './layer-order.js'
 import { folderForItem, layerRows, moveFolderBlock, putItemsInFolder } from './layer-folders.js'
 import { rotatedBounds } from '../tools/svg-shape-studio/src/rotation.js'
 import { controlsKeepingWorldOrientation } from './rotation-controls.js'
-import { alignItems, distributeItems } from './layout-tools.js'
+import { alignItems, distributeItems, availablePlacement } from './layout-tools.js'
 import { isPublishedItem, isEquipmentItem } from '../tools/library-membership.mjs'
 import { collisionPolygons, isItemInsideSpace, itemsCollide, nearestSnapOffset, polygonsIntersect, rectangleBoundary } from './geometry.js'
 import { projectFile as createProjectFile, resolveProject, stageSpace } from './project-file.js'
-import { StageplotHelp } from './help-dialog.jsx'
+import { EventHelp, StageplotHelp } from './help-dialog.jsx'
 import { APP_VERSION } from './version.js'
 import { AppMark } from './app-mark.jsx'
 import { customStagingItem, customTextItem } from './custom-items.js'
 import { sizeText } from './text-layout.js'
 
 const PROFILE = new URLSearchParams(window.location.search).get('profile') || import.meta.env.VITE_LIBRARY_PROFILE || 'external'
-const TRACK_STOCK = PROFILE === 'empire'
-const projectFile = (...args) => pinProject({...createProjectFile(...args), profile: PROFILE},args[1],args[2])
 const GROUPS_API = `${API_BASE}/groups`
 const SHARED_PROJECT = new URLSearchParams(window.location.search).get('project')
 const STAGE_LINK = new URLSearchParams(window.location.search).get('stage')
@@ -47,73 +46,6 @@ const itemAvoidsSolidZones = (item, zones = [], partVisibility = {}) => {
   return zones.filter((zone) => zone.solid && zone.collisionBoundary?.length >= 3 && (!zone.toggleable || partVisibility[zone.id] !== false)).every((zone) => footprints.every(footprint => !polygonsIntersect(footprint, zone.collisionBoundary)))
 }
 
-const regularPolygonPoints = (width, height, sides = 6) => Array.from({ length: Math.max(3, sides) }, (_, index) => {
-  const angle = -Math.PI / 2 + index * Math.PI * 2 / Math.max(3, sides)
-  return `${width / 2 + Math.cos(angle) * width / 2},${height / 2 + Math.sin(angle) * height / 2}`
-}).join(' ')
-
-const hexagonSvgPoints = (width, height) => `${width * .25},0 ${width * .75},0 ${width},${height * .5} ${width * .75},${height} ${width * .25},${height} 0,${height * .5}`
-
-const tripodVectorGeometry = (shape) => {
-  const radius = shape.legRadius ?? shape.width / Math.sqrt(3)
-  const hub = { x: Math.sqrt(3) / 2 * radius, y: radius }
-  return { hub, ends: [{ x: hub.x, y: 0 }, { x: Math.sqrt(3) * radius, y: radius * 1.5 }, { x: 0, y: radius * 1.5 }] }
-}
-
-const trapezoidSvgPoints = (shape) => {
-  const left = (shape.leftInset || 0) + (shape.slew || 0)
-  const right = shape.width - (shape.rightInset || 0) + (shape.slew || 0)
-  return `${left},0 ${right},0 ${shape.width},${shape.height} 0,${shape.height}`
-}
-
-function PersonVector({ shape, seated, style }) {
-  const w = shape.width
-  const h = shape.height
-  const body = { ...style, fill: '#ffffff', fillOpacity: 1, strokeLinejoin: 'round' }
-  const head = { ...style, fill: shape.stroke, stroke: shape.stroke, fillOpacity: 1 }
-  const detail = { fill: 'none', stroke: shape.stroke, strokeWidth: Math.max(1, shape.strokeWidth * .7), vectorEffect: 'non-scaling-stroke', strokeLinecap: 'round', strokeLinejoin: 'round' }
-  if (seated) return <>
-    <path d={`M ${w * .31} ${h * .25} C ${w * .24} ${h * .26},${w * .2} ${h * .32},${w * .22} ${h * .4} L ${w * .31} ${h * .6} Q ${w * .5} ${h * .68},${w * .69} ${h * .6} L ${w * .78} ${h * .4} C ${w * .8} ${h * .32},${w * .76} ${h * .26},${w * .69} ${h * .25} L ${w * .58} ${h * .22} L ${w * .42} ${h * .22} Z`} {...body} />
-    <path d={`M ${w * .31} ${h * .29} L ${w * .2} ${h * .35} L ${w * .16} ${h * .65} L ${w * .25} ${h * .67} L ${w * .29} ${h * .43} L ${w * .38} ${h * .38} Z M ${w * .69} ${h * .29} L ${w * .8} ${h * .35} L ${w * .84} ${h * .65} L ${w * .75} ${h * .67} L ${w * .71} ${h * .43} L ${w * .62} ${h * .38} Z`} {...body} />
-    <path d={`M ${w * .37} ${h * .58} L ${w * .2} ${h * .78} L ${w * .27} ${h * .84} L ${w * .47} ${h * .66} Z M ${w * .63} ${h * .58} L ${w * .8} ${h * .78} L ${w * .73} ${h * .84} L ${w * .53} ${h * .66} Z`} {...body} />
-    <path d={`M ${w * .2} ${h * .78} L ${w * .19} ${h * .96} L ${w * .3} ${h * .96} L ${w * .32} ${h * .81} Z M ${w * .8} ${h * .78} L ${w * .81} ${h * .96} L ${w * .7} ${h * .96} L ${w * .68} ${h * .81} Z`} {...body} />
-    <ellipse cx={w * .5} cy={h * .18} rx={w * .16} ry={h * .18} {...head} /><path d={`M ${w * .39} ${h * .31} Q ${w * .5} ${h * .37},${w * .61} ${h * .31} M ${w * .34} ${h * .57} Q ${w * .5} ${h * .62},${w * .66} ${h * .57}`} {...detail} />
-  </>
-  return <>
-    <path d={`M ${w * .3} ${h * .25} C ${w * .24} ${h * .27},${w * .22} ${h * .34},${w * .25} ${h * .43} L ${w * .35} ${h * .67} L ${w * .65} ${h * .67} L ${w * .75} ${h * .43} C ${w * .78} ${h * .34},${w * .76} ${h * .27},${w * .7} ${h * .25} L ${w * .58} ${h * .22} L ${w * .42} ${h * .22} Z`} {...body} />
-    <path d={`M ${w * .31} ${h * .29} L ${w * .2} ${h * .35} L ${w * .17} ${h * .75} L ${w * .26} ${h * .75} L ${w * .29} ${h * .43} L ${w * .38} ${h * .38} Z M ${w * .69} ${h * .29} L ${w * .8} ${h * .35} L ${w * .83} ${h * .75} L ${w * .74} ${h * .75} L ${w * .71} ${h * .43} L ${w * .62} ${h * .38} Z`} {...body} />
-    <path d={`M ${w * .38} ${h * .64} L ${w * .49} ${h * .66} L ${w * .47} ${h * .96} L ${w * .36} ${h * .96} Z M ${w * .51} ${h * .66} L ${w * .62} ${h * .64} L ${w * .64} ${h * .96} L ${w * .53} ${h * .96} Z`} {...body} />
-    <ellipse cx={w * .5} cy={h * .18} rx={w * .16} ry={h * .19} {...head} /><path d={`M ${w * .39} ${h * .31} Q ${w * .5} ${h * .38},${w * .61} ${h * .31} M ${w * .4} ${h * .63} L ${w * .6} ${h * .63}`} {...detail} />
-  </>
-}
-
-function VectorShape({ shape }) {
-  const style = { fill: shape.fill, stroke: shape.stroke, strokeWidth: shape.strokeWidth, vectorEffect: 'non-scaling-stroke' }
-  const pivot = shape.type === 'tripod' ? tripodVectorGeometry(shape).hub : { x: shape.width / 2, y: shape.height / 2 }
-  const transform = `translate(${shape.x} ${shape.y}) rotate(${shape.rotation || 0} ${pivot.x} ${pivot.y})`
-  let node
-  if (shape.type === 'compound') node = <g transform={`scale(${shape.width / shape.artworkWidth} ${shape.height / shape.artworkHeight})`}>{shape.children.map((child,index)=><VectorShape key={index} shape={child}/>)}</g>
-  else if (shape.type === 'text') node = <TextArtwork item={shape} />
-  else if (shape.type === 'path') node = <path d={shape.d} {...style} />
-  else if (shape.type === 'circle' || shape.type === 'ellipse') node = <ellipse cx={shape.width / 2} cy={shape.height / 2} rx={shape.width / 2} ry={shape.height / 2} {...style} />
-  else if (shape.type === 'triangle') node = <polygon points={`${shape.width / 2},0 ${shape.width},${shape.height} 0,${shape.height}`} {...style} />
-  else if (shape.type === 'line') node = <line x1="0" y1={shape.height / 2} x2={shape.width} y2={shape.height / 2} {...style} />
-  else if (shape.type === 'arc') node = <path d={`M ${shape.startX} ${shape.startY} Q ${shape.controlX} ${shape.controlY} ${shape.endX} ${shape.endY}`} {...style} fill="none" />
-  else if (shape.type === 'tripod') { const tripod = tripodVectorGeometry(shape); node = <path d={`M ${tripod.hub.x} ${tripod.hub.y} L ${tripod.ends[0].x} ${tripod.ends[0].y} M ${tripod.hub.x} ${tripod.hub.y} L ${tripod.ends[1].x} ${tripod.ends[1].y} M ${tripod.hub.x} ${tripod.hub.y} L ${tripod.ends[2].x} ${tripod.ends[2].y}`} {...style} fill="none" /> }
-  else if (shape.type === 'hexagon' || shape.type === 'polygon') node = <polygon points={shape.type === 'hexagon' ? hexagonSvgPoints(shape.width, shape.height) : regularPolygonPoints(shape.width, shape.height, shape.sides)} {...style} />
-  else if (shape.type === 'trapezoid') node = <polygon points={trapezoidSvgPoints(shape)} {...style} />
-  else if (shape.type === 'chair') node = <><rect x={shape.width * .12} y={shape.height * .2} width={shape.width * .76} height={shape.height * .68} rx={shape.width * .06} {...style} /><rect x={shape.width * .08} y="0" width={shape.width * .84} height={shape.height * .24} rx={shape.width * .08} {...style} /><path d={`M ${shape.width * .15} ${shape.height * .87} V ${shape.height} M ${shape.width * .85} ${shape.height * .87} V ${shape.height}`} {...style} fill="none" /></>
-  else if (shape.type === 'seatedPerson') node = <PersonVector shape={shape} seated style={style} />
-  else if (shape.type === 'standingPerson') node = <PersonVector shape={shape} style={style} />
-  else node = <rect width={shape.width} height={shape.height} rx={shape.type === 'roundRect' ? Math.min(shape.width, shape.height) * .18 : 0} {...style} />
-  return <g transform={transform}>{node}</g>
-}
-
-function VectorArtwork({ shapes, width, depth, rotationParts = [], controls = {}, partVisibility = {} }) {
-  const parts = new Map(rotationParts.map(part=>[part.id,part]))
-  return <svg viewBox={`0 0 ${width} ${depth}`} aria-hidden="true">{(shapes || []).map((shape) => {if(shape.toggleable&&partVisibility[shape.id]===false)return null;const part=parts.get(shape.rotationPartId);const angle=part ? controls[part.id]?.rotation ?? part.defaultRotation ?? 0 : 0;return <g key={shape.id} transform={part?`rotate(${angle} ${part.pivotX} ${part.pivotY})`:undefined}><VectorShape shape={shape} /></g>})}</svg>
-}
-
 const Icon = ({ name }) => {
   const paths = {
     save: <><path d="M4 4h13l3 3v13H4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></>,
@@ -129,18 +61,6 @@ const Icon = ({ name }) => {
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
 }
 
-function CustomItemArtwork({ item }) {
-  if (item.customType === 'staging') return <svg viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true">
-    <rect width={item.widthMeters} height={item.depthMeters} fill={item.fill} fillOpacity={item.fillOpacity} stroke="none" />
-    {Array.from({length:Math.max(0,item.widthMeters-1)},(_,index)=><line key={`x-${index}`} x1={index+1} y1="0" x2={index+1} y2={item.depthMeters} stroke={item.sublineColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
-    {Array.from({length:Math.max(0,item.depthMeters-1)},(_,index)=><line key={`y-${index}`} x1="0" y1={index+1} x2={item.widthMeters} y2={index+1} stroke={item.sublineColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
-    <rect width={item.widthMeters} height={item.depthMeters} fill="none" stroke={item.line} strokeOpacity={item.lineOpacity} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-    {item.showHeight !== false && <text x={item.widthMeters / 2} y={item.depthMeters / 2} fill={item.textColor} stroke="none" fontSize={Math.min(.28, item.depthMeters * .32)} fontWeight="700" textAnchor="middle" dominantBaseline="middle">{item.heightMm}mm</text>}
-  </svg>
-  if (item.customType === 'text') return <svg viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><TextArtwork item={{ ...item, width: item.widthMeters, height: item.depthMeters }} /></svg>
-  return null
-}
-
 function TriStateToggle({ value, label, description, onChange }) {
   const mixed=value==='mixed'
   return <button type="button" className="tri-state-option" role="checkbox" aria-checked={mixed?'mixed':value} onClick={()=>onChange(value!==true)}><span className={`tri-state-box ${mixed?'mixed':value?'checked':''}`}>{mixed?'×':value?'✓':''}</span><span><b>{label}</b>{description&&<small>{description}</small>}</span></button>
@@ -151,18 +71,27 @@ function InspectorSection({ id, title, openSections, setOpenSections, children }
   return <section className="inspector-section"><button type="button" className="inspector-section-toggle" aria-expanded={open} onClick={()=>setOpenSections(current=>({...current,[id]:!open}))}><span>{title}</span><b>{open?'−':'+'}</b></button>{open&&<div className="inspector-section-body">{children}</div>}</section>
 }
 
-function App() {
+function App({workspace=null}) {
   const {user,showAccount,studioUrl}=useAccount()
+  const effectiveProfile=workspace?.profile||PROFILE
+  const trackStock=effectiveProfile==='empire'&&!workspace?.supplyTracking
+  const supplyTracking=workspace?.mode==='band'&&workspace.supplyTracking
+  const projectFile=useCallback((...args)=>pinProject({...createProjectFile(...args),profile:effectiveProfile},args[1],args[2]),[effectiveProfile])
   const [sharedProject,setSharedProject]=useState(null)
-  const [lockedStageId,setLockedStageId] = useState(STAGE_LINK)
-  const draftKey=`stageplot:${user?.id || "anonymous"}:${PROFILE}:` + (STAGE_LINK===null?`stageplot:draft:${SHARED_PROJECT || ''}`:`stageplot:draft:stage:${STAGE_LINK}`)
-  const [session] = useState(() => readSessionDraft(draftKey))
+  const [lockedStageId,setLockedStageId] = useState(workspace?.data?.stage?.id || STAGE_LINK)
+  const draftKey=workspace ? `workspace:${workspace.id}` : `stageplot:${user?.id || "anonymous"}:${PROFILE}:` + (STAGE_LINK===null?`stageplot:draft:${SHARED_PROJECT || ''}`:`stageplot:draft:stage:${STAGE_LINK}`)
+  const [session] = useState(() => {
+    if(!workspace)return readSessionDraft(draftKey);
+    const restored=resolveProject(workspace.data,workspace.equipment||[],[]);
+    return {project:workspace.data.project,space:restored.space,preset:restored.preset,items:restored.items,layerFolders:restored.layerFolders,equipmentCollisionEnabled:restored.collisionSettings.equipment,zoneCollisionEnabled:restored.collisionSettings.zone,snappingEnabled:restored.collisionSettings.snapping,savedProjectSnapshot:JSON.stringify(workspace.data)};
+  })
   const [accountProject,setAccountProject]=useState(session.accountProject || null)
   const [project, setProject] = useState(session.project ?? 'Untitled stageplot')
   const [space, setSpace] = useState(lockedStageId!==null && session.space?.stageId!==lockedStageId ? null : session.space ?? null)
+  const venueEquipment=space?.availableEquipment||[]
   const [preset, setPreset] = useState(session.preset ?? '')
   const [stagePickerOpen, setStagePickerOpen] = useState(false)
-  const [libraryLoading, setLibraryLoading] = useState(true)
+  const [libraryLoading, setLibraryLoading] = useState(!workspace)
   const [customWidth,setCustomWidth]=useState(10)
   const [customDepth,setCustomDepth]=useState(5)
   const [items, setItems] = useState(session.items ?? [])
@@ -192,8 +121,8 @@ function App() {
   const [equipmentListOpen,setEquipmentListOpen]=useState(false)
   const [savedProjectSnapshot,setSavedProjectSnapshot]=useState(session.savedProjectSnapshot ?? JSON.stringify(projectFile('Untitled stageplot',null,[])))
   const [printTimestamp,setPrintTimestamp]=useState(()=>new Date().toLocaleString())
-  const [library, setLibrary] = useState([])
-  const [groups, setGroups] = useState([])
+  const [library, setLibrary] = useState(workspace?.equipment||[])
+  const [groups, setGroups] = useState(workspace?.groups||[])
   const [equipmentSearch, setEquipmentSearch] = useState('')
   const [selectedEquipmentTab, setSelectedEquipmentTab] = useState('all')
   const [customToolMode, setCustomToolMode] = useState(null)
@@ -201,6 +130,7 @@ function App() {
   const [stages, setStages] = useState([])
   const equipmentTabs = [
     { id: 'all', label: 'All equipment' },
+    ...(supplyTracking&&venueEquipment.length?[{id:'venue',label:'Venue equipment'}]:[]),
     ...groups.filter(group => library.some(tool => tool.groupId === group.id)).map(group => ({ id: 'group:' + group.id, label: group.label })),
     ...(library.some(tool => !groups.some(group => group.id === tool.groupId)) ? [{ id: 'uncategorised', label: 'Uncategorised' }] : []),
     { id: 'custom', label: 'Custom' },
@@ -208,7 +138,7 @@ function App() {
   const activeEquipmentTab = equipmentTabs.some(tab => tab.id === selectedEquipmentTab) ? selectedEquipmentTab : 'all'
   const visibleEquipment = library.filter(tool => {
     const tabId = groups.some(group => group.id === tool.groupId) ? 'group:' + tool.groupId : 'uncategorised'
-    return activeEquipmentTab !== 'custom' && (activeEquipmentTab === 'all' || activeEquipmentTab === tabId) && tool.label.toLowerCase().includes(equipmentSearch.trim().toLowerCase())
+    return activeEquipmentTab !== 'custom' && (activeEquipmentTab === 'all' || activeEquipmentTab === 'venue'&&venueEquipment.some(entry=>entry.assetId===tool.id) || activeEquipmentTab === tabId) && tool.label.toLowerCase().includes(equipmentSearch.trim().toLowerCase())
   }).sort((a,b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id))
 
   const [libraryOnline, setLibraryOnline] = useState(true)
@@ -225,26 +155,45 @@ function App() {
   const marqueeRef = useRef(null)
   const customDrawRef = useRef(null)
   const clipboardRef = useRef(null)
-  const bootedRef = useRef(false)
+  const bootedRef = useRef(Boolean(workspace))
   const nextIdRef = useRef(Math.max(100, ...(session.items || []).map(item=>(Number(item.id)||0)+1)))
   const selectedItem = items.find((item) => item.id === selected)
-  const sessionError = useSessionDraft(draftKey, {accountProject,project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled,savedProjectSnapshot,leftPanelOpen,rightPanelOpen,leftPanelWidth,rightPanelWidth,inspectorSections})
+
 
   const projectSnapshot=JSON.stringify(projectFile(project,space,items,preset,{equipment:equipmentCollisionEnabled,zone:zoneCollisionEnabled,snapping:snappingEnabled},layerFolders))
-  const dirty=projectSnapshot!==savedProjectSnapshot
+  const [workspaceNotes,setWorkspaceNotes]=useState(workspace?.notes||'');
+  const [savedWorkspaceNotes,setSavedWorkspaceNotes]=useState(workspace?.notes||'');
+  const [workspaceSaving,setWorkspaceSaving]=useState(false);
+  const [workspaceError,setWorkspaceError]=useState('');
+  const workspaceSaveLock=useRef(false);
+  const dirty=projectSnapshot!==savedProjectSnapshot || workspaceNotes!==savedWorkspaceNotes;
+  const [workspaceRecovery,setWorkspaceRecovery]=useState(()=>workspace?readSessionDraft(draftKey):null);
+  const sessionError=useSessionDraft(draftKey,{accountProject,project,space,preset,items,layerFolders,zoom,pan,equipmentCollisionEnabled,zoneCollisionEnabled,snappingEnabled,savedProjectSnapshot,leftPanelOpen,rightPanelOpen,leftPanelWidth,rightPanelWidth,inspectorSections,workspaceNotes,workspaceDirty:dirty,workspaceRevision:workspace?.revision});
+  const persistWorkspace=useCallback(async(submit=false)=>{
+    if(!workspace||workspaceSaveLock.current)return;
+    workspaceSaveLock.current=true;setWorkspaceSaving(true);setWorkspaceError('');
+    try {await workspace.onSave(JSON.parse(projectSnapshot),workspaceNotes,submit);setSavedProjectSnapshot(projectSnapshot);setSavedWorkspaceNotes(workspaceNotes);}
+    catch(error){setWorkspaceError(error.message);}
+    finally{workspaceSaveLock.current=false;setWorkspaceSaving(false);}
+  },[workspace,projectSnapshot,workspaceNotes]);
+  useEffect(()=>{
+    if(!workspace?.autosave||!dirty||workspaceSaving||workspaceError)return;
+    const timer=setTimeout(()=>persistWorkspace(),1200);return()=>clearTimeout(timer);
+  },[workspace,dirty,workspaceSaving,workspaceError,persistWorkspace]);
   useEffect(()=>{
     if (!dirty) return
     const warn=event=>{event.preventDefault();event.returnValue=''}
     window.addEventListener('beforeunload',warn)
     return ()=>window.removeEventListener('beforeunload',warn)
   },[dirty])
-  const allocation=allocateStock(items,library,TRACK_STOCK)
-  const equipmentListRows=equipmentRows(items,library,allocation,TRACK_STOCK)
+  const allocation=allocateStock(items,library,trackStock)
+  const equipmentListRows=equipmentRows(items,library,allocation,trackStock,supplyTracking)
+  const venueUsage=id=>items.filter(item=>item.assetId===id&&item.supply==='venue').length
 
   const printLayout=(()=>{
     if(!space)return {scale:1,x:0,y:0}
     const points=[{x:0,y:0},{x:space.width,y:space.depth}]
-    for(const item of items.filter(item=>item.visible!==false&&folderForItem(layerFolders,item.id)?.visible!==false)){
+    for(const item of [...items.filter(item=>item.visible!==false&&folderForItem(layerFolders,item.id)?.visible!==false),...(space.fixedEquipment||[])]){
       const bounds=rotatedBounds([{x:item.xMeters-item.widthMeters/2,y:item.yMeters-item.depthMeters/2,width:item.widthMeters,height:item.depthMeters,rotation:item.rotation||0}])
       if(bounds)points.push({x:bounds.x,y:bounds.y},{x:bounds.right,y:bounds.bottom})
     }
@@ -271,6 +220,7 @@ function App() {
   },[panelResize])
 
   useEffect(() => {
+    if(workspace)return;
     let active = true
     const refresh = async () => {
       try {
@@ -308,11 +258,11 @@ function App() {
     const timer = window.setInterval(refresh, 2000)
     window.addEventListener('focus', refresh)
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [session])
+  }, [session,workspace,projectFile])
 
   const checkpoint = () => {setHistory(h=>[...h.slice(-19),{items:structuredClone(items),layerFolders:structuredClone(layerFolders)}]);setFuture([])}
 
-  const avoidsZones = item => !zoneCollisionEnabled || (isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones,space.partVisibility))
+  const avoidsZones = item => !zoneCollisionEnabled || (isItemInsideSpace(item,boundaryForSpace(space)) && itemAvoidsSolidZones(item,space.zones,space.partVisibility) && avoidsFixedEquipment(item,space.fixedEquipment))
   const avoidsEquipment = (item, ignoredIds = []) => !equipmentCollisionEnabled || item.collisionEnabled===false || items.every(other => other.id === item.id || ignoredIds.includes(other.id) || other.collisionEnabled===false || !itemsCollide(item,other))
   const canPlace = (item, ignoredIds = []) => avoidsZones(item) && avoidsEquipment(item,ignoredIds)
   const canPlaceSet = (candidates, ignoredIds = []) => {
@@ -357,19 +307,21 @@ function App() {
 
   const addItem = (tool, position) => {
     if(!space)return setStagePickerOpen(true)
-    checkpoint()
     const widthMeters = tool.dimensions?.widthMeters || .8
     const depthMeters = tool.dimensions?.depthMeters || .6
     const viewport = viewportRef.current
     const centre = position || (viewport ? viewportPointInStage(viewport.getBoundingClientRect().left + viewport.clientWidth / 2, viewport.getBoundingClientRect().top + viewport.clientHeight / 2) : { x: space.width / 2, y: space.depth / 2 })
-    const item = { ...tool, id: nextIdRef.current++, assetId:tool.id,
+    const item = { ...tool, id: nextIdRef.current++, assetId:tool.id,...(supplyTracking?{supply:venueEquipment.some(entry=>entry.assetId===tool.id)?'venue':'client'}:{}),
       widthMeters, depthMeters, showLabel: false, collisionEnabled: !belongsToStagingGroup(tool,groups),
       shapes: tool.shapes, collisionShapes: tool.collisionShapes || [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
       xMeters: Math.max(widthMeters / 2, Math.min(space.width - widthMeters / 2, centre.x)),
       yMeters: Math.max(depthMeters / 2, Math.min(space.depth - depthMeters / 2, centre.y)), rotation: 0,
       controls:Object.fromEntries((tool.rotationParts || []).map(part=>[part.id,{rotation:part.defaultRotation || 0}])),
       partVisibility:Object.fromEntries((tool.shapes || []).filter(shape=>shape.toggleable).map(shape=>[shape.id,true])) }
-    setItems((old) => insertAtDefaultLayer(old,item,groups))
+    const placement=availablePlacement(item,space,canPlace)
+    if(!placement){setNotice('No clear position is available. Move equipment or adjust collision settings before adding this item.');return;}
+    checkpoint()
+    setItems((old) => insertAtDefaultLayer(old,placement,groups))
     setSelected(item.id)
     setMultiSelected([])
   }
@@ -721,9 +673,9 @@ function App() {
   const refreshPlacedItems = async () => {
     try {
     if(SHARED_PROJECT){setNotice("This shared project uses its saved asset revisions");return}
-    const response=await fetch(LIBRARY_API,{cache:'no-store'})
-    if(!response.ok)throw new Error()
-    const latest=(await response.json()).filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
+    const response=workspace?.loadEquipment ? null : await fetch(workspace?`${API_BASE}/items?profile=${effectiveProfile}`:LIBRARY_API,{cache:'no-store'})
+    if(response&&!response.ok)throw new Error()
+    const latest=(workspace?.loadEquipment?await workspace.loadEquipment():await response.json()).filter(item=>isEquipmentItem(item)&&isPublishedItem(item))
     setLibrary(latest);setLibraryOnline(true)
     const assets=new Map(latest.map(asset=>[asset.id,asset]));let refreshed=0,missing=0
     checkpoint()
@@ -821,20 +773,30 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><AppMark/><span className="brand-title"><b>STAGEPLOT</b><small>{APP_VERSION}</small></span></div>
-        <input className="project-name" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
-        <div className="top-actions"><AccountButton/><AppNavigation/>{user&&!SHARED_PROJECT&&<ProjectShelf onDeleted={id=>{if(accountProject?.id===id)setAccountProject(null)}} profile={PROFILE} current={accountProject} onSave={saveCloudProject} onLoad={async saved=>{const loaded=await load({target:{files:[{text:async()=>JSON.stringify(saved.data)}]}});if(loaded)setAccountProject({id:saved.id,revision:saved.revision});return loaded}}/>}
+        <input className="project-name" value={project} readOnly={Boolean(workspace)} onChange={(e) => setProject(e.target.value)} aria-label="Project name" />
+        {workspace?<div className="top-actions workspace-actions">
+          <button className="btn ghost" onClick={()=>{if(!dirty||window.confirm('Leave this editor? Unsaved changes will be kept in this browser, but will not appear in the event until saved.'))workspace.onBack();}}>{workspace.guest?'Reopen saved plot':workspace.backLabel||'Back to event'}</button>
+          <span className="workspace-save-state" role="status">{workspaceSaving?'Saving...':workspaceError?'Save failed':dirty?'Unsaved changes':'Saved'}</span>
+          <button className="btn ghost" disabled={workspaceSaving} onClick={()=>persistWorkspace()}>Save now</button>
+          {workspace.mode==='band'&&<button className="btn primary" disabled={workspaceSaving} onClick={()=>persistWorkspace(true)}>Submit for review</button>}
+          <button className="btn ghost" onClick={()=>setHelpOpen(true)}>Help</button>
+          <button className="btn ghost" onClick={()=>setEquipmentListOpen(true)}>Equipment list</button>
+          <button className="btn ghost" onClick={exportPdf}>Export PDF</button>
+        </div>:<>        <div className="top-actions"><AccountButton/><AppNavigation/>{user&&!SHARED_PROJECT&&<ProjectShelf onDeleted={id=>{if(accountProject?.id===id)setAccountProject(null)}} profile={PROFILE} current={accountProject} onSave={saveCloudProject} onLoad={async saved=>{const loaded=await load({target:{files:[{text:async()=>JSON.stringify(saved.data)}]}});if(loaded)setAccountProject({id:saved.id,revision:saved.revision});return loaded}}/>}
           <button className="btn ghost" onClick={()=>setHelpOpen(true)}>Help</button>
           <button className="btn ghost" onClick={()=>setEquipmentListOpen(true)}>Equipment list</button>
           <ProjectFileMenu signedIn={!!user} cloudProject={accountProject} onCloudSave={saveCloudProject} onNew={newProject} onSave={save} onLoad={()=>fileRef.current?.click()} onExport={exportPdf} canExport={!!space} canCreate={!SHARED_PROJECT}/>
           <input ref={fileRef} type="file" accept=".stageplot,.stageplot.json,.json,application/json" onChange={load} hidden />
-        </div>
+        </div></>}
       </header>
 
       <main className={`workspace ${panelResize?'resizing':''}`} style={{gridTemplateColumns:`${leftPanelOpen?leftPanelWidth:0}px ${leftPanelOpen?5:0}px minmax(0,1fr) ${rightPanelOpen?5:0}px ${rightPanelOpen?rightPanelWidth:0}px`}}>
               <section className={`sidebar stage-layer-panel ${leftPanelOpen?'':'panel-collapsed'}`} aria-label="Placed item layers" aria-hidden={!leftPanelOpen}>
+                {workspace?.mode==='band'&&space?.fixedEquipment?.length>0&&<section className="house-equipment-list"><p className="eyebrow">HOUSE EQUIPMENT / FIXED</p>{space.fixedEquipment.map(item=><p key={item.id}>{item.label}</p>)}</section>}
+                {supplyTracking&&venueEquipment.length>0&&<section className="house-equipment-list venue-availability"><p className="eyebrow">AVAILABLE FROM VENUE</p>{venueEquipment.map(entry=><p key={entry.assetId} className={venueUsage(entry.assetId)>entry.quantity?'venue-shortfall':''}>{library.find(asset=>asset.id===entry.assetId)?.label||entry.assetId}: {venueUsage(entry.assetId)} / {entry.quantity}{venueUsage(entry.assetId)>entry.quantity?' - more required':''}</p>)}</section>}
                 <p className="eyebrow">LAYERS <small>{items.length}</small></p>
                 <p className="helper">Drag layers to reorder or drop them onto folders. Top row is in front.</p>
-                <div className="layer-filters"><input type="search" placeholder="Search layers…" aria-label="Search layers" value={layerSearch} onChange={event=>setLayerSearch(event.target.value)}/><select aria-label="Filter layers" value={layerFilter} onChange={event=>setLayerFilter(event.target.value)}><option value="all">All layers</option><option value="visible">Visible</option><option value="hidden">Hidden</option>{TRACK_STOCK && <option value="external">External</option>}<option value="collision">Collision off</option><option value="custom">Custom</option></select></div>
+                <div className="layer-filters"><input type="search" placeholder="Search layers…" aria-label="Search layers" value={layerSearch} onChange={event=>setLayerSearch(event.target.value)}/><select aria-label="Filter layers" value={layerFilter} onChange={event=>setLayerFilter(event.target.value)}><option value="all">All layers</option><option value="visible">Visible</option><option value="hidden">Hidden</option>{trackStock && <option value="external">External</option>}<option value="collision">Collision off</option><option value="custom">Custom</option></select></div>
                 <div className="stage-layer-list">{filteredLayerTree.map(row=>row.type==='item'?layerRow(row.item):<div className={`layer-folder ${row.items.length>0&&row.items.every(item=>item.id===selected||multiSelected.includes(item.id))?'selected':''}`} key={row.folder.id} draggable onDragStart={event=>{layerDragRef.current={type:'folder',id:row.folder.id};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-stageplot-folder',row.folder.id)}} onDragEnd={()=>{layerDragRef.current=null}} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();event.stopPropagation();const source=layerDragRef.current;if(source?.type==='item'||source?.type==='items')dropItemsOnFolder(source.ids||[source.id],row.folder.id);else if(source?.type==='folder'&&source.id!==row.folder.id&&row.items.length)dropFolderOnTarget(source.id,row.items.at(-1).id);layerDragRef.current=null}}>
                   <div className="layer-folder-header"><button className="folder-collapse" aria-label={row.folder.collapsed?'Expand folder':'Collapse folder'} onClick={()=>setLayerFolders(old=>old.map(folder=>folder.id===row.folder.id?{...folder,collapsed:!folder.collapsed}:folder))}>{row.folder.collapsed?'▸':'▾'}</button><span className="folder-icon">▰</span>{folderNameControl(row.folder)}<small>{row.items.length}</small><button className="layer-visibility" title={row.folder.visible===false?'Show folder':'Hide folder'} aria-label={row.folder.visible===false?`Show ${row.folder.name}`:`Hide ${row.folder.name}`} onClick={()=>toggleFolderVisibility(row.folder)}><Icon name={row.folder.visible===false?'eyeOff':'eye'} /></button><button className="folder-remove" title="Remove folder (keeps layers)" onClick={()=>{checkpoint();setLayerFolders(old=>old.filter(folder=>folder.id!==row.folder.id))}}>×</button></div>
                   {!row.folder.collapsed&&<div className="layer-folder-children">{row.items.map(item=>layerRow(item,true))}</div>}
@@ -858,13 +820,14 @@ function App() {
               <button className="panel-toggle" title={rightPanelOpen?'Hide Inspector':'Show Inspector'} onClick={()=>setRightPanelOpen(value=>!value)}>☷</button>
             </div>
           </div>
-          <header className="print-header">{project.trim() || 'Untitled stageplot'}</header>
+          <header className="print-header">{workspace?`${workspace.eventName} / ${project} / ${workspace.stageName}`:project.trim()||'Untitled stageplot'}</header>
 
           <div className={`stage-viewport ${customToolMode ? 'custom-tool-active' : ''}`} ref={viewportRef} style={{'--print-scale':printLayout.scale,'--print-x':`${printLayout.x}px`,'--print-y':`${printLayout.y}px`}}  onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={dropLibraryItem} onPointerDownCapture={event=>{if(event.button===1)startPan(event)}} onPointerDown={startPan} onPointerMove={moveViewport} onPointerUp={finishViewportDrag} onPointerCancel={() => { dragRef.current = null; rotateRef.current = null; panRef.current = null; marqueeRef.current=null;customDrawRef.current=null;setCustomStagingPreview(null);setMarquee(null);setRotationReadout(null) }}>
             {space ? <div className="stage" ref={boardRef} style={{ width: `${space.width * 100}px`, height: `${space.depth * 100}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
               <div className="stage-boundary-surface" style={{ clipPath: stageClipPath(space) }} />
               {(space.boundary?.nodes || space.zones?.length > 0) && <svg className="stage-zones" viewBox={`0 0 ${space.width} ${space.depth}`}><ZonePatterns zones={space.zones||[]} prefix="stage-zone-pattern"/>{(space.zones || []).filter((zone) => !zone.solid && !zone.label && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-zone-pattern')} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{space.boundary?.nodes && <path className="main-stage-outline" d={zonePath(space.boundary.nodes)} />}{(space.zones || []).filter((zone) => zone.solid && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path className="solid-zone" key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-zone-pattern') || "#faf9f4"} fillOpacity={zone.fillOpacity ?? 1} stroke={zone.stroke || "#71851f"} strokeOpacity={zone.strokeOpacity ?? 1} strokeWidth={zone.strokeWidth ?? 2} />)}</svg>}
               {((space.zones || []).some((zone) => zone.label) || space.textItems?.length > 0) && <svg className="stage-label-assets" viewBox={`0 0 ${space.width} ${space.depth}`}><ZonePatterns zones={(space.zones||[]).filter(zone=>zone.label)} prefix="stage-label-pattern"/>{(space.zones || []).filter((zone) => zone.label && (!zone.toggleable || space.partVisibility?.[zone.id]!==false)).map((zone) => <path key={zone.id} d={zonePath(zone.nodes)} fill={zoneFill(zone,'stage-label-pattern')} fillOpacity={zone.fillOpacity} stroke={zone.stroke} strokeOpacity={zone.strokeOpacity} strokeWidth={zone.strokeWidth} vectorEffect="non-scaling-stroke" />)}{(space.textItems || []).filter(item=>!item.toggleable || space.partVisibility?.[item.id]!==false).map((item) => <text key={item.id} x={item.x} y={item.y} fill={item.color} fillOpacity={item.opacity} stroke="none" fontSize={item.fontSize} textAnchor="middle" dominantBaseline="middle">{item.text}</text>)}</svg>}
+              <svg className="stage-label-assets fixed-stage-equipment" viewBox={`0 0 ${space.width} ${space.depth}`} aria-label="Fixed stage equipment"><FixedEquipmentArtwork items={space.fixedEquipment}/></svg>
               <div className="stage-title"><span>UPSTAGE</span><b>{space.name}</b><span>{space.width} × {space.depth} m</span></div>
               {items.filter(item=>item.visible!==false && folderForItem(layerFolders,item.id)?.visible!==false).map((item) => (
                 <button
@@ -909,7 +872,7 @@ function App() {
                   <span>{index===0?<svg viewBox="0 0 100 70" aria-hidden="true"><rect x="5" y="8" width="90" height="54" fill="#d6d2c5" stroke="#25261f" strokeWidth="4"/><text x="50" y="36" textAnchor="middle" dominantBaseline="middle" fontSize="16" stroke="none" fill="#25261f">200mm</text></svg>:<svg viewBox="0 0 100 70" aria-hidden="true"><text x="50" y="38" textAnchor="middle" fontSize="34" fontWeight="700" stroke="none" fill="#25261f">T</text></svg>}</span><span className="equipment-tile-name">{label}</span>
                 </button>)}
               </div> : <div className="custom-tools">{visibleEquipment.map(tool => <button className={`custom-tool ${allocation.remaining.get(tool.id)===0?"stock-exhausted":""}`} key={tool.id} draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-stageplot-item', tool.id) }} onClick={() => addItem({ ...tool, type: 'library:' + tool.id, tone: 'custom' })}>
-                <span><VectorArtwork shapes={tool.shapes} width={tool.dimensions.widthMeters} depth={tool.dimensions.depthMeters} /></span><span className="equipment-tile-name">{tool.label}</span>{stockQuantity(tool)!==null&&<small className="stock-label">{allocation.remaining.get(tool.id)} in stock{allocation.remaining.get(tool.id)===0?" - External supply":""}</small>}
+                <span><VectorArtwork shapes={tool.shapes} width={tool.dimensions.widthMeters} depth={tool.dimensions.depthMeters} /></span><span className="equipment-tile-name">{tool.label}</span>{supplyTracking&&<small className="supply-badge">{venueEquipment.some(entry=>entry.assetId===tool.id)?'Venue equipment':'Client supplied'}</small>}{!supplyTracking&&stockQuantity(tool)!==null&&<small className="stock-label">{allocation.remaining.get(tool.id)} in stock{allocation.remaining.get(tool.id)===0?" - External supply":""}</small>}
               </button>)}</div>}
               {activeEquipmentTab !== 'custom' && !visibleEquipment.length && <p className="helper" role="status">{equipmentSearch.trim() ? 'No equipment matches your search in this tab.' : activeEquipmentTab !== 'all' ? 'No equipment in this group.' : libraryOnline ? 'No equipment published yet.' : 'Equipment library unavailable.'}</p>}
             </div>
@@ -923,6 +886,8 @@ function App() {
         <div className={`panel-resizer right ${rightPanelOpen?'':'panel-collapsed'}`} role="separator" aria-label="Resize Inspector panel" aria-hidden={!rightPanelOpen} onPointerDown={event=>{if(!rightPanelOpen)return;event.preventDefault();setPanelResize({side:'right',startX:event.clientX,width:rightPanelWidth})}}/>
         <aside className={`inspector ${rightPanelOpen?'':'panel-collapsed'}`} aria-hidden={!rightPanelOpen}>
           <p className="eyebrow">INSPECTOR</p>
+          {workspace&&<section className="workspace-context"><b>{workspace.eventName}</b><p>{workspace.slot&&`${workspace.slot} / `}{workspace.stageName} / {workspace.mode==='setup'?'Stage equipment setup':workspace.statusLabel}</p>{workspace.reviewNote&&<p className="review-note">{workspace.reviewNote}</p>}<label className="field">{workspace.mode==='setup'?'STAGE NOTES':(workspace.notesLabel||'Band notes').toUpperCase()}<textarea value={workspaceNotes} maxLength="10000" onChange={event=>setWorkspaceNotes(event.target.value)}/></label><p className="inspector-hint">{workspace.mode==='setup'?'All equipment placed here becomes fixed equipment on the stage.':`House equipment is fixed. Add the equipment your ${workspace.participant||'band'} needs, then submit for review.`}</p></section>}
+          {supplyTracking&&selectedItem?.assetId&&<label className="field">EQUIPMENT SOURCE<select aria-label="Equipment source" value={selectedItem.supply||'client'} onChange={event=>{checkpoint();updateSelected({supply:event.target.value});}}><option value="client">Client supplied</option>{venueEquipment.some(entry=>entry.assetId===selectedItem.assetId)&&<option value="venue">Provided by venue</option>}</select></label>}
           <div className="inspector-fields">{selectedItem ? selectedItem.customType === 'staging' ? <>
             <label className="field">NAME<input value={selectedItem.label} onChange={event=>updateCustomStaging({label:event.target.value})}/></label>
             <InspectorSection id="position" title="Size and height" openSections={inspectorSections} setOpenSections={setInspectorSections}>
@@ -965,14 +930,14 @@ function App() {
             <InspectorSection id="rotation" title="Rotation" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="rotation-setting"><label className="field">ITEM ROTATION<input type="number" step="1" value={selectedItem.rotation || 0} onChange={(e) => updateSelected({ rotation: +e.target.value })} /></label><button title="Reset item rotation" onClick={()=>{checkpoint();updateSelected({rotation:0})}}>Reset</button></div>
             {(selectedItem.rotationParts || []).map(part=><div className="rotation-setting" key={part.id}><label className="field">{part.name.toUpperCase()} ROTATION<input type="number" step="1" min={part.minRotation??-180} max={part.maxRotation??180} value={selectedItem.controls?.[part.id]?.rotation ?? part.defaultRotation ?? 0} onChange={event=>updateSelected({controls:{...selectedItem.controls,[part.id]:{rotation:Math.max(part.minRotation??-180,Math.min(part.maxRotation??180,+event.target.value))}}})}/></label><button title={`Reset ${part.name} rotation`} onClick={()=>{checkpoint();updateSelected({controls:{...selectedItem.controls,[part.id]:{rotation:part.defaultRotation||0}}})}}>Reset</button></div>)}</InspectorSection>
             {toggleableParts(selectedItem).length>0 && <InspectorSection id="parts" title="Toggleable parts" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="toggleable-parts"><div className="toggleable-part-list">{toggleableParts(selectedItem).map(part=><TriStateToggle key={part.name} value={partState([selectedItem],part.name)} label={part.name} onChange={value=>{checkpoint();updateSelected({partVisibility:setPart(selectedItem,part.name,value).partVisibility})}} />)}</div></div></InspectorSection>}
-            <InspectorSection id="behaviour" title={TRACK_STOCK ? "Labels, sourcing and collision" : "Labels and collision"} openSections={inspectorSections} setOpenSections={setInspectorSections}>
-            {TRACK_STOCK && selectedItem.assetId && (stockQuantity(library.find(asset=>asset.id===selectedItem.assetId)||selectedItem)!==null || selectedItem.useExternal) && <section><label className="label-toggle"><input type="checkbox" checked={selectedItem.useExternal===true} onChange={event=>{checkpoint();updateSelected({useExternal:event.target.checked})}} /> Use external</label><p className="inspector-hint">{allocation.external.has(selectedItem.id)?'Externally sourced':'Allocated from stock'}. Use external reserves no stock for this placement.</p></section>}
+            <InspectorSection id="behaviour" title={trackStock ? "Labels, sourcing and collision" : "Labels and collision"} openSections={inspectorSections} setOpenSections={setInspectorSections}>
+            {trackStock && selectedItem.assetId && (stockQuantity(library.find(asset=>asset.id===selectedItem.assetId)||selectedItem)!==null || selectedItem.useExternal) && <section><label className="label-toggle"><input type="checkbox" checked={selectedItem.useExternal===true} onChange={event=>{checkpoint();updateSelected({useExternal:event.target.checked})}} /> Use external</label><p className="inspector-hint">{allocation.external.has(selectedItem.id)?'Externally sourced':'Allocated from stock'}. Use external reserves no stock for this placement.</p></section>}
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.showLabel === true} onChange={event => { checkpoint(); updateSelected({ showLabel: event.target.checked }) }} /> Show label</label>
             <label className="label-toggle"><input type="checkbox" checked={selectedItem.collisionEnabled !== false} onChange={event => { checkpoint(); updateSelected({ collisionEnabled: event.target.checked }) }} /> Equipment collision</label>
             <p className="inspector-hint">Turn this off to allow other equipment to overlap this item. Stage and solid-zone collision still applies.</p>
             </InspectorSection>
             <button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete item</button>
-          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Changes below apply to the entire selection.</p><InspectorSection id="alignment" title="Align and distribute" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="alignment-actions"><button onClick={()=>alignSelection('left')}>Left</button><button onClick={()=>alignSelection('hcentre')}>Centre X</button><button onClick={()=>alignSelection('right')}>Right</button><button onClick={()=>alignSelection('top')}>Top</button><button onClick={()=>alignSelection('vcentre')}>Centre Y</button><button onClick={()=>alignSelection('bottom')}>Bottom</button><button disabled={multiSelected.length<3} onClick={()=>distributeSelection('horizontal')}>Distribute X</button><button disabled={multiSelected.length<3} onClick={()=>distributeSelection('vertical')}>Distribute Y</button></div></InspectorSection><InspectorSection id="common" title="Common settings" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="multi-item-settings">{TRACK_STOCK && multiSelectedItems.every(item=>item.assetId&&stockQuantity(library.find(asset=>asset.id===item.assetId)||item)!==null)&&<TriStateToggle value={triState(item=>item.useExternal===true)} label="Use external" onChange={value=>updateMultiple(item=>({...item,useExternal:value}))}/>}<TriStateToggle value={triState(item=>item.showLabel===true)} label="Show label" onChange={value=>updateMultiple(item=>({...item,showLabel:value}))}/><TriStateToggle value={triState(item=>item.collisionEnabled!==false)} label="Equipment collision" description="Stage and solid-zone collision remain separate." onChange={value=>updateMultiple(item=>({...item,collisionEnabled:value}))}/><TriStateToggle value={triState(item=>item.visible!==false)} label="Visible on canvas" onChange={value=>updateMultiple(item=>({...item,visible:value}))}/></div></InspectorSection>{sharedToggleableParts.length>0&&<InspectorSection id="parts" title="Toggleable parts" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="toggleable-parts"><p>Mixed values show an X. Clicking applies On to every selected item.</p><div className="toggleable-part-list">{sharedToggleableParts.map(shape=><TriStateToggle key={shape.name} value={partState(multiSelectedItems,shape.name)} label={shape.name} onChange={value=>updateMultiple(item=>setPart(item,shape.name,value))}/>)}</div></div></InspectorSection>}<button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
+          </> : multiSelected.length ? <><p className="inspector-hint">{multiSelected.length} items selected. Changes below apply to the entire selection.</p><InspectorSection id="alignment" title="Align and distribute" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="alignment-actions"><button onClick={()=>alignSelection('left')}>Left</button><button onClick={()=>alignSelection('hcentre')}>Centre X</button><button onClick={()=>alignSelection('right')}>Right</button><button onClick={()=>alignSelection('top')}>Top</button><button onClick={()=>alignSelection('vcentre')}>Centre Y</button><button onClick={()=>alignSelection('bottom')}>Bottom</button><button disabled={multiSelected.length<3} onClick={()=>distributeSelection('horizontal')}>Distribute X</button><button disabled={multiSelected.length<3} onClick={()=>distributeSelection('vertical')}>Distribute Y</button></div></InspectorSection><InspectorSection id="common" title="Common settings" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="multi-item-settings">{trackStock && multiSelectedItems.every(item=>item.assetId&&stockQuantity(library.find(asset=>asset.id===item.assetId)||item)!==null)&&<TriStateToggle value={triState(item=>item.useExternal===true)} label="Use external" onChange={value=>updateMultiple(item=>({...item,useExternal:value}))}/>}<TriStateToggle value={triState(item=>item.showLabel===true)} label="Show label" onChange={value=>updateMultiple(item=>({...item,showLabel:value}))}/><TriStateToggle value={triState(item=>item.collisionEnabled!==false)} label="Equipment collision" description="Stage and solid-zone collision remain separate." onChange={value=>updateMultiple(item=>({...item,collisionEnabled:value}))}/><TriStateToggle value={triState(item=>item.visible!==false)} label="Visible on canvas" onChange={value=>updateMultiple(item=>({...item,visible:value}))}/></div></InspectorSection>{sharedToggleableParts.length>0&&<InspectorSection id="parts" title="Toggleable parts" openSections={inspectorSections} setOpenSections={setInspectorSections}><div className="toggleable-parts"><p>Mixed values show an X. Clicking applies On to every selected item.</p><div className="toggleable-part-list">{sharedToggleableParts.map(shape=><TriStateToggle key={shape.name} value={partState(multiSelectedItems,shape.name)} label={shape.name} onChange={value=>updateMultiple(item=>setPart(item,shape.name,value))}/>)}</div></div></InspectorSection>}<button className="inspector-delete" onClick={removeSelected}><Icon name="trash" /> Delete selected items</button></> : <>
             <p className="inspector-hint">{space ? space.name : 'No stage selected.'}{lockedStageId!==null && ' · Stage locked by this link'}</p>
             {toggleableStageParts.length>0&&<section className="toggleable-parts"><h3>Toggleable stage parts</h3><p>Choose which optional parts appear in this project. Hiding a solid zone also disables its collision.</p><div className="toggleable-part-list">{toggleableStageParts.map(part=><TriStateToggle key={part.name} value={partState([stageToggleItem],part.name)} label={part.name} onChange={value=>setSpace(current=>({...current,partVisibility:setPart({...stageToggleItem,partVisibility:current.partVisibility},part.name,value).partVisibility}))}/>)}</div></section>}
             <h3>Movement collision</h3>
@@ -981,12 +946,12 @@ function App() {
             <label className="label-toggle"><input type="checkbox" checked={snappingEnabled} onChange={event=>setSnappingEnabled(event.target.checked)} /> Corner snapping</label>
             <p className="inspector-hint">Turn constraints off temporarily to arrange equipment in narrow areas. Saving still checks the complete layout.</p>
             {lockedStageId===null && !SHARED_PROJECT && <button className="fit-stage" onClick={()=>setStagePickerOpen(true)}>Choose stage</button>}
-            {space?.stageId && !SHARED_PROJECT && <button className="fit-stage" onClick={refreshStage}>Update stage from library</button>}
+            {!workspace && space?.stageId && !SHARED_PROJECT && <button className="fit-stage" onClick={refreshStage}>Update stage from library</button>}
             {space && <><div className="inspector-grid">
               <label className="field">WIDTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null || !!SHARED_PROJECT} value={space.width} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,width:+e.target.value})}}} /></label>
               <label className="field">DEPTH (m)<input type="number" min="1" step="0.01" disabled={!!space.stageId || lockedStageId!==null} value={space.depth} onChange={(e) => {if(+e.target.value>0){setPreset('custom');setSpace({...space,depth:+e.target.value})}}} /></label>
             </div><button className="fit-stage" onClick={fitStage}>Fit stage to viewport</button>
-            {space.stageId && <button className="fit-stage" onClick={copyStageLink}>Copy stage-locked link</button>}</>}
+            {!workspace && space.stageId && <button className="fit-stage" onClick={copyStageLink}>Copy stage-locked link</button>}</>}
             {space && <button className="inspector-delete clear-stage" disabled={!items.length} onClick={clearStage}><Icon name="trash" /> Clear stage</button>}
           </>}</div>
         </aside>
@@ -1002,13 +967,15 @@ function App() {
           {lockedStageId===null && !SHARED_PROJECT && <form className="stage-picker-custom" onSubmit={event=>{event.preventDefault();if(customWidth>0 && customDepth>0){const next={name:'Custom Space',width:customWidth,depth:customDepth};setSpace(next);setPreset('custom');setStagePickerOpen(false);fitToSpace(next)}}}>
             <h3>Custom rectangular space</h3><div className="inspector-grid"><label className="field">WIDTH (m)<input type="number" required min=".1" step=".01" value={customWidth} onChange={event=>setCustomWidth(+event.target.value)} /></label><label className="field">DEPTH (m)<input type="number" required min=".1" step=".01" value={customDepth} onChange={event=>setCustomDepth(+event.target.value)} /></label></div><button className="btn ghost" type="submit">Use rectangular space</button>
           </form>}
-          <div className="stage-picker-actions"><button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>{user ? studioUrl&&<a className="btn ghost" href={studioUrl}>Stageplot Studio</a> : <button className="btn ghost" onClick={showAccount}>Sign in</button>}</div>
+          <div className="stage-picker-actions"><button className="btn ghost" onClick={()=>fileRef.current?.click()}>Open a saved project</button>{user ? studioUrl&&<a className="btn ghost" href={studioUrl}>Shape Studio</a> : <button className="btn ghost" onClick={showAccount}>Sign in</button>}</div>
         </section>
       </div>}
-      {equipmentListOpen&&<EquipmentList trackStock={TRACK_STOCK} project={project} rows={equipmentListRows} onClose={()=>setEquipmentListOpen(false)}/>}
+      {equipmentListOpen&&<EquipmentList supplyTracking={supplyTracking} trackStock={trackStock||supplyTracking} project={workspace?`${workspace.eventName} / ${project}`:project} rows={equipmentListRows} onClose={()=>setEquipmentListOpen(false)}/>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
+      {workspaceRecovery?.workspaceDirty&&<div className="workspace-recovery" role="status"><b>Unsaved local work is available from your previous session.</b><span>The current stage and saved plot have loaded. Restore your local equipment and notes to continue that work.</span><button onClick={()=>{if(dirty&&!window.confirm('Replace your current local edits with the recovered equipment and notes?'))return;checkpoint();setItems(workspaceRecovery.items||[]);setLayerFolders(workspaceRecovery.layerFolders||[]);setWorkspaceNotes(workspaceRecovery.workspaceNotes||'');setWorkspaceRecovery(null);}}>Restore local work</button><button onClick={()=>setWorkspaceRecovery(null)}>Dismiss</button></div>}
+      {workspaceError&&<div className="workspace-save-error" role="alert"><b>{workspaceError}</b><button onClick={save}>Download local copy</button><button onClick={()=>{if(window.confirm('Reload the saved plot? Download your local copy first to keep unsaved work.'))window.location.reload();}}>Reload latest</button></div>}
       {notice && <div className="toast">{notice}</div>}
-      {helpOpen&&<StageplotHelp trackStock={TRACK_STOCK} onClose={()=>setHelpOpen(false)}/>}
+      {helpOpen&&(workspace?<EventHelp onClose={()=>setHelpOpen(false)}/>:<StageplotHelp trackStock={trackStock} onClose={()=>setHelpOpen(false)}/>)}
     </div>
   )
 }

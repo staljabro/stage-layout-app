@@ -17,7 +17,9 @@ COPY --from=build /app/tools/svg-shape-studio/dist /usr/share/nginx/html
 
 FROM node:24-alpine AS library-api
 WORKDIR /app
-COPY tools/library-server.mjs tools/library-membership.mjs tools/account-store.mjs tools/github-auth.mjs tools/auth-cookies.mjs tools/backup-data.mjs ./tools/
+COPY package.json ./
+COPY tools/library-server.mjs tools/event-routes.mjs tools/library-membership.mjs tools/account-store.mjs tools/github-auth.mjs tools/auth-cookies.mjs tools/backup-data.mjs ./tools/
+COPY src/geometry.js src/stage-geometry.js src/stage-equipment.js src/project-file.js src/project-snapshots.js src/zone-groups.js src/custom-items.js ./src/
 ENV STAGEPLOT_LIBRARY_ROOT=/data \
     STAGEPLOT_LIBRARY_PORT=8787 \
     STAGEPLOT_LIBRARY_HOST=0.0.0.0 \

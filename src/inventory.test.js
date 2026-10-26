@@ -18,6 +18,16 @@ test('equipment list distinguishes custom deck sizes and excludes annotations',(
 const asset={id:'chair',label:'Chair',stockQuantity:2,dimensions:{widthMeters:1,depthMeters:1},shapes:[],collisionShapes:[]}
 const item=id=>({id,assetId:'chair',label:'Renamed placement',xMeters:id,yMeters:1})
 
+test('venue requirements split movable venue stock from client-supplied items',()=>{
+  const placements=[{...item(1),supply:'venue'},{...item(2),supply:'venue'},{...item(3),supply:'client'},{id:4,customType:'text',label:'Annotation'}]
+  const rows=equipmentRows(placements,[asset],allocateStock(placements,[asset],false),false,true)
+  assert.deepEqual(rows.map(row=>[row.source,row.quantity]),[['Client supplied',1],['Venue',2]])
+  const csv=equipmentCsv(rows,true)
+  assert.ok(csv.includes('"Source"'))
+  assert.ok(csv.includes('"Chair","Venue","2"'))
+  assert.ok(csv.includes('"Chair","Client supplied","1"'))
+})
+
 test('External events ignore quantities and sourcing flags and export requirements only',()=>{
   const items=[item(1),{...item(2),useExternal:true},item(3)]
   const allocation=allocateStock(items,[asset],false)

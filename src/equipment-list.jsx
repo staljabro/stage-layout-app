@@ -3,7 +3,7 @@ import { equipmentCsv } from './inventory.js'
 
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))
 
-export function EquipmentList({project, rows, onClose, trackStock = true}) {
+export function EquipmentList({project, rows, onClose, trackStock = true, supplyTracking = false}) {
   const dialog = useRef(null)
   useEffect(()=>{dialog.current.showModal()},[])
   const exportCsv = () => {
@@ -23,7 +23,7 @@ export function EquipmentList({project, rows, onClose, trackStock = true}) {
     report.print()
   }
   return <dialog className="equipment-list-dialog" ref={dialog} onCancel={onClose} onClick={event=>{if(event.target===event.currentTarget)onClose()}}>
-    <div className="equipment-list-content"><header><h2>Equipment list</h2><button onClick={onClose} aria-label="Close equipment list">×</button></header><p>{project}</p><p>{trackStock ? "Includes hidden equipment. External quantities include stock overflow and placements marked Use external. Stock without a quantity is untracked." : "Includes hidden equipment. Quantities show the equipment required for this event."}</p>
+    <div className="equipment-list-content"><header><h2>Equipment list</h2><button onClick={onClose} aria-label="Close equipment list">×</button></header><p>{project}</p><p>{supplyTracking ? "Venue items are requested from the venue; client-supplied items are brought by the visiting company or group. Fixed house equipment is provided separately." : trackStock ? "Includes hidden equipment. External quantities include stock overflow and placements marked Use external. Stock without a quantity is untracked." : "Includes hidden equipment. Quantities show the equipment required for this event."}</p>
       <table><thead><tr><th>Equipment</th>{trackStock&&<th>Source</th>}<th>Quantity</th></tr></thead><tbody>{rows.map(row=><tr key={row.key}><td>{row.name}</td>{trackStock&&<td>{row.source}</td>}<td>{row.quantity}</td></tr>)}</tbody></table>
       {!rows.length&&<p>No equipment added.</p>}<p>Total: {rows.reduce((sum,row)=>sum+row.quantity,0)} items</p>
       <footer><button className="btn ghost" disabled={!rows.length} onClick={exportCsv}>Export CSV</button><button className="btn primary" disabled={!rows.length} onClick={exportPdf}>Export PDF</button></footer>

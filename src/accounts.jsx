@@ -30,7 +30,7 @@ export function AppNavigation({studio=false}) {
     const empire=new URL(external);empire.searchParams.set('profile','empire')
     return <><button className="btn ghost app-navigation" onClick={()=>setChooseProfile(true)}>Stageplot</button>{chooseProfile&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Choose Stageplot profile"><header><h2>Choose Stageplot</h2><button onClick={()=>setChooseProfile(false)}>Close</button></header><nav><a className="profile-choice" href={external.href}>External Stageplot</a><a className="profile-choice" href={empire.href}>Empire Stageplot</a></nav></section></AccountModal>}</>
   }
-  return <a className="btn ghost app-navigation" href={href}>{studio?'Stageplot':'Stageplot Studio'}</a>
+  return <a className="btn ghost app-navigation" href={href}>{studio?'Stageplot':'Shape Studio'}</a>
 }
 function AccountDialog({account,onClose,onChanged}) {
   const {user,githubConfigured,ownerConfigured}=account

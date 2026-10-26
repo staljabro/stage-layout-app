@@ -1,6 +1,6 @@
 export function assetSnapshot(asset, id=asset.id) {
   const copy={...asset,id}
-  for(const key of ['editor','shareToken','shareEquipmentIds','ownerId','deleted','proposedReplacementId','assetSnapshot','xMeters','yMeters','widthMeters','depthMeters','type','tone','assetId','controls','partVisibility','useExternal','collisionEnabled','visible','showLabel'])delete copy[key]
+  for(const key of ['editor','shareToken','shareEquipmentIds','ownerId','deleted','proposedReplacementId','assetSnapshot','xMeters','yMeters','widthMeters','depthMeters','type','tone','assetId','controls','partVisibility','useExternal','supply','collisionEnabled','visible','showLabel'])delete copy[key]
   return copy
 }
 export function pinProject(data,space,items) {

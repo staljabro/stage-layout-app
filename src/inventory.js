@@ -18,14 +18,14 @@ export function allocateStock(items, library, trackStock = true) {
   return { external, remaining: new Map(library.map(asset => [asset.id, stockQuantity(asset) === null ? null : Math.max(0, stockQuantity(asset)-(used.get(asset.id)||0))])) }
 }
 
-export function equipmentRows(items, library, allocation = allocateStock(items, library), trackStock = true) {
+export function equipmentRows(items, library, allocation = allocateStock(items, library), trackStock = true, supplyTracking = false) {
   const assets = new Map(library.map(asset => [asset.id, asset]))
   const rows = new Map()
   for (const item of items) {
     const id = assetReference(item)
     if (!id && item.customType !== 'staging') continue
     const name = id ? assets.get(id)?.label || item.label || 'Equipment' : `${item.label || 'Custom staging'} (${item.widthMeters} × ${item.depthMeters} m, ${item.heightMm || 0} mm high)`
-    const source = !trackStock ? '' : allocation.external.has(item.id) ? 'External' : id ? 'Stock' : 'Custom staging'
+    const source = supplyTracking ? item.supply==='venue'?'Venue':'Client supplied' : !trackStock ? '' : allocation.external.has(item.id) ? 'External' : id ? 'Stock' : 'Custom staging'
     const key = JSON.stringify([id || name, source])
     if (!rows.has(key)) rows.set(key, {key, name, source, quantity:0})
     rows.get(key).quantity++

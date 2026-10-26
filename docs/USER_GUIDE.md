@@ -1,291 +1,173 @@
-# Stageplot and Shape Studio user guide
+# Stageplot user guide
 
-[Documentation home](README.md) · [Project README](../README.md) · [Account and deployment guide](../ACCOUNT_GUIDE.md)
-
-Stageplot builds show layouts from real-scale equipment and stages. Shape Studio creates that equipment and those stages. They share one account service and library, so a published design becomes available to planners without maintaining a separate application.
-
-## Contents
-
-1. [Accounts and access](#accounts-and-access)
-2. [Stageplot](#stageplot)
-3. [Saving, loading and sharing](#saving-loading-and-sharing)
-4. [Shape Studio](#shape-studio)
-5. [Collaboration and submissions](#collaboration-and-submissions)
-6. [Administration and troubleshooting](#administration-and-troubleshooting)
+Stageplot is the workspace for reusable venue spaces, theatre productions, festivals and group layouts. Shape Studio is the equipment artwork editor.
 
 ## Accounts and access
 
-The public External planner can be used without signing in. Sign in with GitHub to save cloud projects or request collaborator access. Stageplot does not manage your GitHub password or account recovery.
+Sign in through GitHub. Once your account is approved, any account role can create and manage its own events. Contributor, Admin and Owner permissions are only needed for equipment authoring and library publishing.
 
-1. Choose **Sign in** in Stageplot's toolbar or opening stage window.
-2. Continue with GitHub using an account with a verified email address.
-3. New users wait for the Owner to approve their request and assign a role.
-4. Sign in again after approval. Until then, the anonymous planner remains available.
+Events and their band plots belong to their organiser. Another account cannot browse them. Band members can edit their assigned plot without an account using its unique edit link. Anyone holding that link can edit that one plot, so send it privately. Links are not sent automatically.
 
-| Role | Stageplot | Studio and shared library | Accounts |
-| --- | --- | --- | --- |
-| Editor | Plan and manage own cloud projects | No Studio access | Own account |
-| Contributor | Plan with shared assets and own saved copies | Create personal designs and submit proposals | Own account |
-| Admin | Plan and manage own projects | Edit shared items directly and review submissions | Own account |
-| Owner | Plan and manage own projects | Edit shared items directly and review submissions | Approve users, assign non-Owner roles, disable users, assign Empire access |
-
-Projects and personal working copies are private to their creator. Reviewers receive a submitted snapshot, not access to all of the contributor's drafts. The configured Owner cannot be disabled or assigned another role in the interface. Owner is not an assignable role.
-
-### External and Empire
-
-External is the default planner. Empire access is a separate user tag, independent of role. Even an Admin needs the tag to view Empire-only assets.
-
-- Untagged users see External items and items assigned to both profiles. They cannot access Empire-only assets or the Empire planner.
-- Tagged users can open `?profile=empire` and use its stock tracking. Empire-only sharing also requires the recipient to have Empire access.
-- Untagged Studio users do not see Empire/External checkboxes or Empire quantities. Their new equipment and stages automatically use External.
-- Tagged users see profile controls. Equipment may belong to either or both profiles; quantities apply only to Empire.
-
-Contributors, Admins and the Owner have a **Stageplot Studio** button in Stageplot and a **Stageplot** button in Studio. Tagged users clicking Studio's Stageplot button choose **External Stageplot** or **Empire Stageplot**. Untagged users go directly to External. Both profiles receive the same app improvements.
+External is the standard equipment library. Owners with Empire access can choose Empire when creating an event. Invited band members use the palette assigned to that event through their link.
 
 ## Stageplot
 
-### First show walkthrough
+### Reusable venue spaces
 
-1. Open Stageplot and choose a stage from **Choose your stage**, or supply the width and depth of a custom rectangular space.
-2. Give the project a recognisable show name in the toolbar.
-3. Click equipment in the lower library to add it, or drag it to a location on the canvas.
-4. Move and rotate equipment into place. Use Inspector for precise values and Layers to organise the drawing.
-5. Check collisions, boundaries and the equipment list.
-6. Open **Save / Load**, save a cloud project or download a project file, then export PDF if required.
+Use the **Spaces** tab for the three to five spaces your venue uses repeatedly. Create the main auditorium, studio theatre, forecourt or other space independently of any event. Add a venue name to identify and search related spaces.
 
-A stage-locked link offers only its designated stage. It does not allow switching to another stage or a custom rectangle. A shared project opens a saved show for client use rather than granting editing access to the owner's cloud project.
+Each space has three equipment categories:
 
-### Canvas navigation and selection
-
-| Action | Control |
+| Category | How it works |
 | --- | --- |
-| Zoom toward pointer | Mouse wheel |
-| Pan | Middle-button drag |
-| Select one item | Click it or its Layers row |
-| Select enclosed items | Left-drag an empty area |
-| Add/remove from selection | Shift-click canvas items or Layers rows |
-| Move equipment | Drag selected equipment |
-| Duplicate and move | Hold Alt when starting a drag |
-| Rotate | Drag the lower rotation handle |
-| Snap rotation to 15 degrees | Hold Shift while rotating |
-| Keep articulated parts facing their current direction | Ctrl-drag the main rotation handle |
-| Nudge | Arrow keys: 1 cm; Shift-arrow: 10 cm |
-| Copy/paste selection | Ctrl/Cmd+C and Ctrl/Cmd+V |
-| Undo | Ctrl/Cmd+Z |
-| Redo | Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y |
-| Delete selection | Delete or Backspace |
-| Cancel custom staging | Escape |
+| Fixed equipment | Installed in the space and locked in client/group layouts. |
+| Available venue equipment | Movable equipment the venue can provide, with quantities per layout. |
+| Client supplied | Equipment the visiting client or group brings. |
 
-Typing in a text field uses normal text editing controls. Different coloured arms operate independent rotation parts such as stand tops. Hovering a handle identifies its part.
+Use **Outline & zones**, **Fixed equipment**, and **Available equipment** to prepare the space. Enter available chairs, music stands, percussion and other stock through the available-equipment editor. In a client layout, selecting a listed asset defaults to venue supply; its inspector can change the source to client supplied. Equipment outside the venue list is client supplied.
 
-### Layers and Inspector
+The left panel shows requested versus available venue quantities and highlights excess demand. Equipment lists and CSV/PDF reports separate venue requests from client-supplied items. Quantities apply per layout, rather than reserving or summing stock across successive groups or clients.
 
-The top Layers row draws in front. Drag rows to reorder them. **New folder** creates a folder; double-click its name to rename it, then drag items onto it. Clicking a folder selects its contents, and Shift-click adds or removes them from the selection. Folders can collapse and move as a unit.
+### Theatre productions
 
-Eye controls hide equipment or folders from the drawing and PDF. Hidden equipment still participates in collision and stock allocation. Removing a folder does not delete its equipment.
+Open **Productions** and create a production with its name, client/company, start and optional end date, notes and reusable space. Stageplot creates one client layout automatically. You can open that layout directly, copy the client edit link and review the client's work without adding bands or creating another stage from scratch.
 
-Select equipment to edit position, rotation, label display, artwork toggles, collision and articulated parts. Multi-selection exposes common settings and alignment/distribution tools. An X in a checkbox means values differ; clicking enables the setting for all selected items.
+Different productions can use the same space. Their layouts, equipment, notes, revisions and access links remain independent.
 
-With nothing selected, Inspector shows stage and canvas controls, fitting, global collision settings and available stage-part toggles. Inspector sections remember their collapsed state. Drag panel dividers to resize Layers and Inspector, or use panel buttons to hide them.
+### Eisteddfods: one event, one stage, many groups
 
-### Collision and snapping
+1. Prepare the reusable venue space and its available equipment.
+2. Create an event with type **Eisteddfod / groups**, selecting that space.
+3. Choose **Add group** and prepare the first chair/percussion layout.
+4. Choose **Add groups**, enter the remaining names one per line, and choose the first group as the starting layout if appropriate. Up to 100 layouts can be created in one operation.
+5. Give each group its own edit link. Copies of a starting layout can be edited independently.
+6. Use **Group details** to label a session or performance time, and **Move earlier / Move later** to arrange the running order. Search by name or session and filter by status when reviewing many groups.
 
-Equipment collision uses configured physical footprints, not necessarily the artwork's rectangular bounds. Dragging stops at valid positions and can slide along obstacles. Solid stage zones block equipment; aesthetic zones do not.
+For twenty groups sharing forty chairs, the stock is forty chairs available to each layout. A later group's layout does not consume another group's allocation. The running-order labels describe your event; this is not a booking or equipment reservation calendar.
 
-The canvas inspector can independently disable equipment collision, stage/zone collision and corner snapping. Placement-level collision can be disabled for an item such as a deck that must sit under other equipment. Staging-group equipment and custom staging begin behind other items with placement collision disabled.
+### Space and stage versions
 
-Corner snapping requires snap points in the equipment definition. Matching points snap within 30 cm. Hiding equipment artwork does not remove its footprint; hiding a toggleable solid stage zone does remove that zone's collision.
+A reusable space, an event/production stage, and an individual client/group layout have separate versions. Updating the space never silently rearranges existing layouts.
 
-Saving warns when enabled collision objects overlap, intersect solid zones or leave the usable stage. Review the layout before continuing; the warning does not automatically correct it.
+When a newer space version is available, use **Preview space update** on the event or production stage. Applying it replaces that local stage's outline, zones and venue equipment; local customisations are replaced. Individual layouts then offer their usual stage-update preview, which identifies conflicts while retaining equipment positions.
 
-### Custom items
+Existing event-specific stages can be added to the catalogue through **Save to Spaces**.
 
-The library's **Custom** tab creates project-only items, without publishing equipment:
+### Create an event
 
-- **Custom staging - Prostage** draws decks in whole-metre increments. Inspector controls dimensions, height annotation, fill, borders, grid and text. Metre-grid intersections provide snap points.
-- **Custom Text** adds annotations with text, size, bold, italic, colour and rotation controls.
+The workspace provides **Events**, **Productions** and **Spaces** tabs. The Events tab opens to **My events**. Choose **Create event** and enter a name, date, event type and organiser notes. A festival uses band terminology; an eisteddfod uses group terminology. Open the event to see its stages and line-up. Organiser event notes are separate from the notes included with each band plot.
 
-Custom items are retained in project saves. Text annotations are excluded from equipment counts.
+### Build a stage
 
-### Empire stock and equipment reports
+Choose **Add stage**. Enter a name and dimensions, or copy the latest version of a stage from another one of your events. Copies are independent.
 
-External events do not track inventory. In Empire, equipment with a configured quantity shows remaining stock; blank means untracked and zero means no stock is available.
+**Outline & zones** opens the stage editor within Stageplot:
 
-Stock is allocated to the earliest-added placements, regardless of layer order. Hidden equipment still consumes stock. Exhausted tiles and overflow placements are amber; extra placements are allowed for external sourcing. **Use external** excludes a placement from stock allocation, freeing stock for another placement. Allocation is per project, not a reservation across concurrent shows.
+- Edit the main boundary by dragging nodes. Shift-click an edge to insert a node; Ctrl-click a straight edge to convert it into a curve.
+- Use rectangular zones for a quick layout. Their inspector provides width, length and top-left or centre origin controls. Convert a rectangle into a normal zone to edit individual nodes.
+- Zones can be aesthetic, solid collision obstacles, or outside-stage labels. They retain colour, stripe, opacity, line and optional-part controls.
+- Add stage text, Studio-only dimension lines, and reference images. Dimensions and reference images help author the stage and are not published as band equipment.
+- Press M to move whole assets, and Escape to leave Move mode. Shift-select assets to group them; folders organise complex stages.
+- Use the inspector for exact metre coordinates. Scroll to zoom; middle-drag to pan.
 
-On hover/selection, externally sourced items have orange outlines and collision-disabled items have blue outlines; orange takes priority. These guides do not print.
+Choose **Save stage version**, then return to the event.
 
-**Equipment list** counts equipment, hidden placements and custom staging dimensions. Empire reports separate Stock and External quantities. External reports show requirements without sourcing columns. Export CSV for a spreadsheet or PDF through the browser's print dialog.
+**House equipment** opens the equipment placement canvas. Click or drag existing library equipment onto the stage. Move, rotate and adjust it using the inspector. Every item placed in this setup becomes fixed equipment for bands. Use this for a house drum kit, truss, treads and permanent staging. Turn off stage/zone collision while positioning items outside the stage boundary or intentionally overlapping scenery. Save when ready.
+
+House equipment can be repositioned or removed by reopening this setup. Bands cannot move, rotate, duplicate or delete it.
+
+### Invite each band
+
+Choose **Add band**, enter its name, select a stage and add any initial notes. Stageplot creates an independent plot using that stage version.
+
+Use **Copy band link** and send the link to the act. Each band has a separate token, plot, notes and saved revisions. Renaming a band keeps its link working.
+
+### Work as a band
+
+The link opens the band's plot directly. House equipment appears separately from the editable equipment layers. Add only the equipment the band needs on top of the provided stage.
+
+- Click equipment to place it near the viewport centre, or drag it from the library.
+- Drag equipment to move it. Rotation handles and articulated controls adjust its orientation. Shift snaps rotations to 15 degrees.
+- Use exact position and rotation fields in the inspector.
+- Shift-click to select several items. Layers can be reordered and organised into folders.
+- Ctrl/Cmd+C and Ctrl/Cmd+V duplicate equipment. Alt-drag duplicates while positioning. Delete removes selected band equipment.
+- Arrow keys nudge by 1 cm; Shift-arrow nudges by 10 cm.
+- Collision-aware movement stops at boundaries and obstacles. The equipment collision setting and stage/zone collision setting are separate. Fixed house equipment follows stage/zone collision.
+- The Custom tab provides project-only staging and text tools.
+- Add performance requirements in **Band notes**.
+
+Changes autosave after a short pause. Watch for **Saved** before closing the page. **Save now** performs an immediate save. **Submit for review** tells the organiser the plot is ready. Return using the same link to edit the latest saved plot.
+
+### Review as the organiser
+
+Open the event to see every band, its assigned stage, last save and status:
+
+| Status | Meaning |
+| --- | --- |
+| Awaiting band | The initial plot has not been saved by a collaborator. |
+| In progress | Work has been saved but not submitted. |
+| Submitted | The plot is ready for organiser review. |
+| Changed since submission | A previously submitted or approved plot has been edited. |
+| Changes requested | The organiser requested a revision or applied a stage update. |
+| Approved | The organiser approved the plot. |
+
+Use **Refresh** to fetch current statuses. Open a plot to inspect it and its equipment list. Choose **Review** to approve or request changes, with a message the band sees when it opens its link. The organiser can also edit and save the plot directly.
+
+### Update a stage
+
+Each band plot is pinned to a stage version. Saving a new stage version does not silently alter existing band plots.
+
+When an update is available, open **Manage** on a band row and choose **Preview stage update**. The preview lists equipment that may conflict with the new boundary, solid zones or fixed equipment. Apply the update deliberately. Band equipment keeps its existing coordinates and the plot is marked for review.
+
+### Manage links and recover work
+
+A band's **Manage** menu provides:
+
+- **Rename band**.
+- **Replace link**, which immediately stops the old link.
+- **Revoke link**, which disables guest access but preserves the plot in the organiser's account.
+- **Saved revisions**, with restoration as a new revision.
+- **Preview stage update**, when a newer stage version exists.
+
+Stageplot checks revisions before writing. If another window saves first, your save is rejected rather than overwriting their work. Download your local copy before reloading the latest plot. After an interrupted session, the recovery notice can restore unsaved local equipment and notes against the current stage.
+
+This is save-based collaboration: refresh or reopen to see another person's latest work. It is not simultaneous live co-editing.
 
 ## Saving, loading and sharing
 
-### Save / Load
+### Event plots
 
-Actions appear in this order:
+Event plots autosave to the organiser's account. The band link always opens the latest saved version. Submitting and exporting do not change the link.
 
-| Button | Availability and result |
-| --- | --- |
-| Update cloud project | Signed-in users; enabled only when the current show is an existing account project |
-| Save cloud project | Signed-in users; creates a new private account project |
-| New Project | Starts another layout; unavailable where a shared-project workflow restricts it |
-| Load Project File | Opens a local Stageplot project file |
-| Download Project File | Downloads the editable `.stageplot` project |
-| Export PDF | Requires a stage; prints the full drawing fitted to landscape A3 |
+**Export PDF** opens the browser print dialog with a landscape A3 layout. Choose Save as PDF. The drawing includes the house equipment and the band's additional equipment. **Equipment list** reports the band's additional requirements and supports CSV/PDF export. House equipment is already supplied by the stage and is shown separately on the canvas.
 
-Cloud saving and downloading are independent. Downloading does not update the cloud project. PDF and equipment-list exports do not save an editable project. Choose **Save as PDF** in the browser print dialog to create a PDF file.
+### Quick plots
 
-Saved projects pin artwork revisions. Library changes do not silently replace existing placements. **Refresh items** beside the canvas dimensions deliberately adopts current accessible equipment artwork while preserving placement settings. Older reference-only files resolve accessible current assets instead.
-
-Closing or refreshing with unsaved work triggers the browser warning. Tab recovery helps after an accidental refresh, but use a cloud save or downloaded file as the durable copy.
-
-### My projects
-
-Signed-in users can list, open and update their own cloud projects through **My projects**. Saves check revisions to avoid overwriting another tab's newer save. If a conflict appears, reopen the latest project before updating.
-
-- **History** lists saved project revisions; restoring one creates a new current revision.
-- **Delete** moves a project to deleted projects and disables its share link.
-- **Restore** offers revisions of a deleted project.
-- **Delete permanently** is available after deletion. It removes the project and every saved revision, requires confirmation and cannot be undone through the app.
-
-Permanent deletion is restricted to the project's owner, including against Admin/Owner access. A locally open copy is not erased from the browser; save it as a new cloud project if needed.
-
-### Project share links
-
-**Create/reset share link** copies a link to the saved project and the equipment/stage definitions it uses. Clients can adjust their local layout and download a file, but cannot overwrite the sender's cloud project. Other projects and personal assets are not exposed.
-
-Saving a new cloud revision, restoring, deleting or disabling sharing invalidates the old link. Generate a new link after changing a saved project. A link containing Empire-only artwork also requires Empire access; an External-compatible show is the appropriate client-facing option for untagged recipients.
+Use **Quick plot** from the event header for an ad hoc layout. Choose a library stage or a rectangular space. Its **Save / Load** menu supports private account projects, local Stageplot files and PDF export. Quick plots use the standalone project workflow; use an event when inviting bands to edit organiser-owned plots.
 
 ## Shape Studio
 
-### Starting a design
+Shape Studio is reserved for equipment. Stage building happens inside Stageplot.
 
-Sign in with Contributor, Admin or Owner access. Choose **New item** and select equipment or stage. Equipment fields display centimetres and stages display metres; stored geometry uses metres. Canvas size describes the real-world footprint and does not scale existing artwork.
+Equipment fields display centimetres; geometry is stored in metres. Add basic shapes, advanced shapes or editable vectors. Each layer can have independent position, size, rotation and style. Separate artwork from physical collision geometry so transparent corners do not block other equipment.
 
-Use the wheel to zoom, middle-drag to pan and an empty-area drag to select fully enclosed assets. Shift-click adds/removes selections. Standard snapping uses 10 cm increments, Advanced uses 1 cm, and snapping can be disabled.
+Group related artwork, define independently rotatable parts, and expose optional layers through Toggleable in Stageplot. Custom shapes are reusable authoring building blocks and do not appear as equipment in the planner.
 
-### Equipment artwork
-
-1. Set real dimensions and a descriptive item name.
-2. Build the top-down drawing with rectangles, circles, ellipses, lines, text, tripods, arcs, polygons, trapezoids, chairs or custom vectors.
-3. Select layers to edit coordinates, dimensions, colours, rotation and geometry.
-4. Mark only the layers needed for the physical footprint as collision shapes.
-5. Configure optional artwork toggles, corner snapping and rotation parts.
-6. Save, then use Library to check its equipment group and review/publication state.
-
-Basic shapes can be converted into editable vectors. Point-by-point vectors can be open or closed; Escape finishes the path. For boolean cutting, put the cutter above the target, select exactly those layers and choose the cut action. You can consume or retain the cutter. Separate results become separate vectors; cuts requiring unsupported holes are rejected. Closed layers can also be merged where supported.
-
-New normal layers start with physical collision off. Dedicated **Collision shape** layers are light-grey editing guides: they contribute collision but are omitted from published artwork. Use a minimal, accurate footprint rather than making all decorative layers physical.
-
-Group layers to move and transform them together. Name a group and enable **Toggleable in Stageplot** to expose one show/hide control. Toggle names shared across equipment are combined in the planner. Hiding equipment artwork does not change collision. Rotation parts define independent pivots and angle limits; tripod parts use the convergence point as their pivot.
-
-Text layers support multiline content, text size, bold, italic, alignment, spacing, colour and rotation. Bounds follow the text. Converting text to a vector changes it into editable outlines rather than a text field.
-
-### Stage editing
-
-Move boundary nodes to define the usable stage. Shift-click a segment to insert a node. Ctrl-click a straight segment to create a Point on Arc curve; curve modes also include Smooth and Bezier. Closed boundaries keep at least three nodes.
-
-Use **Move (M)** to reposition whole stage assets without grabbing geometry handles; Escape or the button exits it. Select a zone to set precise anchor coordinates using its top-left extremity or centre. Dimension lines are Studio-only measurements and do not appear in the published stage.
-
-Zone types have different purposes:
-
-| Zone | Planner behaviour |
-| --- | --- |
-| Aesthetic | Visual scenery, no collision |
-| Solid | Blocks equipment movement |
-| Label | Can remain visible outside the stage boundary |
-
-Zones support single fills or two-colour diagonal stripes. Toggleable zones and text can be hidden per project. Group zones to expose a shared visibility control; hiding solid group members disables their collision. Reference images support ordering, cropping and locking. Lock assets to prevent accidental edits.
-
-### Library tabs and profile controls
-
-**Equipment** and **Stages** are separate tabs. Rows remain one line high; scroll horizontally when the window is too narrow. Personal copies have a blue background and ** - Personal copy** in their displayed name. This suffix does not rename the stored design. Admins and the Owner also see **New items** for new submitted equipment and stages. Pending updates highlight their existing shared row and offer **Review update**.
-
-All rows use **Edit**. Contributors save private copies, while Admins and the Owner edit shared items directly. Buttons distinguish **Save personal copy**, **Update personal copy**, **Update shape** and **Update stage**. Simply opening a shared item as a contributor does not save a new copy.
-
-Untagged users create External equipment/stages automatically and do not see profile or stock columns. Empire-tagged users can assign Empire/External membership and set **Empire QTY**. Press Enter or leave the quantity field to save; use a non-negative integer or blank for untracked stock. Editing an existing shared asset preserves memberships, and approving an update preserves the shared target's memberships and stock.
-
-Custom shapes are reusable Studio-only building blocks rather than client equipment. Save them separately from the published equipment library.
-
-### Stage sharing
-
-Open **Sharing** on a stage row. These settings are separate from profile membership:
-
-- **Listed**: shared stage appears in its assigned planner libraries.
-- **Link only**: excluded from public listings; a random token grants access.
-- **Draft**: no client share link. Personal saved stages remain available to their creator.
-
-Personal stages are not published to the anonymous picker simply by saving them. Submit for review to create or update a shared stage. A personal link-only stage can explicitly include selected personal equipment; unrelated drafts remain private.
-
-Copy the appropriate profile link. Stage links use the fixed public planner address, https://stageplot.braithwaite.work/. Resetting a link invalidates its old token. Switching to Draft revokes access; normal artwork edits preserve an existing token. Empire links require an Empire-tagged recipient.
+The equipment library supports grouping, personal copies, publishing and stock configuration. Empire quantities apply to Empire plots; External plots report requirements without stock tracking. Stock counts are per plot, not reservations across the festival.
 
 ## Collaboration and submissions
 
-### Contributor walkthrough
+Contributors save personal equipment copies and submit them for review. Admins and the Owner can edit shared equipment directly and review proposals. Updates are tied to the original equipment item. Feedback appears beside the contributor's draft.
 
-1. Create a new design, or **Edit** a shared item.
-2. Save the draft. Editing a shared item uses **Save personal copy** the first time and **Update personal copy** thereafter.
-3. Use the personal copy immediately in your own Stageplot library. Other users cannot browse it.
-4. In Library, choose **Submit**, or use **Submit saved draft** in the editor. Save first: submission sends the saved design, not unsaved canvas edits.
-5. Continue working if needed. Saving alone does not change the submitted snapshot; submit again to update the proposal.
-6. Read **View feedback** beside the personal copy for reviewer messages, then revise/resubmit as appropriate.
-
-Submissions reuse the existing proposal for the same draft, original target or matching name within the same user's asset type. Another user's proposal is not replaced. A submitted update remains tied to its original library item; renaming does not let it replace an unrelated item.
-
-After approval, incorporated working copies are hidden from normal listings when they have no newer private edits. Their definitions remain available to saved references. Later unsubmitted work is retained.
-
-### Reviewing a proposal
-
-Admins and the Owner find new designs in **New items** and changes to shared designs through **Review update** on the original row. Review shows the current and submitted artwork together, with dimensions and profile information.
-
-| Decision | Result |
-| --- | --- |
-| Approve as new item | Publishes a separate shared item; leaves the existing original unchanged |
-| Approve item update | Updates the fixed original ID; cannot redirect to another item |
-| Decline | Leaves the shared library unchanged and lets the contributor revise and resubmit |
-
-Messages to the contributor are shown through **View feedback**. Newly saved messages include **Reviewer: @username**, supplied by the server from the reviewer's GitHub identity.
-
-### Editing a submission together
-
-Choose **Open submission in editor** to refine the submitted design. Saving opens three choices:
-
-| Save choice | Result |
-| --- | --- |
-| Save new item | Creates a separate shared library item and leaves the submission pending |
-| Update submitted item (without approving) | Updates the pending snapshot and contributor's personal copy, without changing the shared original |
-| Approve changes | Publishes the edited proposal to its fixed original, or its proposed new shared identity |
-
-Add a message explaining corrections or remaining work. Updating without approval preserves private ownership, stage share tokens and equipment grants. Studio refreshes library data when it regains focus. An already open editor retains its local canvas; it does not silently replace unsaved edits.
-
-If the contributor saved newer changes after submitting, reviewer updates are blocked rather than overwriting them. Ask them to resubmit. If the shared target or proposal changed during review, reload and review the latest version before approving.
+Event owners do not need this publishing process to build stages or invite bands. Their event stages remain private to their account and the plots they invite bands to edit.
 
 ## Administration and troubleshooting
 
-### Owner tasks
+- An unavailable band link may have been revoked or replaced. Ask the organiser for its current link.
+- A save conflict means a newer revision exists. Download local work before reloading.
+- A stage update can introduce overlaps. Preview it, then review affected band placements.
+- House equipment is edited through the event's House equipment setup, not in a band plot.
+- If the equipment library fails to load, check the Library API and account access.
+- The application requires a modern desktop browser for canvas editing and print-to-PDF.
 
-Use the account button and **Manage users & access requests** to approve GitHub users, assign Editor/Contributor/Admin, disable non-Owner accounts, or toggle Empire access. Role changes and disabling revoke sessions; Empire changes are checked against current account data on API requests. Initial Owner identity is configured on the server rather than awarded to the first visitor.
-
-For deployment and backup commands, use the [account guide](../ACCOUNT_GUIDE.md). Keep `account-data` permanently mounted: accounts, live assets, projects, submissions and history are in SQLite. Updating application images does not replace that data. Source library JSON is imported once, so changing those files does not update the live library.
-
-### Common issues
-
-| Symptom | Check |
-| --- | --- |
-| GitHub button disabled | Server OAuth client ID, secret and valid callback settings; recreate containers after environment changes |
-| GitHub access pending | Owner approval is needed; sign in again afterward |
-| Login differs between apps | Consistent hostnames/cookie configuration; use HTTPS remotely |
-| Empire library missing | Owner must assign the Empire tag, independently of role |
-| No Empire columns in Studio | Expected for untagged users; their new items default to External |
-| Library unavailable after startup | API readiness, network and proxy logs; retry after the API is ready |
-| Saved item missing from public planner | Personal ownership, profile membership, stage visibility and review state |
-| No new cloud update option | Open an existing cloud project; downloading a file does not establish a cloud save |
-| Old project share link fails | A save, restore, delete, disable or reset may have revoked it; generate another |
-| Collision feels wrong | Physical geometry, visible solid zones, placement/global collision and snapping controls |
-| Reviewer cannot save edits | Contributor's personal copy or submission has changed; resubmit/reload first |
-| Library edit does not change an existing project | Projects pin artwork revisions; use Refresh items deliberately |
-
-When reporting a problem on GitHub, include the app version, affected app/profile, role, expected behaviour and steps to reproduce. Screenshots and redacted logs help. Do not include OAuth secrets, setup tokens, session cookies, private project links or private account databases.
-
-### Friendly names
-
-The Owner can set **Friendly name** beside any account in user management, including their own. Leave the field or press Enter to save; clear it to fall back to the GitHub username. Submission author labels use the current friendly name when present. New or edited feedback uses it in the reviewer signature; existing saved feedback retains its recorded signature. This changes display names only, not GitHub identity, roles or ownership.
+For GitHub setup, deployment and database backups, see [Accounts and deployment](../ACCOUNT_GUIDE.md). Events, stage versions and band revisions live in the same SQLite database as accounts and equipment.

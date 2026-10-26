@@ -72,7 +72,7 @@ test('both frontend proxies share account sessions and live SQLite backups prese
     const target=await new Promise((resolve,reject)=>{let output='';backend.stdout.on('data',data=>{output+=data;const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match)resolve(match[0])});backend.once('error',reject);backend.once('exit',code=>reject(new Error(`API exited ${code}: ${errors}`)))})
     const root=fileURLToPath(new URL('../',import.meta.url))
     for(const folder of [root,join(root,'tools','svg-shape-studio')]) {
-      const server=await createServer({root:folder,configFile:join(folder,'vite.config.js'),logLevel:'silent',server:{host:'127.0.0.1',port:0,strictPort:true,hmr:false,watch:null,proxy:{'/api':{target,changeOrigin:false}}},optimizeDeps:{noDiscovery:true,include:[]}})
+      const server=await createServer({cacheDir:join(directory,'vite-cache-'+frontends.length),root:folder,configFile:join(folder,'vite.config.js'),logLevel:'silent',server:{host:'127.0.0.1',port:0,strictPort:true,hmr:false,watch:null,proxy:{'/api':{target,changeOrigin:false}}},optimizeDeps:{noDiscovery:true,include:[]}})
       frontends.push(server);await server.listen()
     }
     const urls=frontends.map(server=>'http://127.0.0.1:'+server.httpServer.address().port)

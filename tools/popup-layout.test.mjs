@@ -16,8 +16,8 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 test('library tabs, compact rows, review dialogs and owner controls work in both apps',{skip:!browser,timeout:60000},async()=>{
   const directory=await mkdtemp(join(tmpdir(),'stageplot-popups-'))
   const stage={schema:'stageplot-stage@1',id:'test-stage',label:'Test stage',profiles:['external'],dimensions:{widthMeters:10,depthMeters:5},boundary:{nodes:[{x:0,y:0},{x:10,y:0},{x:10,y:5},{x:0,y:5}]},collisionBoundary:[],zones:[],revision:1}
-  const item={schema:'stageplot-item@3',id:'test-chair',label:'Test chair',profiles:['external'],dimensions:{widthMeters:1,depthMeters:1},shapes:[],collisionShapes:[],editor:{layers:[]},revision:1,ownerId:null}
-  const mutations=[]
+  const item={schema:'stageplot-item@3',id:'test-chair',label:'Test chair',profiles:['external'],dimensions:{widthMeters:1,depthMeters:1},shapes:[{id:'seat',type:'rect',x:0,y:0,width:1,height:1,fill:'#ffffff',stroke:'#25261f',strokeWidth:1}],collisionShapes:[],editor:{layers:[]},revision:1,ownerId:null}
+  const mutations=[],createdStages=[]
   let signedIn=false,accountRole='owner',empireAccess=false
   const proposals=[{id:'update-proposal',kind:'items',asset_id:'draft-chair',target_id:'test-chair',status:'pending',owner_name:'Test Contributor',created:'2026-10-25T00:00:00Z',snapshot:{...item,label:'Corrected chair'}},{id:'new-proposal',kind:'stages',asset_id:'draft-stage',target_id:'new-shared-stage',status:'pending',owner_name:'Test Contributor',created:'2026-10-25T00:00:00Z',snapshot:{...stage,label:'New stage'}}]
 
@@ -26,8 +26,9 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     if(url.pathname.startsWith('/api/')) {
       if(['POST','PUT','DELETE'].includes(request.method)){let body='';for await(const chunk of request)body+=chunk;mutations.push({path:url.pathname,...JSON.parse(body || '{}')})}
 
+      if(request.method==='PUT'&&url.pathname.startsWith('/api/stages/')){const saved={...mutations.at(-1),revision:1,ownerId:'owner'};const index=createdStages.findIndex(stage=>stage.id===saved.id);if(index<0)createdStages.push(saved);else createdStages[index]=saved;response.setHeader('Content-Type','application/json');response.end(JSON.stringify(saved));return}
       const data=url.pathname==='/api/auth/session'?{user:signedIn?{id:'owner',name:'Test Owner',email:'owner@example.test',role:accountRole,empire:empireAccess}:null,appUrl:'/planner-fixture',studioUrl:'/studio-fixture',githubConfigured:true,ownerConfigured:true}:
-        url.pathname==='/api/submissions'?[...proposals,...(accountRole==='contributor'?[{id:'declined-proposal',kind:'items',asset_id:'personal-feedback',status:'rejected',review_note:'Please correct the chair width.',snapshot:item}]:[])]:url.pathname==='/api/items'?[item,...(accountRole==='contributor'?[{...item,id:'personal-feedback',ownerId:'owner',label:'Personal chair'}]:[])]:url.pathname==='/api/stages'?[stage]:url.pathname.endsWith('/history')?[{revision:1,created:new Date().toISOString(),data:item}]:
+        url.pathname==='/api/submissions'?[...proposals,...(accountRole==='contributor'?[{id:'declined-proposal',kind:'items',asset_id:'personal-feedback',status:'rejected',review_note:'Please correct the chair width.',snapshot:item}]:[])]:url.pathname==='/api/items'?[item,...(accountRole==='contributor'?[{...item,id:'personal-feedback',ownerId:'owner',label:'Personal chair'}]:[])]:url.pathname==='/api/stages'?[stage,...createdStages].filter(candidate=>!url.searchParams.has('stage')||candidate.id===url.searchParams.get('stage')):url.pathname.endsWith('/history')?[{revision:1,created:new Date().toISOString(),data:item}]:
         url.pathname==='/api/users'?[{id:'owner',name:'Test Owner',email:'owner@example.test',role:'owner'}]:
         url.pathname==='/api/access-requests'?[{github_id:'42',login:'test-user',name:'Test user',email:'user@example.test',status:'pending'}]:
         url.pathname==='/api/projects'?Array.from({length:20},(_,id)=>({id:String(id),name:'Saved show '+id,revision:1,deleted:id===19,updated:new Date().toISOString()})):[]
@@ -45,7 +46,7 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     </script></body></html>`
     response.setHeader('Content-Type','text/html');response.end(await server.transformIndexHtml(url.pathname,html))
   })}}
-  const server=await createServer({root:fileURLToPath(new URL('../',import.meta.url)),configFile:false,envDir:false,plugins:[react(),fixture],resolve:{alias:{'polygon-clipping':fileURLToPath(new URL('./svg-shape-studio/node_modules/polygon-clipping/dist/polygon-clipping.cjs.js',import.meta.url)),'fit-curve':fileURLToPath(new URL('./svg-shape-studio/node_modules/fit-curve/lib/fit-curve.js',import.meta.url))},dedupe:['react','react-dom']},logLevel:'silent',server:{host:'127.0.0.1',port:0,hmr:false,watch:null},optimizeDeps:{noDiscovery:true,include:['react','react-dom','react-dom/client','fit-curve','polygon-clipping']}})
+  const server=await createServer({cacheDir:join(directory,'vite-cache'),root:fileURLToPath(new URL('../',import.meta.url)),configFile:false,envDir:false,plugins:[react(),fixture],resolve:{alias:{'polygon-clipping':fileURLToPath(new URL('./svg-shape-studio/node_modules/polygon-clipping/dist/polygon-clipping.cjs.js',import.meta.url)),'fit-curve':fileURLToPath(new URL('./svg-shape-studio/node_modules/fit-curve/lib/fit-curve.js',import.meta.url))},dedupe:['react','react-dom']},logLevel:'silent',server:{host:'127.0.0.1',port:0,hmr:false,watch:null},optimizeDeps:{noDiscovery:true,include:['react','react-dom','react-dom/client','fit-curve','polygon-clipping']}})
   let child,socket
   try {
     await server.listen()
@@ -81,7 +82,7 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     assert.equal((await modal()).topmost,true)
     signedIn=true
     await call('Page.navigate',{url:base+'/planner-fixture'})
-    await waitFor("document.querySelector('.stage-picker-actions a')?.textContent==='Stageplot Studio'")
+    await waitFor("document.querySelector('.stage-picker-actions a')?.textContent==='Shape Studio'")
     assert.equal(await evaluate("document.querySelector('.stage-picker-actions a').getAttribute('href')"),'/studio-fixture')
     await click('Test Owner · owner')
     await waitFor(`document.querySelector('.account-dialog')`)
@@ -144,10 +145,8 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     await click('Stages')
     await waitFor("!document.querySelector('#library-panel-stages').hidden")
     assert.ok(await evaluate("document.querySelector('.managed-stage-row').getBoundingClientRect().height<=73"))
-    await click('Sharing')
-    await waitFor("document.querySelector('[aria-label=\"Stage sharing\"]')")
-    assert.equal((await modal()).inBody,true)
-    await click('Close')
+    assert.equal(await evaluate("document.querySelectorAll('.managed-stage-row select[aria-label=\"Visibility for Test stage\"]').length"),1)
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Stage sharing\"]')"),null)
     await click('New items (1)')
     await waitFor("!document.querySelector('#library-panel-new').hidden")
     assert.equal(await evaluate("document.querySelectorAll('.new-submission-row').length"),1)
@@ -237,12 +236,6 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     await waitFor("document.querySelector('.help-dialog')")
     assert.ok(await evaluate("document.querySelector('.help-dialog').textContent.includes('Update submitted item (without approving)')"))
     assert.equal(await evaluate("document.querySelector('.help-dialog').textContent.includes('Public planner URL')"),false)
-
-
-
-
-
-
 
   }finally {
     if(child&&child.exitCode===null&&child.signalCode===null) {

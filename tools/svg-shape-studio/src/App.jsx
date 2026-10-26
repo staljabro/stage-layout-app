@@ -1,3 +1,4 @@
+import { FixedEquipmentArtwork } from '../../../src/equipment-artwork.jsx';
 import {AccountModal} from '../../../src/account-modal.jsx'
 import { SubmissionReview } from '../../../src/studio-workflow.jsx'
 import { accountRequest } from '../../../src/account-api.js'
@@ -869,7 +870,7 @@ function CollisionGuide({ item }) {
   );
 }
 
-function App() {
+function App({embeddedStage=null,equipmentOnly=false}) {
   const {user}=useAccount();
   const isManager=["owner","admin"].includes(user.role);
   const [managedTab,setManagedTab]=useState('items');
@@ -880,7 +881,6 @@ function App() {
   const [submissionSaveOpen,setSubmissionSaveOpen]=useState(false);
   const [reviewerMessage,setReviewerMessage]=useState('');
   const [submissionFeedback,setSubmissionFeedback]=useState(null);
-  const [stageSettingsId,setStageSettingsId]=useState(null);
   const pendingUpdates=(kind,id)=>submissions.filter(s=>s.status==='pending'&&s.kind===kind&&s.target_id===id);
   const draftStatus=(kind,asset)=>{
     const proposal=submissions.find(s=>s.kind===kind&&s.asset_id===asset.id);
@@ -890,7 +890,8 @@ function App() {
 
   const editable=asset=>asset.ownerId ? asset.ownerId===user.id : isManager;
   const submitAsset=async(kind,asset)=>{try{await accountRequest("/submissions","POST",{kind,assetId:asset.id});await refreshLibrary();flash("Proposal submitted or updated. Your personal draft is still usable.")}catch(error){flash(error.message)}};
-  const [session] = useState(() => readSessionDraft("shape-studio:"+user.id+":draft"));
+  const sessionKey=embeddedStage?'event-stage-editor:'+embeddedStage.data.id:'shape-studio:'+user.id+':draft';
+  const [session] = useState(() => embeddedStage ? {documentMode:'stage',shapeName:embeddedStage.data.label,realWidth:embeddedStage.data.dimensions.widthMeters,realDepth:embeddedStage.data.dimensions.depthMeters,stageNodes:embeddedStage.data.boundary.nodes,zones:embeddedStage.data.zones||[],fixedEquipment:embeddedStage.data.fixedEquipment||[],textItems:embeddedStage.data.textItems||[],referenceImages:embeddedStage.data.editor?.referenceImages||[],dimensionLines:embeddedStage.data.editor?.dimensionLines||[],zoneFolders:normalizeZoneFolders(embeddedStage.data.editor?.assetFolders,[...(embeddedStage.data.zones||[]),...(embeddedStage.data.textItems||[]),...(embeddedStage.data.editor?.referenceImages||[]),...(embeddedStage.data.editor?.dimensionLines||[])]),stageBoundaryLocked:embeddedStage.data.editor?.stageBoundaryLocked??false,items:[]} : (()=>{const stored=readSessionDraft(sessionKey);return equipmentOnly&&stored.documentMode==='stage'?{}:stored;})());
   const [documentMode, setDocumentMode] = useState(session.documentMode ?? "item");
   const [shapeName, setShapeName] = useState(session.shapeName ?? "Untitled Item");
   const [realWidth, setRealWidth] = useDimensionState(session.realWidth ?? 1);
@@ -943,6 +944,7 @@ function App() {
   const [selectedStageNode, setSelectedStageNode] = useState(null);
   const [referenceImages, setReferenceImages] = useDimensionState(session.referenceImages ?? []);
   const [selectedReferenceId, setSelectedReferenceId] = useState(null);
+  const [fixedEquipment,setFixedEquipment]=useState(session.fixedEquipment ?? []);
   const [zones, setZones] = useState(session.zones ?? []);
   const [zoneFolders, setZoneFolders] = useState(() => normalizeZoneFolders(session.zoneFolders, [...(session.referenceImages??[]),...(session.zones??[]),...(session.textItems??[]),...(session.dimensionLines??[])]));
   const [editingZoneFolderId, setEditingZoneFolderId] = useState(null);
@@ -992,16 +994,16 @@ function App() {
   const clipboardId = useRef(1);
   const projectSnapshot = JSON.stringify(documentMode === "item"
     ? {documentMode,shapeName,realWidth,realDepth,groupId,items,itemFolders,rotationParts,cornerSnapping,referenceImages,advancedShapeRole}
-    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,zones,zoneFolders,textItems,dimensionLines,referenceImages});
+    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,fixedEquipment,zones,zoneFolders,textItems,dimensionLines,referenceImages});
   useEffect(() => {
     if (savedProject.current === null || resetProjectBaseline.current) {
       savedProject.current = projectSnapshot;
       resetProjectBaseline.current = false;
     }
   });
-  const sessionError = useSessionDraft("shape-studio:"+user.id+":draft", {
+  const sessionError = useSessionDraft(sessionKey, {
     documentMode, shapeName, realWidth, realDepth, groupId, items, itemFolders, rotationParts, cornerSnapping, referenceImages,
-    advancedShapeRole, stageNodes, zones, zoneFolders, textItems, dimensionLines, stageBoundaryLocked, activeLibraryId, draftAssetId, snapMode, grid,studioUi,
+    advancedShapeRole, stageNodes, fixedEquipment, zones, zoneFolders, textItems, dimensionLines, stageBoundaryLocked, activeLibraryId, draftAssetId, snapMode, grid,studioUi,
     zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
     savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
   });
@@ -1014,7 +1016,7 @@ function App() {
     window.addEventListener("pointermove",move);window.addEventListener("pointerup",finish);
     return()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",finish);};
   },[panelResize,documentMode]);
-  const newSubmissions=submissions.filter(s=>s.status==='pending' && !(s.kind==='items'?library:stageLibrary).some(a=>!a.ownerId&&a.id===s.target_id));
+  const newSubmissions=submissions.filter(s=>(!equipmentOnly||s.kind==='items')&&s.status==='pending' && !(s.kind==='items'?library:stageLibrary).some(a=>!a.ownerId&&a.id===s.target_id));
   const equipmentItems = library.filter(isEquipmentItem);
   const matchingManagedStages = stageLibrary.filter(showManagedAsset).filter(stage => stage.label.toLowerCase().includes(managedItemSearch.trim().toLowerCase())).sort((a,b)=>a.label.localeCompare(b.label));
   const matchingManagedItems = equipmentItems.filter(showManagedAsset).filter(item => {
@@ -1169,6 +1171,7 @@ function App() {
           : undefined,
       })),
       textItems,
+      fixedEquipment,
       details: [],
       editor: { referenceImages, dimensionLines, stageBoundaryLocked, assetFolders:zoneFolders.map(folder=>({...folder,assetIds:folder.zoneIds,zoneIds:undefined})) },
     }),
@@ -1179,6 +1182,7 @@ function App() {
       realDepth,
       stageNodes,
       stageLibrary,
+      fixedEquipment,
       stageBoundaryLocked,
       zones,
       textItems,
@@ -1189,6 +1193,7 @@ function App() {
   );
 
   const refreshLibrary = async () => {
+    if(embeddedStage)return;
     try {
       const [itemsResponse, groupsResponse, stagesResponse] = await Promise.all(
         [fetch(`${LIBRARY_API}?scope=all`), fetch(GROUPS_API), fetch(`${STAGES_API}?scope=all`)],
@@ -1218,6 +1223,7 @@ function App() {
         referenceImages: structuredClone(referenceImages),
         stageNodes: structuredClone(stageNodes),
         stageBoundaryLocked,
+        fixedEquipment: structuredClone(fixedEquipment),
         zones: structuredClone(zones),
         zoneFolders: structuredClone(zoneFolders),
         textItems: structuredClone(textItems),
@@ -1236,6 +1242,7 @@ function App() {
     setReferenceImages(previous.referenceImages || []);
     if (previous.stageNodes) setStageNodes(previous.stageNodes);
     if (previous.stageBoundaryLocked !== undefined) setStageBoundaryLocked(previous.stageBoundaryLocked);
+    if (previous.fixedEquipment) setFixedEquipment(previous.fixedEquipment);
     if (previous.zones) setZones(previous.zones);
     if (previous.zoneFolders) setZoneFolders(previous.zoneFolders);
     if (previous.textItems) setTextItems(previous.textItems);
@@ -2094,6 +2101,7 @@ function App() {
     setItems(copy);
   };
   const saveToLibrary = async () => {
+    if(embeddedStage){setShapeSaving(true);try{await embeddedStage.onSave({...embeddedStage.data,...stageData,id:embeddedStage.data.id});savedProject.current=projectSnapshot;flash('Stage version saved');}catch(error){flash(error.message);}finally{setShapeSaving(false);}return;}
     if (shapeSaving) return;
     if(editingSubmission){setReviewerMessage(editingSubmission.review_note || '');setSubmissionSaveOpen(true);return;}
     if(personalSource){
@@ -2280,6 +2288,7 @@ function App() {
     setRealDepth(stage.dimensions.depthMeters);
     setStageNodes(normalized);
     setStageBoundaryLocked(stage.editor?.stageBoundaryLocked ?? false);
+    setFixedEquipment(structuredClone(stage.fixedEquipment || []));
     setZones((stage.zones || []).map((zone, index) => ({ ...zone, zOrder: zone.zOrder ?? index })));
     setTextItems((stage.textItems || []).map((item, index) => ({ ...item, zOrder: item.zOrder ?? (stage.zones?.length || 0) + index })));
     setDimensionLines((stage.editor?.dimensionLines||[]).map((item,index)=>({...item,zOrder:item.zOrder??(stage.zones?.length||0)+(stage.textItems?.length||0)+index})));
@@ -2294,6 +2303,18 @@ function App() {
     setLibraryOpen(false);
     setHistory([]);setFuture([]);
   };
+  const stageDraftOpened=useRef(false);
+  useEffect(()=>{
+    if(equipmentOnly||embeddedStage)return;
+    const id=new URLSearchParams(window.location.search).get('stageDraft');
+    if(!id||stageDraftOpened.current||!stageLibrary.length)return;
+    const draft=stageLibrary.find(stage=>stage.id===id);
+    if(!draft){flash('The stage draft is unavailable. Open it from the library.');stageDraftOpened.current=true;return;}
+    stageDraftOpened.current=true;
+    if(projectSnapshot!==savedProject.current&&!window.confirm('Open the new stage draft and replace the current Studio document? Save your current work first if needed.'))return;
+    editLibraryStage(draft);
+    const url=new URL(window.location.href);url.searchParams.delete('stageDraft');window.history.replaceState(null,'',url.href);
+  },[stageLibrary]);
   const newItem = (mode) => {
     if (projectSnapshot !== savedProject.current && !window.confirm("This project has unsaved changes. Discard them and create a new " + (mode === "stage" ? "stage" : "equipment item") + "?")) return;
     setPersonalSource(null);setEditingSubmission(null);setSubmissionSaveOpen(false);
@@ -2321,6 +2342,7 @@ function App() {
     setRealDepth(depth);
     setStageNodes(defaultStageNodes(width, depth));
     setStageBoundaryLocked(false);
+    setFixedEquipment([]);
     setZones([]);
     setZoneFolders([]);
     setTextItems([]);
@@ -2657,7 +2679,7 @@ function App() {
   return (
     <MeasurementUnit.Provider value={documentMode === "stage" ? "m" : "cm"}>
     <div className="app">
-      <header>
+      {embeddedStage?<header><div className="brand"><AppMark/><div>STAGEPLOT<small>STAGE SETUP / OUTLINE AND ZONES</small></div></div><input className="title" aria-label="Stage name" value={shapeName} onChange={event=>setShapeName(event.target.value)}/><div className="actions"><button onClick={()=>{if(projectSnapshot===savedProject.current||window.confirm('Leave without saving this stage version?'))embeddedStage.onBack();}}>{embeddedStage.backLabel||'Back to event'}</button><button className="accent" disabled={shapeSaving} onClick={saveToLibrary}>{shapeSaving?'Saving...':'Save stage version'}</button></div></header>:<>      <header>
         <div className="brand">
           <AppMark studio />
           <div>
@@ -2686,7 +2708,7 @@ function App() {
             {shapeSaving ? "Saving..." : personalSource ? "Save personal copy" : (documentMode==='stage'?stageLibrary:library).find(a=>a.id===activeLibraryId&&a.ownerId===user.id) ? "Update personal copy" : editingSubmission ? "Save submission changes" : activeLibraryId ? (documentMode==='item'?"Update shape":"Update stage") : documentMode==='item'?"Save shape":"Save stage"}
           </button>
         </div>
-      </header>
+      </header></>}
       <main className={panelResize?"resizing":""} style={{gridTemplateColumns:`${currentUi.leftOpen!==false?(currentUi.leftWidth||238):0}px 6px minmax(0,1fr) 6px ${currentUi.rightOpen!==false?(currentUi.rightWidth||250):0}px`}}>
         <aside className={`palette${currentUi.leftOpen===false?" panel-collapsed":""}`}>
           {documentMode === "stage" ? (
@@ -3072,6 +3094,7 @@ function App() {
                         )}
                       </g>
                     )}
+                    <g pointerEvents="none"><FixedEquipmentArtwork items={fixedEquipment}/></g>
                     {zones.map((zone) => (
                       <g key={zone.id} className={zone.locked ? "editable-zone locked" : "editable-zone"}>
                         {!stageMoveMode && <path className="zone-move-hit" d={stagePath(zone.nodes)} onPointerDown={(event) => startAssetMove(event, zone, "zone")} />}
@@ -3471,6 +3494,11 @@ function App() {
                 <span><b>Enable canvas resizing</b><small>Shows Ctrl-drag handles on the right and bottom edges.</small></span>
               </label>
               </>}
+              {fixedEquipment.length>0 && <section className="fixed-equipment-settings"><h3>Fixed equipment</h3><p className="handle-help">These items are permanent in Stageplot. Edit their placement here.</p>{fixedEquipment.map(item=><div key={item.id} className="fixed-equipment-item">
+                <b>{item.label}</b>
+                <div className="field-row">{[['xMeters','X (M)'],['yMeters','Y (M)'],['rotation','ROTATION (DEG)']].map(([key,label])=><label key={key} className="field">{label}<CommittedNumberInput type="number" step={key==='rotation'?'1':'0.01'} value={item[key]||0} onChange={event=>{const value=+event.target.value;if(!Number.isFinite(value))return;checkpoint();setFixedEquipment(old=>old.map(candidate=>candidate.id===item.id?{...candidate,[key]:value}:candidate));}}/></label>)}</div>
+                <button onClick={()=>{checkpoint();setFixedEquipment(old=>old.filter(candidate=>candidate.id!==item.id));}}>Remove from stage</button>
+              </div>)}</section>}
               {selectedZone && (
                 <>
                   <p className="eyebrow advanced-title">ZONE</p>
@@ -4274,7 +4302,7 @@ function App() {
       {newItemOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)setNewItemOpen(false);}}>
         <section className="library-modal preset-modal" role="dialog" aria-modal="true" aria-label="Create new item">
           <div className="modal-header"><h2>New item</h2><button onClick={()=>setNewItemOpen(false)} aria-label="Close">&times;</button></div>
-          <div className="preset-modal-body"><p className="handle-help">What would you like to create?</p><button className="group-button" autoFocus onClick={()=>newItem("item")}>Equipment item</button><button className="group-button" onClick={()=>newItem("stage")}>Stage</button></div>
+          <div className="preset-modal-body"><p className="handle-help">What would you like to create?</p><button className="group-button" autoFocus onClick={()=>newItem("item")}>Equipment item</button>{!equipmentOnly&&<button className="group-button" onClick={()=>newItem("stage")}>Stage</button>}</div>
         </section>
       </div>}
       {manageStageplotOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !removingStageplotId)setManageStageplotOpen(false);}}>
@@ -4282,7 +4310,7 @@ function App() {
           <div className="modal-header"><h2>Library</h2><button disabled={Boolean(removingStageplotId)} onClick={()=>setManageStageplotOpen(false)} aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg></button></div>
           <div className="preset-modal-body custom-shape-list"><p className="handle-help">Manage saved equipment and stages here. New personal items can be submitted for review.</p>
             <label className="management-search">Search library<input type="search" placeholder="Search equipment, groups or stages" value={managedItemSearch} onChange={event=>setManagedItemSearch(event.target.value)}/></label>
-            <nav className="library-tabs" role="tablist" aria-label="Library sections">{[["items","Equipment"],["stages","Stages"],...(isManager?[["new","New items"]]:[])].map(([id,label])=><button key={id} role="tab" aria-selected={managedTab===id} aria-controls={"library-panel-"+id} id={"library-tab-"+id} onClick={()=>setManagedTab(id)}>{label}{id==="new"?" ("+newSubmissions.length+")":""}</button>)}</nav>
+            <nav className="library-tabs" role="tablist" aria-label="Library sections">{[["items","Equipment"],...(!equipmentOnly?[["stages","Stages"]]:[]),...(isManager?[["new","New items"]]:[])].map(([id,label])=><button key={id} role="tab" aria-selected={managedTab===id} aria-controls={"library-panel-"+id} id={"library-tab-"+id} onClick={()=>setManagedTab(id)}>{label}{id==="new"?" ("+newSubmissions.length+")":""}</button>)}</nav>
             <div id="library-panel-items" role="tabpanel" aria-labelledby="library-tab-items" hidden={managedTab!=="items"}>
             {matchingManagedItems.length ? managedEquipmentSections.map(group=><section className="managed-equipment-section" key={group.id || "uncategorised"}><h3>{group.label}</h3>{group.items.map(item=><div className={`equipment-management-row${item.ownerId ? " personal-library-row" : pendingUpdates("items",item.id).length?" pending-update-row":""}`} key={item.id}>
               <span className="managed-item-thumbnail"><svg role="img" aria-label={"Preview of " + item.label} viewBox={"0 0 " + item.dimensions.widthMeters + " " + item.dimensions.depthMeters}>{(item.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg></span>
@@ -4307,7 +4335,11 @@ function App() {
                   editLibraryStage(stage);setManageStageplotOpen(false);
                 }}>Edit</button>
                 <button className="remove-item-button" disabled={Boolean(removingStageplotId)} title={"Delete " + stage.label} aria-label={"Delete " + stage.label} hidden={!editable(stage)} onClick={()=>manageStage(stage)}>&times;</button>
-                {editable(stage)&&<button onClick={()=>setStageSettingsId(stage.id)}>Sharing</button>}
+                {editable(stage)&&<div className="stage-sharing-controls" hidden={!editable(stage)}><label>Sharing <select aria-label={"Visibility for " + stage.label} value={stage.visibility || "listed"} disabled={Boolean(removingStageplotId) || !editable(stage)} onChange={event=>manageStage(stage,stage.label,{visibility:event.target.value})}><option value="listed" disabled={Boolean(stage.ownerId)}>Listed</option><option value="link-only">Link only</option><option value="draft">Draft</option></select></label>
+                  {(user.empire?["external","empire"]:["external"]).filter(profile=>belongsToProfile(stage,profile)).map(profile=><button key={profile} disabled={Boolean(removingStageplotId) || stage.visibility==="draft"} onClick={()=>copyManagedStageLink(stage,profile)}>Copy {profile==="empire"?"Empire":"External"} link</button>)}
+                  {stage.visibility==="link-only"&&<button disabled={Boolean(removingStageplotId)} onClick={()=>{if(window.confirm("Reset this stage link? Previously shared links will stop working."))manageStage(stage,stage.label,{resetShareLink:true})}}>Reset link</button>}
+                  {stage.ownerId&&<label>Personal equipment included with this link<select multiple aria-label={"Equipment shared with " + stage.label} value={stage.shareEquipmentIds || []} disabled={Boolean(removingStageplotId)} onChange={event=>manageStage(stage,stage.label,{shareEquipmentIds:Array.from(event.target.selectedOptions,option=>option.value)})}>{equipmentItems.filter(item=>item.ownerId===stage.ownerId).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
+                </div>}
                 <div className="library-row-actions">{stage.ownerId===user.id&&<button className="library-row-status" title={draftStatus('stages',stage).note || 'Submission status'} onClick={()=>setSubmissionFeedback({name:stage.label,...draftStatus('stages',stage)})}>{draftStatus('stages',stage).note?'View feedback':draftStatus('stages',stage).label}</button>}{stage.ownerId===user.id?<button onClick={()=>submitAsset("stages",stage)}>{stage.workflowStatus==='pending'?"Update submission":"Submit"}</button>:null}{isManager&&pendingUpdates("stages",stage.id).length>0&&<button onClick={()=>setReviewIds(pendingUpdates("stages",stage.id).map(s=>s.id))}>Review update ({pendingUpdates("stages",stage.id).length})</button>}</div>
               </div>) : <p className="empty">{stageLibrary.length ? "No stages match your search." : "No stages saved yet."}</p>}
             </section>
@@ -4318,11 +4350,6 @@ function App() {
           </div>
         </section>
       </div>}
-      {stageLibrary.filter(stage=>stage.id===stageSettingsId).map(stage=><AccountModal key={stage.id}><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Stage sharing"><header><h2>{stage.label} - Sharing</h2><button onClick={()=>setStageSettingsId(null)}>Close</button></header>                <div className="stage-sharing-controls" hidden={!editable(stage)}><label>Visibility <select aria-label={"Visibility for " + stage.label} value={stage.visibility || "listed"} disabled={Boolean(removingStageplotId) || !editable(stage)} onChange={event=>manageStage(stage,stage.label,{visibility:event.target.value})}><option value="listed" disabled={Boolean(stage.ownerId)}>Listed</option><option value="link-only">Link only</option><option value="draft">Draft</option></select></label>
-                  {(user.empire?["external","empire"]:["external"]).filter(profile=>belongsToProfile(stage,profile)).map(profile=><button key={profile} disabled={Boolean(removingStageplotId) || stage.visibility==="draft"} onClick={()=>copyManagedStageLink(stage,profile)}>Copy {profile==="empire"?"Empire":"External"} link</button>)}
-                  {stage.visibility==="link-only"&&<button disabled={Boolean(removingStageplotId)} onClick={()=>{if(window.confirm("Reset this stage link? Previously shared links will stop working."))manageStage(stage,stage.label,{resetShareLink:true})}}>Reset link</button>}
-                  {stage.ownerId&&<label>Personal equipment included with this link<select multiple aria-label={"Equipment shared with " + stage.label} value={stage.shareEquipmentIds || []} disabled={Boolean(removingStageplotId)} onChange={event=>manageStage(stage,stage.label,{shareEquipmentIds:Array.from(event.target.selectedOptions,option=>option.value)})}>{equipmentItems.filter(item=>item.ownerId===stage.ownerId).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
-                </div></section></AccountModal>)}
       {submissionSaveOpen&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Save submission changes"><header><h2>Save submission changes</h2><button disabled={shapeSaving} onClick={()=>setSubmissionSaveOpen(false)}>Close</button></header><p>Updating without approval saves your edits back to the contributor's personal copy and keeps the submission pending. The shared library item stays unchanged.</p><label>Message to contributor<textarea rows="3" maxLength={2000} value={reviewerMessage} onChange={event=>setReviewerMessage(event.target.value)} placeholder="Explain what you changed or what still needs fixing"/></label>{['new','update','approve'].map(action=><button key={action} disabled={shapeSaving} onClick={async()=>{setShapeSaving(true);try{const result=await accountRequest('/submissions/'+editingSubmission.id+'/edit','POST',{action,note:reviewerMessage,data:{...(documentMode==='stage'?stageData:itemData),profiles:editingSubmission.snapshot.profiles},submittedAt:editingSubmission.created,snapshotRevision:editingSubmission.snapshot.revision});await refreshLibrary();savedProject.current=projectSnapshot;if(action==='update')setEditingSubmission(result);else{setEditingSubmission(null);setActiveLibraryId(result.id)}setSubmissionSaveOpen(false);flash(action==='approve'?'Changes approved':action==='update'?'Personal copy and submission updated; awaiting approval':'New library item saved')}catch(error){flash(error.message)}finally{setShapeSaving(false)}}}>{action==='new'?'Save new item':action==='update'?'Update submitted item (without approving)':'Approve changes'}</button>)}</section></AccountModal>}
       {submissionFeedback&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Submission feedback"><header><h2>{submissionFeedback.name} - {submissionFeedback.label}</h2><button onClick={()=>setSubmissionFeedback(null)}>Close</button></header><p className="submission-feedback">{submissionFeedback.note || 'No reviewer message yet.'}</p></section></AccountModal>}
       {reviewIds&&<SubmissionReview key={reviewIds.join(',')} submissions={submissions.filter(s=>reviewIds.includes(s.id)&&s.status==='pending')} targets={(submissions.find(s=>reviewIds.includes(s.id))?.kind==='items'?library:stageLibrary).filter(a=>!a.ownerId)} renderDesign={(kind,data)=><svg className="submission-artwork" role="img" aria-label={data.label+" design"} viewBox={"0 0 "+data.dimensions.widthMeters+" "+data.dimensions.depthMeters}>{kind==='stages'?<path d={stagePath(data.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke"/>:(data.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg>} onChanged={refreshLibrary} onClose={()=>setReviewIds(null)} onPreview={(kind,data,submission)=>{if(projectSnapshot!==savedProject.current&&!window.confirm("Discard unsaved changes and preview this submission?"))return;if(kind==="items")editLibraryItem(data,true);else editLibraryStage(data,true);setShapeName(data.label);setEditingSubmission(submission);setManageStageplotOpen(false);setReviewIds(null);}}/>}
@@ -4352,7 +4379,7 @@ function App() {
       </div>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {toast && <div className="toast">{toast}</div>}
-      {helpOpen&&<StudioHelp onClose={()=>setHelpOpen(false)}/>} 
+      {helpOpen&&<StudioHelp equipmentOnly={equipmentOnly} onClose={()=>setHelpOpen(false)}/>}
     </div>
     </MeasurementUnit.Provider>
   );
