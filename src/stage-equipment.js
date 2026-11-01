@@ -25,6 +25,7 @@ export function stageFromLayout(space,items,{id,label,profile='external'}) {
     boundary:{closed:true,nodes:structuredClone(nodes)},collisionBoundary:sampleStageBoundary(nodes),
     zones:structuredClone((source?.zones || space.zones || []).filter(zone=>space.partVisibility?.[zone.id]!==false)),
     textItems:structuredClone((source?.textItems || space.textItems || []).filter(item=>space.partVisibility?.[item.id]!==false)),
+    curtains:structuredClone((source?.curtains || space.curtains || []).filter(item=>space.partVisibility?.[item.id]!==false)),
     fixedEquipment:[...existing,...items].map((item,index)=>fixedEquipmentSnapshot(item,`fixed-${index+1}`)),
   };
 }

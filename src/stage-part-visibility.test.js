@@ -1,0 +1,26 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {stagePartGroups,applyStagePartVisibility,normaliseStagePartVisibility} from './stage-part-visibility.js'
+import {curtainCollisionLines} from './stage-curtain.js'
+import {projectFile,resolveProject,stageSpace} from './project-file.js'
+
+const group={editorGroupId:'optional',editorGroupToggleable:true,editorGroupName:'Backdrop'}
+const stage={id:'stage',label:'Stage',dimensions:{widthMeters:10,depthMeters:5},zones:[{id:'zone',...group},{id:'permanent'}],textItems:[{id:'text',...group}],curtains:[{id:'curtain',...group,length:4},{id:'other',toggleable:true,length:2},{id:'hidden',toggleable:true,visible:false},{id:'fixed',length:3}]}
+test('optional stage groups include curtains and have distinct controls from individually optional parts',()=>{
+  assert.deepEqual(stagePartGroups(stage).map(({name,ids})=>({name,ids})),[{name:'Backdrop',ids:['zone','text','curtain']},{name:'Curtain',ids:['other']},{name:'Curtain',ids:['hidden']}])
+  assert.deepEqual(normaliseStagePartVisibility(stage,{curtain:false,permanent:false,fixed:false,obsolete:false}),{zone:true,text:true,curtain:false,other:true,hidden:true})
+})
+test('layout toggles remove optional curtain collisions while respecting source visibility and preserving the source',()=>{
+  const original=structuredClone(stage),effective=applyStagePartVisibility(stage,{zone:false,curtain:false,other:false,hidden:true,fixed:false})
+  assert.equal(effective.zones[0].visible,false)
+  assert.equal(effective.curtains[2].visible,false,'author-hidden layers cannot be revealed')
+  assert.equal(effective.curtains[3].visible,true,'non-toggleable curtain ignores layout requests')
+  assert.equal(curtainCollisionLines(effective).length,1)
+  assert.deepEqual(stage,original)
+})
+test('per-layout curtain choices survive serialization and are filtered against the pinned stage',()=>{
+  const file=projectFile('Concert',stageSpace(stage,{curtain:false,other:false,fixed:false}),[])
+  const result=resolveProject(file,[],[stage])
+  assert.deepEqual(result.space.partVisibility,{zone:true,text:true,curtain:false,other:false,hidden:true})
+  assert.equal(curtainCollisionLines(applyStagePartVisibility(result.space.assetSnapshot,result.space.partVisibility)).length,1)
+})

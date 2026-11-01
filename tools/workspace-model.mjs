@@ -33,6 +33,9 @@ export function createWorkspaceModel(store) {
   db.exec('CREATE TABLE IF NOT EXISTS wf_org_branding(organisation_id TEXT PRIMARY KEY REFERENCES wf_organisations(id),logo TEXT NOT NULL)')
   transaction(()=>{run("UPDATE wf_members SET role='user' WHERE role='member'");run("UPDATE wf_org_invitations SET role='user' WHERE role='member'")})
   db.exec('CREATE TABLE IF NOT EXISTS wf_library_removals(user_id TEXT NOT NULL REFERENCES users(id),kind TEXT NOT NULL,asset_id TEXT NOT NULL,PRIMARY KEY(user_id,kind,asset_id))')
+  const submissionColumns=new Set(all('PRAGMA table_info(wf_submissions)').map(column=>column.name))
+  for(const [name,type] of [['public_id','TEXT'],['public_revision','INTEGER']])if(!submissionColumns.has(name))db.exec('ALTER TABLE wf_submissions ADD COLUMN '+name+' '+type)
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS wf_returned_public_equipment ON wf_submissions(public_id) WHERE public_id IS NOT NULL')
   const layoutColumns=new Set(all('PRAGMA table_info(wf_layouts)').map(column=>column.name))
   for(const [name,definition] of [['creation_mode',"TEXT NOT NULL DEFAULT 'legacy'"],['share_stage_owner','INTEGER NOT NULL DEFAULT 0'],['deleted','INTEGER NOT NULL DEFAULT 0']])if(!layoutColumns.has(name))db.exec('ALTER TABLE wf_layouts ADD COLUMN '+name+' '+definition)
   const now=()=>new Date().toISOString()
@@ -134,7 +137,7 @@ export function createWorkspaceModel(store) {
     const map=new Map(layoutEquipment(row,user).map(item=>[item.id,item]))
     for(const pinned of previous.assetSnapshots?.equipment||[]){const requested=data.assetSnapshots?.equipment?.find(item=>item.id===pinned.id),current=map.get(pinned.id);if(!current||requested?.revision!==current.revision)map.set(pinned.id,pinned)}
     if(data.items.some(item=>!item||!Number.isFinite(item.xMeters)||!Number.isFinite(item.yMeters)||!Number.isFinite(item.rotation??0)||item.custom&&!['staging','text'].includes(item.custom.type)||!item.custom&&!map.has(item.assetId)))fail(400,'Unavailable or invalid equipment in this layout')
-    const resolved=resolveProject({...data,project:row.name,stage:{kind:'library',id:row.stage_id},assetSnapshots:{stage,equipment:[...map.values()]}},[...map.values()],[stage])
+    const resolved=resolveProject({...data,project:row.name,stage:{kind:'library',id:row.stage_id,partVisibility:data.stage?.partVisibility},assetSnapshots:{stage,equipment:[...map.values()]}},[...map.values()],[stage])
     const quantities=new Map((stage.availableEquipment||[]).map(item=>[item.assetId,item.quantity])),organisationQuantities=row.organisation_id?orgStock(row.organisation_id):new Map()
     const stockLibrary=[...map.values()].map(item=>({...item,stockQuantity:quantities.get(item.id)??organisationQuantities.get(item.id)??null}))
     resolved.items=assignEquipmentSources(resolved.items,stockLibrary,Boolean(row.organisation_id||quantities.size),stage.fixedEquipment||[])
@@ -146,7 +149,7 @@ export function createWorkspaceModel(store) {
   const submit=row=>{
     const previous=get('SELECT * FROM wf_submissions WHERE asset_id=? ORDER BY updated DESC LIMIT 1',row.id),data=parsed(row)
     if(previous){run("UPDATE wf_submissions SET snapshot=?,source_revision=?,revision=revision+1,status='pending',feedback='',updated=? WHERE id=?",JSON.stringify(data),row.revision,now(),previous.id);return previous.id}
-    const id=uid();run("INSERT INTO wf_submissions VALUES(?,?,?,?,?,1,'pending','',?,?)",id,row.id,row.owner_id,JSON.stringify(data),row.revision,now(),now());return id
+    const id=uid();run("INSERT INTO wf_submissions(id,asset_id,owner_id,snapshot,source_revision,revision,status,feedback,created,updated) VALUES(?,?,?,?,?,1,'pending','',?,?)",id,row.id,row.owner_id,JSON.stringify(data),row.revision,now(),now());return id
   }
   transaction(()=>{
     for(const [id,name,width,depth] of [['generic-rehearsal','Rehearsal room',10,6],['generic-small-stage','Small stage',8,6],['generic-concert-stage','Concert stage',16,10]])if(!get('SELECT id FROM wf_stages WHERE id=?',id)){

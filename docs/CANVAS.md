@@ -26,7 +26,9 @@ New curtains default to black with **20 mm thickness**. Use **Colour**, the **Th
 
 **Curtain collision** in the inspector starts enabled. Turn it off to keep the artwork visible while letting equipment pass through. Selecting an enabled curtain shows a dotted centre line along its collision boundary. Equipment collides with that straight line, rather than the decorative wave, and can slide along it. Hiding a curtain or its group/folder also removes its collision; opacity alone does not. Global collision checks and per-item collision overrides still apply. The guide and endpoint handles are excluded from PDFs and client editing.
 
-Curtains belong to the source stage. They appear in stage/layout previews, client layouts and canvas PDF exports. Visitors cannot edit them. They do not consume equipment stock or add equipment-list rows.
+Enable **Toggleable in Stageplot** on a curtain, zone or text label to let layout users show or hide it. A stage group can instead expose one named toggle for its zones, text and curtains. In a layout, these controls appear in the inspector under **Stage parts**, even with no equipment selected. Choices save with that layout, affect previews and PDF exports, and leave the source stage and other layouts unchanged. Hidden zones and curtains stop blocking equipment. Stage-author visibility, group eyes and folder eyes still apply.
+
+Curtains belong to the source stage. They appear in stage/layout previews, client layouts and canvas PDF exports. Visitors can use the visibility choices enabled by the stage author; their geometry and styles stay locked. They do not consume equipment stock or add equipment-list rows.
 
 ## Installed and movable equipment
 
@@ -40,9 +42,15 @@ Optional quantities are blank for untracked, zero for none, or positive whole nu
 
 Open a saved layout or choose **Create layout** on a stage card. Layout editing locks stage geometry and installed equipment. Stage layers starts collapsed; expand it to inspect source contents.
 
-Click equipment in the bottom drawer or drag it onto the stage. Drag placed equipment to move it. The inspector provides coordinates, rotation, labels, named parts, components and supply source. Multiple selected items expose compatible shared controls.
+Click equipment in the bottom drawer or drag it onto the stage. Drag placed equipment to move it. The inspector provides coordinates, rotation, labels, named parts, components and supply source. Multiple selected items expose compatible shared controls even when their values differ.
 
 Rotation handles follow the item's orientation. Rotation fields and gestures use whole degrees. Shift gives a coarser 15-degree gesture.
+
+## Edit multiple items
+
+Shift-click layers or canvas items, or drag a selection box. In equipment design, stage building and layout editing, the inspector shows the controls shared by every selected item. Different values show **Mixed** rather than hiding the control: text and number fields are blank, checkboxes are indeterminate, and colours, sliders and menus identify the mixed state. Changing a control applies that value to the whole selection; untouched properties keep their individual values. Numeric edits commit on Enter or when you leave the field.
+
+Groups also expose their members' shared properties. Named adjustable equipment parts and components can be edited together across equipment assets with different internal identifiers. Type-specific controls appear when all selected items support them. Unlock selected layers before changing their properties; locking and visibility remain available.
 
 ## Decks, text and labels
 

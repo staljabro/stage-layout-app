@@ -11,6 +11,7 @@ export function createUserWorkspace(store) {
   const {now,requireUser,requireAdmin,label,text,parsed,member,org,organisationBranding,shares,setShares,isPublic,canReadEquipment,canEditEquipment,equipmentData,decorateEquipment,catalogue,stageRow,accessStage,normaliseStage,stageSummary,layoutAccess,getLayout,layoutSummary,recordLayout,createLayout,saveLayout,submit}=model
   const requireOwner=user=>{requireUser(user);const current=get('SELECT role,disabled FROM users WHERE id=?',user.id);if(user.role!=='owner'||current?.role!=='owner'||current.disabled)fail(403,'Only the app Owner can import or restore library records and create stage templates')}
   const importRequest=async body=>{const input=await body();if(!input||typeof input!=='object'||Array.isArray(input))fail(400,'Invalid import request');return input}
+  const requireLibraryManager=user=>{requireAdmin(user);const current=get('SELECT role,disabled FROM users WHERE id=?',user.id);if(!manager(current)||current.disabled)fail(403,'An active app Admin or Owner is required')}
   const archived=(kind,id,user)=>{const row=asset(kind,id);if(!row||row.deleted||row.owner_id&&row.owner_id!==user.id)fail(404,'Archived item not found');return parsed(row)}
   const copyEquipment=(source,user,organisationIds)=>{const id='item-'+uid(),cleaned=equipmentData({...source,id}),saved=saveAsset('items',id,cleaned,user,user.id);setShares('equipment',id,organisationIds||[],user,user.id);return decorateEquipment(asset('items',saved.id),user)}
   const copyStage=(source,input,user)=>{
@@ -166,6 +167,24 @@ export function createUserWorkspace(store) {
       const input=await body()
       return reply(201,transaction(()=>{const source=asset('items',equipmentCopy[1]);if(!canReadEquipment(source,user))fail(404,'Equipment not found');return copyEquipment(parsed(source),user,input.organisationIds)}))
     }
+    const withdraw=route.match(/^\/equipment\/([a-z0-9-]+)\/withdraw$/)
+    if(withdraw&&method==='POST'){
+      requireLibraryManager(user);const input=await body()
+      if(!input||typeof input!=='object'||Array.isArray(input))fail(400,'Invalid library review request')
+      return reply(200,transaction(()=>{
+        requireLibraryManager(user)
+        const current=asset('items',withdraw[1])
+        if(!current||current.owner_id)fail(404,'Public equipment not found')
+        if(!isPublic(current))fail(409,'This equipment is no longer in the public library')
+        if(input.revision!==current.revision)fail(409,'Public equipment changed. Reload before returning it to reviews')
+        const snapshot=equipmentData(parsed(current)),feedback=text(input.feedback??'Returned from the public library for review.',2000)
+        const publication=get('SELECT source_id FROM wf_publications WHERE public_id=?',current.id),creator=publication?asset('items',publication.source_id)?.owner_id:null
+        const removed=saveAsset('items',current.id,parsed(current),user,null,1),previous=get('SELECT id FROM wf_submissions WHERE public_id=?',current.id),id=previous?.id||uid()
+        if(previous)run("UPDATE wf_submissions SET snapshot=?,source_revision=?,public_revision=?,status='pending',feedback=?,revision=revision+1,updated=? WHERE id=?",JSON.stringify(snapshot),current.revision,removed.revision,feedback,now(),id)
+        else run("INSERT INTO wf_submissions(id,asset_id,owner_id,snapshot,source_revision,revision,status,feedback,created,updated,public_id,public_revision) VALUES(?,?,?,?,?,1,'pending',?,?,?,?,?)",id,current.id,creator||user.id,JSON.stringify(snapshot),current.revision,feedback,now(),now(),current.id,removed.revision)
+        return {id,publicId:current.id,status:'pending'}
+      }))
+    }
     const itemPath=route.match(/^\/equipment\/([a-z0-9-]+)$/)
     if(itemPath){
       const id=itemPath[1],row=asset('items',id)
@@ -179,12 +198,21 @@ export function createUserWorkspace(store) {
     if(route==='/submissions'&&method==='GET')return reply(200,all(manager(user)?'SELECT * FROM wf_submissions ORDER BY updated DESC':'SELECT * FROM wf_submissions WHERE owner_id=? ORDER BY updated DESC',...(manager(user)?[]:[user.id])).map(row=>({...row,snapshot:JSON.parse(row.snapshot),ownerName:get('SELECT name FROM users WHERE id=?',row.owner_id)?.name||'Creator'})))
     const review=route.match(/^\/submissions\/([a-f0-9]+)$/)
     if(review&&method==='POST'){
-      requireAdmin(user);const input=await body()
-      return reply(200,transaction(()=>{const proposal=get('SELECT * FROM wf_submissions WHERE id=?',review[1]);if(!proposal||proposal.status!=='pending')fail(409,'Submission is no longer pending');if(input.revision!==proposal.revision)fail(409,'Submission changed. Reopen it before reviewing')
+      requireLibraryManager(user);const input=await body()
+      return reply(200,transaction(()=>{requireLibraryManager(user);const proposal=get('SELECT * FROM wf_submissions WHERE id=?',review[1]);if(!proposal||proposal.status!=='pending')fail(409,'Submission is no longer pending');if(input.revision!==proposal.revision)fail(409,'Submission changed. Reopen it before reviewing')
+        if(proposal.public_id){const current=asset('items',proposal.public_id);if(!current||current.owner_id||!current.deleted||current.revision!==proposal.public_revision)fail(409,'The published equipment changed. Reopen its latest review')}
         if(!['save','approve','decline'].includes(input.action))fail(400,'Choose save, approve or decline')
         const data=input.data?equipmentData(input.data):JSON.parse(proposal.snapshot),feedback=text(input.feedback??proposal.feedback,2000)
         if(input.action==='save'){run('UPDATE wf_submissions SET snapshot=?,feedback=?,revision=revision+1,updated=? WHERE id=?',JSON.stringify(data),feedback,now(),proposal.id);return {saved:true}}
-        if(input.action==='approve'){const publication=get('SELECT * FROM wf_publications WHERE source_id=?',proposal.asset_id),publicId=publication?.public_id||'public-'+uid();const published={...data,id:publicId,profiles:['external'],editor:data.editor?{...data.editor,referenceImages:[]}:undefined};for(const key of ['ownerId','proposedReplacementId','legacySourceId'])delete published[key];saveAsset('items',publicId,published,user,null);run('INSERT INTO wf_publications VALUES(?,?,?,?) ON CONFLICT(source_id) DO UPDATE SET approved_by=excluded.approved_by,approved=excluded.approved',proposal.asset_id,publicId,user.id,now())}
+        if(input.action==='approve'){
+          const publication=get('SELECT * FROM wf_publications WHERE source_id=?',proposal.asset_id),publicId=proposal.public_id||publication?.public_id||'public-'+uid()
+          const published={...data,id:publicId,profiles:['external'],editor:data.editor?{...data.editor,referenceImages:[]}:undefined}
+          for(const key of ['ownerId','proposedReplacementId','legacySourceId'])delete published[key]
+          saveAsset('items',publicId,published,user,null)
+          if(proposal.public_id)run('UPDATE wf_publications SET approved_by=?,approved=? WHERE public_id=?',user.id,now(),publicId)
+          else run('INSERT INTO wf_publications VALUES(?,?,?,?) ON CONFLICT(source_id) DO UPDATE SET approved_by=excluded.approved_by,approved=excluded.approved',proposal.asset_id,publicId,user.id,now())
+          run("UPDATE wf_submissions SET status='superseded',revision=revision+1,updated=? WHERE public_id=? AND status='pending' AND id<>?",now(),publicId,proposal.id)
+        }
         run('UPDATE wf_submissions SET snapshot=?,status=?,feedback=?,revision=revision+1,updated=? WHERE id=?',JSON.stringify(data),input.action==='approve'?'approved':'declined',feedback,now(),proposal.id);return {status:input.action==='approve'?'approved':'declined'}
       }))
     }

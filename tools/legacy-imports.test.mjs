@@ -109,6 +109,23 @@ test('legacy seated-person artwork imports and saves as visible equipment withou
   assert.deepEqual(repaired.data.shapes,original.shapes,'re-saving repairs the existing item without recreating artwork')
 })
 
+test('deleted generic equipment stays deleted after reopening the persistent database',async t=>{
+  const fixtureData=await fixture(t),{call}=fixtureData
+  const savedEquipment=(await call('/equipment/import','POST',{data:{...equipment,label:'My retained equipment'}})).data
+  const savedStage=(await call('/stages','POST',{data:{...stage,label:'My retained stage'}})).data
+  const defaults=(await call('/equipment','GET',{},null)).data.filter(item=>item.builtin)
+  assert.equal(defaults.length,4)
+  for(const item of defaults)assert.equal((await call('/equipment/'+item.id,'DELETE')).status,200)
+  const revisions=defaults.map(item=>fixtureData.store.asset('items',item.id).revision)
+  for(let restart=0;restart<2;restart++){
+    await fixtureData.reopen()
+    assert.equal((await call('/equipment','GET',{},null)).data.filter(item=>item.builtin).length,0,'startup must not resurrect deleted defaults')
+    for(const [index,item] of defaults.entries()){const row=fixtureData.store.asset('items',item.id);assert.equal(row.deleted,1);assert.equal(row.revision,revisions[index])}
+    assert.equal((await call('/equipment/'+savedEquipment.id)).data.label,'My retained equipment')
+    assert.equal((await call('/stages/'+savedStage.id)).data.name,'My retained stage')
+  }
+})
+
 test('removing initial JSON files after bootstrap leaves archives and restoration available in SQLite',async t=>{
   const fixtureData=await fixture(t,{bootstrap:true}),{call,directory}=fixtureData
   assert.equal(fixtureData.store.get("SELECT value FROM settings WHERE key='imported'").value,'true')

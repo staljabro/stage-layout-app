@@ -30,6 +30,10 @@ Review in the editor, adjust the submitted design if needed, and save review edi
 
 App Admins and the Owner can maintain published equipment/stages. The Owner additionally maintains generic stages and can delete public equipment.
 
+For public equipment, **Return to reviews** removes the current published item from the catalogue and creates a pending review of that published version. The action is available to app Admins and the Owner. The creator's private original and separate pending submissions are preserved, and existing layouts keep their saved snapshots.
+
+Open the returned review to edit, save review edits, approve again or decline. Saving edits keeps the item withdrawn. Reapproval restores its original public ID; declining leaves it out of the public catalogue. Generic equipment can also be returned and reapproved. If a newer version is approved through a separate submission, an older returned review is marked superseded.
+
 ## Canvas PDF
 
 Choose **Export PDF** in the stage/layout editor. The browser's print system provides PDF saving and paper/printer settings. Editor panels, selection controls and handles are excluded by the print styles.

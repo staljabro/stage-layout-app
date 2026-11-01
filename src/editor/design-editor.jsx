@@ -3,6 +3,9 @@ import {CurtainArtwork} from '../stage-curtain.jsx'
 import {stageLineAssets,stageLineBounds,normaliseCurtain,resizeCurtain} from '../stage-curtain.js'
 import {wholeDegrees} from '../rotation-angle.js'
 import {equipmentFolders as normaliseEquipmentFolders,syncEquipmentFolders} from '../equipment-layer-model.js'
+import {SharedInspector} from './shared-inspector.jsx'
+import {StagePartsInspector} from './stage-parts-inspector.jsx'
+import {normaliseStagePartVisibility,stagePartVisible,applyStagePartVisibility} from '../stage-part-visibility.js'
 import {StageLayerList} from './stage-layer-list.jsx'
 import {LayerLock} from './layer-lock.jsx'
 import {LayerEye} from './layer-eye.jsx'
@@ -526,6 +529,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   },[equipmentEmbedded]);
   const [equipmentSaveOpen,setEquipmentSaveOpen]=useState(false);
   const readOnlyStage=embeddedStage?.canEditStage===false;
+  const [stagePartVisibility,setStagePartVisibility]=useState(()=>embeddedStage?normaliseStagePartVisibility(embeddedStage.data,embeddedStage.partVisibility):{});
   const [layoutEquipment,setLayoutEquipment]=useState(embeddedStage?.layoutEquipment||[]);
   const [layoutNotes,setLayoutNotes]=useState(embeddedStage?.notes||'');
   const [availableEquipment,setAvailableEquipment]=useState(embeddedStage?.data.availableEquipment||[]);
@@ -658,7 +662,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const clipboardId = useRef(1);
   const projectSnapshot = JSON.stringify(documentMode === "item"
     ? {documentMode,shapeName,realWidth,realDepth,groupId,items,itemFolders,rotationParts,components,cornerSnapping,referenceImages,advancedShapeRole}
-    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,stageBoundaryVisible,fixedEquipment,layoutEquipment,equipmentFolders,layoutNotes,availableEquipment,zones,zoneFolders,textItems,stageLines,referenceImages});
+    : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,stageBoundaryVisible,fixedEquipment,layoutEquipment,stagePartVisibility,equipmentFolders,layoutNotes,availableEquipment,zones,zoneFolders,textItems,stageLines,referenceImages});
   useEffect(() => {
     if (savedProject.current === null || resetProjectBaseline.current) {
       savedProject.current = projectSnapshot;
@@ -668,7 +672,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const onNavigationStateChange=embeddedStage?.onNavigationStateChange;
   useEffect(()=>{onNavigationStateChange?.({dirty:projectSnapshot!==savedProject.current,busy:shapeSaving})},[onNavigationStateChange,projectSnapshot,shapeSaving]);
   const sessionError = useSessionDraft(sessionKey, {
-    documentMode, shapeName, realWidth, realDepth, groupId, items, itemFolders, rotationParts, components, cornerSnapping, referenceImages,layoutEquipment,equipmentFolders,layoutNotes,availableEquipment,projectSnapshot,
+    documentMode, shapeName, realWidth, realDepth, groupId, items, itemFolders, rotationParts, components, cornerSnapping, referenceImages,layoutEquipment,stagePartVisibility,equipmentFolders,layoutNotes,availableEquipment,projectSnapshot,
     advancedShapeRole, stageNodes, fixedEquipment, zones, zoneFolders, textItems, stageLines, stageBoundaryLocked, stageBoundaryVisible, activeLibraryId, draftAssetId, snapMode, grid,studioUi,
     zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
     savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
@@ -738,10 +742,14 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const selectedZoneAnchor=selectedZoneBounds?selectedZone.anchorMode==="centre"?{x:selectedZoneBounds.centreX,y:selectedZoneBounds.centreY}:{x:selectedZoneBounds.x,y:selectedZoneBounds.y}:null;
   const directlySelectedStageIds=[...new Set([...selectedStageAssetIds,...(selectedZoneId?[selectedZoneId]:[]),...(selectedTextId?[selectedTextId]:[]),...(selectedStageLineId?[selectedStageLineId]:[]),...(selectedReferenceId?[selectedReferenceId]:[])])];
   const selectedStageAssets=orderedAssets.filter(asset=>directlySelectedStageIds.includes(asset.id));
+  const stageInspectorAssets=[...selectedStageAssets,...(directlySelectedStageIds.includes("stage-boundary")?[{id:"stage-boundary",assetType:"boundary",nodes:stageNodes,name:shapeName,visible:stageBoundaryVisible,locked:stageBoundaryLocked}]:[])];
+  const stageMulti=stageInspectorAssets.length>1;
   const stageGroupId=selectedStageAssets[0]?.editorGroupId;
   const selectedStageGroup=stageGroupId && selectedStageAssets.every(asset=>asset.editorGroupId===stageGroupId) ? orderedAssets.filter(asset=>asset.editorGroupId===stageGroupId) : [];
   const updateStageGroup=changes=>{checkpoint();const update=old=>old.map(asset=>asset.editorGroupId===stageGroupId?{...asset,...changes}:asset);setZones(update);setTextItems(update);setStageLines(update);setReferenceImages(update);};
   const groupStageAssets=()=>{checkpoint();const ids=new Set(selectedStageAssets.flatMap(asset=>stageGroupIds(orderedAssets,asset.id))),id='stage-group-'+Date.now()+'-'+nextGroupId.current++;const update=old=>old.map(asset=>ids.has(asset.id)?{...asset,editorGroupId:id,editorGroupName:'Stage group',editorGroupToggleable:false}:asset);setZones(update);setTextItems(update);setStageLines(update);setReferenceImages(update);setSelectedStageAssetIds([...ids]);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null);setSelectedReferenceId(null);};
+  const changeSharedStage=(field,value)=>{checkpoint();const ids=new Set(stageInspectorAssets.map(item=>item.id));const apply=old=>old.map(item=>ids.has(item.id)?field.set(item,value):item);setZones(apply);setTextItems(apply);setStageLines(apply);setReferenceImages(apply);if(ids.has("stage-boundary")){const changed=field.set(stageInspectorAssets.find(item=>item.id==="stage-boundary"),value);setStageNodes(changed.nodes);setShapeName(changed.name);setStageBoundaryVisible(changed.visible);setStageBoundaryLocked(changed.locked);}};
+  const changeSharedArtwork=(field,value)=>{checkpoint();const ids=new Set((selectedGroupId?items.filter(item=>item.editorGroupId===selectedGroupId):items.filter(item=>multiSelectedIds.includes(item.id))).map(item=>item.id));setItems(old=>old.map(item=>{if(!ids.has(item.id))return item;const changed=field.set(item,value);return resizeShape(item,changed)}));};
   const hasStageInspectorSelection=Boolean(selectedZone||selectedText||selectedStageLine||referenceSelected||stageNode||selectedStageAssetIds.length);
   const activeStageControls = documentMode === "stage" && !stageMoveMode && !selectedZone?.locked && selectedZone?.zoneShape!=="rectangle" && (selectedZone || !stageBoundaryLocked) ? stageControlPoints(selectedZone?.nodes || stageNodes, selectedStageNode) : [];
   const selectedGroupItems = selectedGroupId
@@ -889,7 +897,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         referenceImages: structuredClone(referenceImages),
         stageNodes: structuredClone(stageNodes),
         stageBoundaryLocked,stageBoundaryVisible,
-        fixedEquipment: structuredClone(fixedEquipment),layoutEquipment:structuredClone(layoutEquipment),equipmentFolders:structuredClone(equipmentFolders),availableEquipment:structuredClone(availableEquipment),layoutNotes,
+        fixedEquipment: structuredClone(fixedEquipment),layoutEquipment:structuredClone(layoutEquipment),stagePartVisibility:structuredClone(stagePartVisibility),equipmentFolders:structuredClone(equipmentFolders),availableEquipment:structuredClone(availableEquipment),layoutNotes,
         zones: structuredClone(zones),
         zoneFolders: structuredClone(zoneFolders),
         textItems: structuredClone(textItems),
@@ -913,6 +921,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     if (previous.fixedEquipment) setFixedEquipment(previous.fixedEquipment);
     if(previous.equipmentFolders)setEquipmentFolders(previous.equipmentFolders);
     if(previous.layoutEquipment)setLayoutEquipment(previous.layoutEquipment);
+    if(previous.stagePartVisibility)setStagePartVisibility(previous.stagePartVisibility);
     if(previous.availableEquipment)setAvailableEquipment(previous.availableEquipment);
     if(previous.layoutNotes!==undefined)setLayoutNotes(previous.layoutNotes);
     if (previous.zones) setZones(previous.zones);
@@ -1028,7 +1037,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setMultiSelectedIds([]);
     setSelectedGroupId(null);
   };
-  const placement=useEquipmentPlacement({enabled:Boolean(embeddedStage),value:readOnlyStage?layoutEquipment:fixedEquipment,onChange:readOnlyStage?setLayoutEquipment:setFixedEquipment,library:embeddedStage?.equipment||[],groups:embeddedStage?.groups||[],folders:equipmentFolders,onFoldersChange:setEquipmentFolders,canvasRef,stage:{...stageData,availableEquipment},checkpoint,onSelect:()=>{setStockMode(false);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([])},visitor:readOnlyStage,onCreateEquipment:embeddedStage?.onCreateEquipment,notes:layoutNotes,onNotesChange:setLayoutNotes,reviewNote:embeddedStage?.reviewNote,status:embeddedStage?.statusLabel,project:embeddedStage?.layoutName||shapeName,snapMode,organisationId:embeddedStage?.organisationId,organisation:embeddedStage?.organisation});
+  const placement=useEquipmentPlacement({enabled:Boolean(embeddedStage),value:readOnlyStage?layoutEquipment:fixedEquipment,onChange:readOnlyStage?setLayoutEquipment:setFixedEquipment,library:embeddedStage?.equipment||[],groups:embeddedStage?.groups||[],folders:equipmentFolders,onFoldersChange:setEquipmentFolders,canvasRef,stage:{...(readOnlyStage?applyStagePartVisibility(stageData,stagePartVisibility):stageData),availableEquipment},checkpoint,onSelect:()=>{setStockMode(false);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([])},visitor:readOnlyStage,onCreateEquipment:embeddedStage?.onCreateEquipment,notes:layoutNotes,onNotesChange:setLayoutNotes,reviewNote:embeddedStage?.reviewNote,status:embeddedStage?.statusLabel,project:embeddedStage?.layoutName||shapeName,snapMode,organisationId:embeddedStage?.organisationId,organisation:embeddedStage?.organisation});
   const pointerDown = (event, item) => {
     if (event.button !== 0) return;
     if (item.editorLocked || item.editorVisible === false) return;
@@ -1798,7 +1807,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   };
   const saveToLibrary = async (submit=false) => {
     if(embeddedEquipment){if(!items.length)return flash('Add artwork before saving');setSaveError('');setEquipmentSaveOpen(true);return;}
-    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{await embeddedStage.onSave({...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,layoutFolders:equipmentFolders,notes:layoutNotes},submit===true);savedProject.current=projectSnapshot;flash(readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage version saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
+    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{await embeddedStage.onSave({...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility}:{}),layoutFolders:equipmentFolders,notes:layoutNotes},submit===true);savedProject.current=projectSnapshot;flash(readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage version saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
     if (shapeSaving) return;
     if(editingSubmission){setReviewerMessage(editingSubmission.review_note || '');setSubmissionSaveOpen(true);return;}
     if(personalSource){
@@ -2685,7 +2694,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 )}
                 {documentMode === "stage" && (
                   <g className="ordered-stage-assets" pointerEvents={readOnlyStage?"none":undefined}>
-                    {[...orderedAssets].reverse().filter(asset=>stageAssetVisible(asset,zoneFolders)).map((asset) =>
+                    {[...orderedAssets].reverse().filter(asset=>stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map((asset) =>
                       asset.assetType === "image" ? (
                         <svg key={asset.id} className={asset.locked ? "ordered-reference locked" : "ordered-reference"} x={asset.x} y={asset.y} width={asset.width} height={asset.height} viewBox={`${asset.crop?.left || 0} ${asset.crop?.top || 0} ${1 - (asset.crop?.left || 0) - (asset.crop?.right || 0)} ${1 - (asset.crop?.top || 0) - (asset.crop?.bottom || 0)}`} preserveAspectRatio="none" opacity={asset.opacity} overflow="hidden" onPointerDown={asset.locked ? undefined : (event) => startAssetMove(event, asset, "image")}>
                           <image href={asset.dataUrl} x="0" y="0" width="1" height="1" preserveAspectRatio="none" />
@@ -3103,17 +3112,18 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
           </div>
         </section>
         <div className="panel-resizer" role="separator" aria-label="Resize inspector" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"right",startX:event.clientX,startWidth:currentUi.rightWidth||250});}}/>
-        <aside className={`inspector${currentUi.rightOpen===false?" panel-collapsed":""}`}>{embeddedStage&&placement.notesPanel}{stockMode&&!readOnlyStage?<StockInspector value={availableEquipment} groups={embeddedStage?.groups||[]} library={embeddedStage?.equipment||[]} onChange={next=>{checkpoint();setAvailableEquipment(next)}}/>:embeddedStage&&placement.selected?placement.inspector:null}<div hidden={Boolean(embeddedStage&&(readOnlyStage||placement.selected||stockMode))}>
+        <aside className={`inspector${currentUi.rightOpen===false?" panel-collapsed":""}`}>{readOnlyStage&&<StagePartsInspector stage={stageData} visibility={stagePartVisibility} onChange={value=>{checkpoint();setStagePartVisibility(value)}}/>}{embeddedStage&&placement.notesPanel}{stockMode&&!readOnlyStage?<StockInspector value={availableEquipment} groups={embeddedStage?.groups||[]} library={embeddedStage?.equipment||[]} onChange={next=>{checkpoint();setAvailableEquipment(next)}}/>:embeddedStage&&placement.selected?placement.inspector:null}<div hidden={Boolean(embeddedStage&&(readOnlyStage||placement.selected||stockMode))}>
           <p className="eyebrow">INSPECTOR</p>
           {documentMode === "stage" ? (
             <>
               <p className="inspector-context">
-                {stageNode
+                {stageMulti ? `${stageInspectorAssets.length} stage assets selected` : stageNode
                   ? `Boundary node ${selectedStageNode + 1}`
                   : selectedZone ? selectedZone.name || "Selected zone" : selectedText ? selectedText.name || "Selected text" : selectedStageLine ? selectedStageLine.name || "Selected dimension" : referenceSelected ? referenceImage.name || "Background image" : selectedStageAssetIds.length > 1 ? `${selectedStageAssetIds.length} stage assets selected` : selectedStageAssetIds.includes("stage-boundary") ? "Main stage selected" : "Stage and boundary settings"}
               </p>
+              {stageMulti&&<SharedInspector items={stageInspectorAssets} context="stage" onChange={changeSharedStage} unit="m"/>}
               {selectedStageAssets.length>1 && !selectedStageGroup.length && <button className="group-button" onClick={groupStageAssets}>Group selected stage assets</button>}
-              {selectedStageGroup.length>0 && <section className="zone-group-settings"><h3>Stage group - {selectedStageGroup.length} assets</h3><label className="field">GROUP NAME<input value={selectedStageGroup[0].editorGroupName || ''} onChange={event=>updateStageGroup({editorGroupName:event.target.value})}/></label><label className="collision-toggle"><input type="checkbox" checked={selectedStageGroup[0].editorGroupToggleable===true} onChange={event=>updateStageGroup({editorGroupToggleable:event.target.checked})}/><span><b>Toggleable in Stageplot</b><small>One toggle controls grouped zones and text. Studio-only dimensions and background images remain grouped while editing.</small></span></label><button className="ungroup" onClick={()=>updateStageGroup({editorGroupId:undefined,editorGroupName:undefined,editorGroupToggleable:undefined})}>Ungroup stage assets</button></section>}
+              {selectedStageGroup.length>0 && <section className="zone-group-settings"><h3>Stage group - {selectedStageGroup.length} assets</h3><label className="field">GROUP NAME<input value={selectedStageGroup[0].editorGroupName || ''} onChange={event=>updateStageGroup({editorGroupName:event.target.value})}/></label><label className="collision-toggle"><input type="checkbox" checked={selectedStageGroup[0].editorGroupToggleable===true} onChange={event=>updateStageGroup({editorGroupToggleable:event.target.checked})}/><span><b>Toggleable in Stageplot</b><small>One toggle controls grouped zones, text and curtains. Studio-only dimensions and background images remain grouped while editing.</small></span></label><button className="ungroup" onClick={()=>updateStageGroup({editorGroupId:undefined,editorGroupName:undefined,editorGroupToggleable:undefined})}>Ungroup stage assets</button></section>}
               {!hasStageInspectorSelection && <>
               <label className="field">
                 STAGE NAME
@@ -3153,7 +3163,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 <span><b>Enable canvas resizing</b><small>Shows Ctrl-drag handles on the right and bottom edges.</small></span>
               </label>
               </>}
-              {selectedZone && (
+              {selectedZone && !stageMulti && (
                 <>
                   <p className="eyebrow advanced-title">ZONE</p>
                   <label className="field">
@@ -3277,7 +3287,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   </button>
                 </>
               )}
-              {selectedText && (
+              {selectedText && !stageMulti && (
                 <>
                   <p className="eyebrow advanced-title">TEXT</p>
                   <label className="field">NAME<input value={selectedText.name} onChange={(e) => setTextItems((old) => old.map((item) => item.id === selectedText.id ? { ...item, name: e.target.value } : item))} /></label>
@@ -3289,7 +3299,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   <button className="delete" onClick={() => { setTextItems((old) => old.filter((item) => item.id !== selectedText.id)); setSelectedTextId(null); }}>Delete text</button>
                 </>
               )}
-              {selectedStageLine&&<>
+              {selectedStageLine&&!stageMulti&&<>
                 <p className="eyebrow advanced-title">{selectedStageLine.type==="curtain"?"CURTAIN":"DIMENSION LINE"}</p>
                 <label className="field">NAME<input value={selectedStageLine.name} onChange={event=>setStageLines(old=>old.map(item=>item.id===selectedStageLine.id?{...item,name:event.target.value}:item))}/></label>
                 <div className="field-row">
@@ -3301,6 +3311,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 <label className="field">ROTATION (DEGREES)<CommittedNumberInput type="number" min="-180" max="180" step="1" value={selectedStageLine.rotation||0} onChange={event=>setStageLines(old=>old.map(item=>item.id===selectedStageLine.id?{...item,rotation:wholeDegrees(event.target.value)}:item))}/></label>
                 <p className="handle-help">The anchor is the line origin. Position changes move the whole line; length extends from the anchor and rotation pivots around it.</p>
                 {selectedStageLine.type==="curtain"&&<>
+                  <label className="collision-toggle"><input aria-label="Toggleable in Stageplot" type="checkbox" checked={selectedStageLine.toggleable===true} onChange={event=>{checkpoint();setStageLines(old=>old.map(line=>line.id===selectedStageLine.id?{...line,toggleable:event.target.checked}:line))}}/><span><b>Toggleable in Stageplot</b><small>Adds a per-layout show/hide control for this curtain.</small></span></label>
                   <label className="canvas-checkbox"><input aria-label="Curtain collision" type="checkbox" checked={selectedStageLine.collisionEnabled!==false} onChange={event=>{checkpoint();setStageLines(old=>old.map(line=>line.id===selectedStageLine.id?{...line,collisionEnabled:event.target.checked}:line))}}/>Curtain collision</label>
                   <label className="field">COLOUR<input aria-label="Curtain colour" type="color" value={selectedStageLine.color} onChange={event=>setStageLines(old=>old.map(line=>line.id===selectedStageLine.id?{...line,color:event.target.value}:line))}/></label>
                   <label className="field">THICKNESS <span>{Math.round(selectedStageLine.thickness*1000)} mm</span><input aria-label="Curtain thickness (mm)" type="range" min="1" max="200" step="1" value={Math.round(selectedStageLine.thickness*1000)} onChange={event=>setStageLines(old=>old.map(line=>line.id===selectedStageLine.id?{...line,thickness:Math.max(1,Math.min(200,Math.round(+event.target.value)))/1000}:line))}/></label>
@@ -3309,8 +3320,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 </>}
                 <button className="delete" onClick={()=>{setStageLines(old=>old.filter(item=>item.id!==selectedStageLine.id));setSelectedStageLineId(null);setSelectedStageAssetIds([]);}}>Delete {selectedStageLine.type==="curtain"?"curtain":"dimension line"}</button>
               </>}
-              {referenceSelected && <ReferenceInspector referenceImage={referenceImage} setReferenceImage={setReferenceImage} />}
-              {stageNode && (
+              {referenceSelected && !stageMulti && <ReferenceInspector referenceImage={referenceImage} setReferenceImage={setReferenceImage} />}
+              {stageNode && !stageMulti && (
                 <>
                   <div className="field-row">
                     <label className="field">
@@ -3416,6 +3427,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
           ) : selectedGroupId ? (
             <>
               <p className="inspector-context">Selected group</p>
+              <SharedInspector items={selectedGroupItems} context="artwork" onChange={changeSharedArtwork} unit={documentMode==="stage"?"m":"cm"}/>
               <div className="group-card">
                 <b>{selectedGroupItems[0]?.editorGroupName || "Group"}</b>
                 <span>{selectedGroupItems.length} layers</span>
@@ -3439,6 +3451,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
           ) : multiSelectedIds.length > 1 ? (
             <>
               <p className="inspector-context">Multiple layers selected</p>
+              <SharedInspector items={items.filter(item=>multiSelectedIds.includes(item.id))} context="artwork" onChange={changeSharedArtwork} unit={documentMode==="stage"?"m":"cm"}/>
               <div className="group-card">
                 <b>{multiSelectedIds.length}</b>
                 <span>layers ready to group</span>
@@ -3752,7 +3765,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       {embeddedStage&&placement.libraryPanel}
       {embeddedStage&&placement.report}
       {equipmentSaveOpen&&embeddedEquipment&&<EquipmentSaveDialog equipment={embeddedEquipment.data} organisations={embeddedEquipment.organisations||[]} review={embeddedEquipment.review} busy={shapeSaving} error={saveError} onSave={saveEmbeddedEquipment} onClose={()=>setEquipmentSaveOpen(false)}/>} 
-      {recovery?.projectSnapshot&&recovery.projectSnapshot!==recovery.savedProject&&<section className="canvas-recovery" role="status"><b>Unsaved local work is available.</b><p>The saved version has loaded. Restore your previous work to continue editing.</p><button onClick={()=>{checkpoint();if(readOnlyStage){setLayoutEquipment(recovery.layoutEquipment||[]);setEquipmentFolders(recovery.equipmentFolders||[]);setLayoutNotes(recovery.layoutNotes||'')}else restoreSnapshot(recovery);setRecovery(null)}}>Restore local work</button><button onClick={()=>setRecovery(null)}>Dismiss</button></section>}
+      {recovery?.projectSnapshot&&recovery.projectSnapshot!==recovery.savedProject&&<section className="canvas-recovery" role="status"><b>Unsaved local work is available.</b><p>The saved version has loaded. Restore your previous work to continue editing.</p><button onClick={()=>{checkpoint();if(readOnlyStage){setLayoutEquipment(recovery.layoutEquipment||[]);setStagePartVisibility(normaliseStagePartVisibility(embeddedStage.data,recovery.stagePartVisibility||embeddedStage.partVisibility));setEquipmentFolders(recovery.equipmentFolders||[]);setLayoutNotes(recovery.layoutNotes||'')}else restoreSnapshot(recovery);setRecovery(null)}}>Restore local work</button><button onClick={()=>setRecovery(null)}>Dismiss</button></section>}
       {saveError&&!embeddedEquipment&&<p className="canvas-save-error" role="alert">{saveError} <button onClick={()=>saveToLibrary()}>Retry save</button></p>}
       {libraryOpen && (
         <div

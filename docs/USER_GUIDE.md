@@ -46,6 +46,10 @@ For your own arrangement, choose **Create layout** on the stage card. Enter a na
 
 Click equipment in the bottom drawer or drag it onto the stage. Select an item to adjust its position, whole-degree rotation, label, component checkboxes and notes, or equipment source.
 
+Use **Stage parts** in the inspector to show or hide zones, labels, curtains or groups that the stage author marked **Toggleable in Stageplot**. Choices belong to your layout; hiding a collision zone or curtain lets equipment pass through.
+
+Shift-click to select several items. Their common inspector controls remain visible even when values differ; **Mixed** identifies those values, and an edit applies to the whole selection. This works in stage building, equipment design and layouts.
+
 Installed equipment and stage geometry are locked in layout editing. Expand the initially collapsed Stage layers to inspect the source stage. Stage authoring remains available through the stage's own Edit action when you have permission.
 
 For a team layout, select the organisation workspace before creating it. Installed stock is counted first; automatic sourcing then uses venue stock before client supply.
@@ -80,3 +84,5 @@ Use **Delete layout** only for a layout you own. Deletion stops its private edit
 For repeat work, maintain a source stage, create a new layout for each arrangement, and use organisations for equipment shared with your team.
 
 The app Owner also has **Import & restore** for archived stages/equipment, stage/equipment JSON imports and **Use as template** on stage cards. These create new private assets and preserve originals. App Admins and organisation Owners do not receive these tools. [Owner import and template guide](IMPORTS.md).
+
+App Admins and the Owner can use **Return to reviews** on public equipment. It is withdrawn from the public catalogue until approved again. Reviews contains the published snapshot for editing or declining, and reapproval retains the public item ID. Saved layouts and the creator's private original are preserved.

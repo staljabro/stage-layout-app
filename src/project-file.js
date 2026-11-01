@@ -2,14 +2,14 @@ import {wholeDegrees} from './rotation-angle.js';
 import {syncEquipmentFolders} from './equipment-layer-model.js';
 import {placementMetadata} from './layer-visibility.js';
 import { stageText, stageZone } from './zone-groups.js';
+import {normaliseStagePartVisibility} from './stage-part-visibility.js';
 import { customItemData, restoreCustomItem } from './custom-items.js';
 import {componentState} from './equipment-components.js';
 
 export function stageSpace(stage, savedVisibility = {}) {
   const zones=(stage.zones||[]).map(stageZone);
   const textItems=(stage.textItems||[]).map(stageText);
-  const toggleable=[...zones,...textItems].filter(part=>part.toggleable).map(part=>String(part.id));
-  return {availableEquipment:structuredClone(stage.availableEquipment||[]),fixedEquipment:structuredClone(stage.fixedEquipment || []),assetSnapshot:stage,stageId:stage.id,name:stage.label,width:stage.dimensions.widthMeters,depth:stage.dimensions.depthMeters,collisionBoundary:stage.collisionBoundary,boundary:stage.boundary,zones,textItems,partVisibility:Object.fromEntries(toggleable.map(id=>[id,savedVisibility[id]!==false]))};
+  return {availableEquipment:structuredClone(stage.availableEquipment||[]),fixedEquipment:structuredClone(stage.fixedEquipment || []),assetSnapshot:stage,stageId:stage.id,name:stage.label,width:stage.dimensions.widthMeters,depth:stage.dimensions.depthMeters,collisionBoundary:stage.collisionBoundary,boundary:stage.boundary,zones,textItems,curtains:stage.curtains||[],partVisibility:normaliseStagePartVisibility(stage,savedVisibility)};
 }
 export function assetReference(item) {
   return item.assetId || (item.type?.startsWith('library:') ? item.type.slice(8) : null);

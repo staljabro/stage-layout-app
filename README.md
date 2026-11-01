@@ -12,7 +12,7 @@ Build a stage, create your equipment, arrange a layout and share it with a clien
 4. Create a layout for yourself, or send one stage invitation to many clients. Each client receives a separate layout.
 5. Arrange equipment, add component notes, check venue stock and export a single-page canvas that fits your chosen paper size, or an equipment list.
 
-Stages are versioned sources. Layouts reference a stage version and keep their own equipment, notes and revision history. Clients can add equipment without editing the source stage.
+Stages are versioned sources. Layouts reference a stage version and keep their own equipment, notes and revision history. Clients can add equipment and toggle optional stage parts without editing the source stage. Shared inspector controls remain available for multi-selection, with differing values shown as **Mixed**.
 
 ## Accounts and privacy
 
@@ -23,6 +23,8 @@ Equipment starts private. Share it with a team, or submit it for public review. 
 Organisation owners can rename their team in its settings. PDF headers show the organisation logo beside the organisation, layout and stage names when available.
 
 The **app Owner** has **Import & restore** for archived stages/equipment, stage/equipment JSON files and **Use as template** on stage cards. These create private copies and preserve originals. See [imports, templates and safe cleanup of old JSON](docs/IMPORTS.md).
+
+App Admins and the Owner can **Return to reviews** to withdraw public equipment, edit its published version and approve it again. Existing layouts retain their saved equipment, and reapproval keeps the same public item ID.
 
 See [accounts and permissions](docs/ACCOUNTS.md), [organisation libraries](docs/ORGANISATIONS.md) and [sharing](docs/SHARING.md).
 

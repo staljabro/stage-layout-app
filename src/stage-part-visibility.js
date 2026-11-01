@@ -1,0 +1,32 @@
+import {stageZone,stageText} from './zone-groups.js'
+import {normaliseCurtain} from './stage-curtain.js'
+
+export function stageParts(stage) {
+  return [...(stage.zones||[]).map(stageZone),...(stage.textItems||[]).map(stageText),...(stage.curtains||[]).map(item=>stageText(normaliseCurtain(item)))]
+}
+
+export function normaliseStagePartVisibility(stage,saved={}) {
+  return Object.fromEntries(stageParts(stage).filter(part=>part.toggleable).map(part=>[String(part.id),saved?.[part.id]!==false]))
+}
+
+export function stagePartVisible(part,visibility={}) {
+  return !stageText(part).toggleable||visibility?.[part.id]!==false
+}
+
+// Keep source visibility and folder/group overrides intact. Layout choices can
+// hide optional parts, but never reveal layers hidden by the stage author.
+export function applyStagePartVisibility(stage,visibility={}) {
+  const apply=part=>({...part,visible:part.visible!==false&&stagePartVisible(part,visibility)})
+  return {...stage,zones:(stage.zones||[]).map(apply),textItems:(stage.textItems||[]).map(apply),curtains:(stage.curtains||[]).map(apply)}
+}
+
+export function stagePartGroups(stage) {
+  const groups=new Map()
+  for(const part of stageParts(stage).filter(part=>part.toggleable)){
+    const grouped=part.editorGroupId&&part.editorGroupToggleable
+    const key=grouped?'group:'+part.editorGroupId:'part:'+part.id
+    if(!groups.has(key))groups.set(key,{id:key,name:part.toggleName||part.name||part.text||(part.type==='curtain'?'Curtain':'Stage part'),ids:[]})
+    groups.get(key).ids.push(String(part.id))
+  }
+  return [...groups.values()]
+}

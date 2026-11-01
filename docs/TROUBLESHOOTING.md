@@ -38,6 +38,10 @@ In **Equipment**, look for **Recover saved equipment** and choose **Show in equi
 
 Equipment imports and saves now clear this legacy classification automatically. You can also reopen an affected item using its existing editor link and save it again. When the item appears in `/api/workspace/equipment`, it is stored in SQLite; changing library paths is not needed to correct this tag.
 
+## Public equipment was returned to review
+
+An app Admin or Owner can withdraw public equipment with **Return to reviews**. Find it in **Public reviews**, labelled **Returned from public library**. Save review edits to keep working, approve it to restore the same public item, or decline it to leave it withdrawn. Existing layout snapshots remain available. A returned review superseded by a newer approval cannot overwrite that newer version.
+
 ## Equipment is missing from a client library
 
 Check Available equipment on the saved source stage. An empty selection defaults to all public equipment; an explicit selection restricts the client palette and can deliberately include private equipment.

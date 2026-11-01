@@ -59,6 +59,8 @@ Canvas printing lives in `src/editor/stageplot-print.js` and `.jsx`, with page f
 
 Organisation renaming uses `PUT /api/workspace/organisations/:id` with `{name,revision}`. Only the organisation Owner can rename it; recheck ownership after reading the body and reject stale revisions. The organisation ID and all related references remain unchanged.
 
+`POST /api/workspace/equipment/:id/withdraw` takes the current public `revision` and optional `feedback`. App Admin/Owner access is checked before and after reading the body. The transaction marks the public asset deleted and creates/reopens a separate pending `wf_submissions` row with `public_id`/`public_revision`, preserving original submissions. These nullable fields migrate existing databases without resetting data. Returned-review approval restores the same public asset; approval through another submission supersedes stale returned reviews.
+
 Use the shared appConfirm, appPrompt, appAlert and appPreview helpers. Do not introduce browser alert/confirm/prompt/open calls; lint guards these. Canvas shortcuts are suspended while an app popup is active.
 
 The guide lives in this repository under docs. Update the relevant chapter, guide index and in-app help when behaviour changes. GitHub renders these as a wiki-style linked guide; this does not require a separately published GitHub Wiki.

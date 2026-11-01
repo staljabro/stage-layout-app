@@ -46,7 +46,7 @@ New artwork defaults to physical collision off. Enable it only for layers that d
 
 **Corner snapping in Stageplot** adds snap points at the equipment canvas corners. It is off by default.
 
-Toggleable artwork exposes named show/hide controls on each placed item. Articulated rotation parts expose independent whole-degree controls. Compatible shared controls appear for multiple selected items. Hiding a visual part does not rewrite collision geometry.
+Toggleable artwork exposes named show/hide controls on each placed item. Articulated rotation parts expose independent whole-degree controls. Compatible shared controls appear for multiple selected items, including different values marked **Mixed**. Edit once to apply a value to every selected item; this also works for artwork layers, components and named adjustable parts. Hiding a visual part does not rewrite collision geometry.
 
 ## Private saves and team sharing
 
@@ -61,3 +61,7 @@ Equipment saves/imports treat the result as placeable equipment, including files
 Select **Submit to the public library** when saving a private item. Reviewers can edit the submitted snapshot, keep it pending, approve it or decline it with feedback. Approval creates or updates a separate public record and preserves the creator's private original.
 
 Saving later changes to the private item does not automatically publish them; submit another proposal. App Admins and the Owner maintain public equipment directly. Only the app Owner deletes public equipment. Saved layouts retain their pinned artwork after a catalogue item is deleted.
+
+App Admins and the Owner can choose **Return to reviews** on a public equipment card. Confirming removes it from the public catalogue and opens Public reviews, where it is labelled **Returned from public library**. Reviewers can edit that published version, save review edits, approve it again or decline it. Reapproval restores the same public item ID; declining leaves it withdrawn. Generic equipment supports this workflow too.
+
+The creator's private original and any separate pending submission stay unchanged. Existing layouts retain saved equipment snapshots. Newer approval of the creator's separate submission supersedes an older returned review to prevent it overwriting a newer public version. The Owner also retains the separate Delete action for library cleanup.

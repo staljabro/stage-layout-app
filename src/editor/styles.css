@@ -227,6 +227,16 @@
   letter-spacing: normal;
 }
 .inspector .field textarea { display: block; min-height: 90px; }
+.inspector .shared-inspector { margin: 12px 0; padding: 12px 0; border-block: 1px solid #d6d5cd; }
+.inspector .shared-inspector h4 { margin: 0 0 8px; font: 700 13px 'DM Sans',sans-serif; }
+.inspector .shared-field { display: grid; gap: 5px; min-width: 0; }
+.inspector .shared-mixed,.inspector .shared-checkbox small,.inspector .stage-parts-inspector small { color: #6c7859; font: 500 10px 'DM Sans',sans-serif; letter-spacing: normal; text-transform: none; }
+.inspector .shared-field input::placeholder,.inspector .shared-field textarea::placeholder { color: #7b856f; font-style: italic; }
+.inspector .shared-field input[type=color] { width: 100%; height: 34px; padding: 3px; border: 1px solid #c8ceba; border-radius: 4px; background: white; }
+.inspector .shared-field button { margin: 0; padding: 5px 8px; border: 1px solid #ccd4c0; border-radius: 4px; background: #fff; color: #52643b; font: 500 11px 'DM Sans',sans-serif; }
+.inspector .shared-checkbox { display: flex; gap: 7px; align-items: center; }
+.inspector .stage-parts-inspector { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid #d6d5cd; }
+.inspector .stage-parts-inspector h3 { font: 700 14px 'DM Sans',sans-serif; }
 .inspector .text-format-options { margin: 0 0 14px; gap: 8px; }
 .inspector .text-format-options > label { display: flex; align-items: center; gap: 7px; margin: 0; color: #4f504a; font: 500 11px/1.4 'DM Sans', sans-serif; letter-spacing: normal; }
 .inspector input[type=checkbox] { flex: none; width: 14px; height: 14px; margin: 0; accent-color: #899f38; }

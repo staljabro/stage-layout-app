@@ -21,7 +21,7 @@ The default deployment has one frontend and API. The optional old Studio build e
 
 ## Domain model
 
-A **stage** owns geometry, zones, curtains, stage text, installed equipment, available equipment and immutable saved source versions. Curtains are top-level source artwork: 10 cm peak to trough, 40 cm wavelength, with anchor/length/rotation and colour/thickness/opacity controls, plus a collision checkbox (enabled by default) and dotted centre guide while editing. Length changes append or trim the wave. Shared line interactions provide movement, endpoint editing, grouping, folders and visibility while preserving client source locks.
+A **stage** owns geometry, zones, curtains, stage text, installed equipment, available equipment and immutable saved source versions. Curtains are top-level source artwork: 10 cm peak to trough, 40 cm wavelength, with anchor/length/rotation and colour/thickness/opacity controls, plus a collision checkbox (enabled by default) and dotted centre guide while editing. Length changes append or trim the wave. Shared line interactions provide movement, endpoint editing, grouping, folders and visibility while preserving client source locks. Optional zones, stage text, curtains and groups expose **Stage parts** controls in every layout; choices persist per layout, drive rendering/collisions/previews/exports and preserve the pinned source. Multi-selection in all canvas contexts intersects supported controls rather than values; differing values remain editable as **Mixed**.
 
 A **layout** references a stage ID/version and stores equipment placements, components/notes, review state, current revision and revision history. The server materialises its pinned stage version when opening it. Applying a new source version is an explicit action.
 
@@ -55,6 +55,8 @@ Shared-library removal is stored per user and item kind/ID. It changes personal 
 Equipment and stage proposals contain submitted snapshots. Reviewer edits affect the proposal. Approval creates or updates a separate stable public record, preserving private originals. Public stage versions and pinned layout equipment protect old arrangements from silent catalogue replacement.
 
 App Admins/Owner maintain public stages and equipment. Generic stages and public-equipment deletion are Owner-only. Deleted public equipment remains pinned in saved layouts.
+
+App Admins/Owner can return published equipment to review. Withdrawal stores a deletion marker on the public asset and a separate pending published-version review with its public ID/revision. Original private assets and pending creator proposals are preserved. Reapproval restores the same public ID, including generic items, and leaves layout snapshots unchanged. Competing newer publication approval supersedes older returned reviews.
 
 ## Canvas, components and images
 

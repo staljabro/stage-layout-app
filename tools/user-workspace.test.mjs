@@ -62,6 +62,27 @@ test('curtains persist in stage versions, shared layouts and previews as locked 
   for(const curtains of [[{...curtain,length:-1}],[{...curtain,x:null}],[curtain,curtain],'invalid'])assert.equal((await call('/stages','POST',{data:{...stage,curtains}})).status,400)
 })
 
+test('optional stage parts and groups save separately for each layout without changing source geometry',async t=>{
+  const {call}=await fixture(t),group={editorGroupId:'backdrop',editorGroupToggleable:true,editorGroupName:'Backdrop'}
+  const source=(await call('/stages','POST',{data:{...stage,zones:[{id:'zone',name:'Zone',nodes:stage.boundary.nodes,...group}],textItems:[{id:'title',text:'Backdrop',x:1,y:1,...group}],curtains:[{id:'curtain',length:4,x:1,y:1,...group},{id:'fixed',length:2,x:2,y:2},{id:'optional',length:3,x:3,y:3,toggleable:true}]}})).data
+  const invite=(await call('/stages/'+source.id+'/invitation','POST',{})).data
+  const create=async key=>(await call('/stage-invitations/'+invite.token,'POST',{name:'Client '+key,registrationKey:key.repeat(32)},null)).data
+  const first=await create('a'),second=await create('b'),endpoint='/layout-links/'+first.guestToken
+  const opened=(await call(endpoint,'GET',{},null)).data,input=structuredClone(opened.data)
+  input.stage.partVisibility={zone:false,title:false,curtain:false,optional:false,fixed:false,unknown:false}
+  input.assetSnapshots.stage.curtains=[]
+  const save=await call(endpoint,'PUT',{data:input,revision:opened.revision},null)
+  assert.equal(save.status,200,save.data.error)
+  const reopened=(await call(endpoint,'GET',{},null)).data
+  assert.deepEqual(reopened.data.stage.partVisibility,{zone:false,title:false,curtain:false,optional:false})
+  assert.deepEqual(reopened.data.assetSnapshots.stage.curtains,source.data.curtains,'source snapshot is controlled by the server')
+  assert.deepEqual((await call('/layout-links/'+second.guestToken,'GET',{},null)).data.data.stage.partVisibility,{zone:true,title:true,curtain:true,optional:true})
+  assert.deepEqual((await call('/stages/'+source.id)).data.data.curtains,source.data.curtains)
+  input.stage.partVisibility={zone:true,title:true,curtain:true,optional:true}
+  assert.equal((await call(endpoint,'PUT',{data:input,revision:reopened.revision},null)).status,200)
+  assert.deepEqual((await call(endpoint,'GET',{},null)).data.data.stage.partVisibility,input.stage.partVisibility)
+})
+
 test('organisation logos are admin managed and follow team invitations and client layouts',async t=>{
   const {call,users}=await fixture(t),organisation=(await call('/organisations','POST',{name:'Branded venue'})).data,base='/organisations/'+organisation.id
   const logo='data:image/png;base64,iVBORw0KGgo=',replacement='data:image/png;base64,iVBORw0KGgoAAA='
@@ -186,6 +207,95 @@ test('public review edits and approval preserve the creators private original an
   const fork=await call('/equipment/'+publicItem.id+'/copy','POST',{},users.other)
   assert.equal(fork.status,201);assert.equal(fork.data.public,false);assert.equal(fork.data.ownerId,users.other.id)
 })
+test('public equipment returns to reviews without changing originals, pending submissions or pinned layouts',async t=>{
+  const {call,users,store}=await fixture(t)
+  await call('/equipment/original','PUT',{data:equipment,submit:true})
+  const originalProposal=(await call('/submissions')).data[0]
+  await call('/submissions/'+originalProposal.id,'POST',{revision:originalProposal.revision,action:'approve'},users.admin)
+  let published=(await call('/equipment','GET',{},null)).data.find(item=>item.label===equipment.label)
+  published=(await call('/equipment/'+published.id,'PUT',{revision:published.revision,data:{...published,label:'Latest public stand'}},users.admin)).data
+  const publicId=published.id,endpoint='/equipment/'+publicId+'/withdraw'
+  await call('/equipment/original','PUT',{revision:1,data:{...equipment,label:'Private next proposal'},submit:true})
+  const privateBytes=store.asset('items','original').data,privateProposal=store.get('SELECT * FROM wf_submissions WHERE asset_id=?','original')
+  const made=(await call('/generic-stages/generic-rehearsal/layouts','POST',{name:'Pinned stand'})).data,url='/layout-links/'+made.guestToken
+  const layout=(await call(url,'GET',{},null)).data
+  const saved=await call(url,'PUT',{revision:1,data:{...layout.data,items:[{id:1,assetId:publicId,xMeters:2,yMeters:2,rotation:0}]}},null)
+  assert.equal(saved.status,200,saved.data.error)
+  assert.equal((await call(endpoint,'POST',{revision:published.revision},null)).status,401)
+  assert.equal((await call(endpoint,'POST',{revision:published.revision},users.author)).status,403)
+  assert.equal((await call(endpoint,'POST',{revision:0},users.admin)).status,409)
+  const returned=await call(endpoint,'POST',{revision:published.revision},users.admin)
+  assert.equal(returned.status,200,returned.data.error);assert.equal(returned.data.publicId,publicId)
+  assert.equal((await call('/equipment','GET',{},null)).data.some(item=>item.id===publicId),false)
+  assert.equal((await call('/equipment/'+publicId,'GET',{},users.admin)).status,404)
+  let review=(await call('/submissions','GET',{},users.admin)).data.find(row=>row.id===returned.data.id)
+  assert.equal(review.status,'pending');assert.equal(review.public_id,publicId);assert.equal(review.snapshot.label,'Latest public stand')
+  assert.equal(store.asset('items','original').data,privateBytes)
+  assert.deepEqual(store.get('SELECT * FROM wf_submissions WHERE id=?',privateProposal.id),privateProposal,'a separate private resubmission is preserved')
+  assert.equal((await call(endpoint,'POST',{revision:store.asset('items',publicId).revision},users.admin)).status,409)
+  const retained=(await call(url,'GET',{},null)).data
+  assert.equal(retained.data.items[0].assetId,publicId)
+  assert.equal(retained.data.assetSnapshots.equipment.find(item=>item.id===publicId).label,'Latest public stand')
+  assert.equal((await call(url,'PUT',{revision:retained.revision,data:retained.data},null)).status,200,'existing equipment remains saveable while withdrawn')
+  await call('/submissions/'+review.id,'POST',{revision:review.revision,action:'save',data:{...review.snapshot,label:'Reviewed stand again'}},users.admin)
+  assert.equal(store.asset('items',publicId).deleted,1,'saving review edits does not republish')
+  assert.equal((await call('/submissions/'+review.id,'POST',{revision:review.revision,action:'approve'},users.admin)).status,409)
+  review=(await call('/submissions','GET',{},users.admin)).data.find(row=>row.id===returned.data.id)
+  const approved=await call('/submissions/'+review.id,'POST',{revision:review.revision,action:'approve'},users.admin)
+  assert.equal(approved.status,200,approved.data.error)
+  const republished=(await call('/equipment','GET',{},null)).data.find(item=>item.id===publicId)
+  assert.equal(republished.label,'Reviewed stand again');assert.equal(store.asset('items',publicId).deleted,0)
+  assert.equal(store.get('SELECT count(*) AS count FROM wf_publications').count,1)
+  assert.equal(store.get('SELECT public_id FROM wf_publications WHERE source_id=?','original').public_id,publicId)
+  assert.equal(store.get('SELECT status FROM wf_submissions WHERE id=?',privateProposal.id).status,'pending')
+  const owner={...users.other,role:'owner'};store.run("UPDATE users SET role='owner' WHERE id=?",owner.id)
+  const again=await call(endpoint,'POST',{revision:republished.revision},owner)
+  assert.equal(again.status,200,again.data.error);assert.equal(again.data.id,review.id,'the returned review is reused across cycles')
+  review=(await call('/submissions','GET',{},owner)).data.find(row=>row.id===review.id)
+  assert.equal((await call('/submissions/'+review.id,'POST',{revision:review.revision,action:'decline'},owner)).status,200)
+  assert.equal((await call('/equipment','GET',{},null)).data.some(item=>item.id===publicId),false,'declining keeps the item withdrawn')
+})
+
+test('a new approval supersedes an older returned public review and generic items can be reviewed',async t=>{
+  const {call,users,store}=await fixture(t)
+  await call('/equipment/original','PUT',{data:equipment,submit:true})
+  let proposal=(await call('/submissions')).data[0]
+  await call('/submissions/'+proposal.id,'POST',{revision:proposal.revision,action:'approve'},users.admin)
+  const publicId=store.get('SELECT public_id FROM wf_publications WHERE source_id=?','original').public_id
+  const returned=(await call('/equipment/'+publicId+'/withdraw','POST',{revision:1},users.admin)).data
+  const stale=(await call('/submissions','GET',{},users.admin)).data.find(row=>row.id===returned.id)
+  await call('/equipment/original','PUT',{revision:1,data:{...equipment,label:'New original submission'},submit:true})
+  proposal=(await call('/submissions')).data.find(row=>row.asset_id==='original')
+  assert.equal((await call('/submissions/'+proposal.id,'POST',{revision:proposal.revision,action:'approve'},users.admin)).status,200)
+  assert.equal(store.get('SELECT status FROM wf_submissions WHERE id=?',returned.id).status,'superseded')
+  assert.equal((await call('/submissions/'+returned.id,'POST',{revision:stale.revision,action:'approve'},users.admin)).status,409)
+  const generic=(await call('/equipment','GET',{},null)).data.find(item=>item.id==='builtin-chair')
+  const chair=await call('/equipment/'+generic.id+'/withdraw','POST',{revision:generic.revision},users.admin)
+  assert.equal(chair.status,200,chair.data.error)
+  const review=(await call('/submissions','GET',{},users.admin)).data.find(row=>row.id===chair.data.id)
+  createUserWorkspace(store)
+  assert.equal(store.asset('items',generic.id).deleted,1,'startup preserves the withdrawn generic item')
+  assert.equal((await call('/submissions/'+review.id,'POST',{revision:review.revision,action:'approve'},users.admin)).status,200)
+  assert.ok((await call('/equipment','GET',{},null)).data.some(item=>item.id===generic.id),'generic equipment republishes with its original ID')
+  assert.equal((await call('/equipment/original/withdraw','POST',{revision:2},users.admin)).status,404,'private originals cannot be withdrawn as public records')
+  const before=store.asset('items',generic.id)
+  const revoked=await call('/equipment/'+generic.id+'/withdraw','POST',()=>{store.run("UPDATE users SET role='user' WHERE id=?",users.admin.id);return {revision:before.revision}},users.admin)
+  assert.equal(revoked.status,403);assert.equal(store.asset('items',generic.id).deleted,0)
+})
+
+test('existing review databases migrate without resetting submissions or publications',async t=>{
+  const {call,users,store}=await fixture(t)
+  await call('/equipment/original','PUT',{data:equipment,submit:true})
+  const original=store.get('SELECT * FROM wf_submissions')
+  store.db.exec('DROP INDEX wf_returned_public_equipment; ALTER TABLE wf_submissions DROP COLUMN public_id; ALTER TABLE wf_submissions DROP COLUMN public_revision')
+  createUserWorkspace(store)
+  assert.deepEqual(store.get('SELECT * FROM wf_submissions WHERE id=?',original.id),original)
+  const item=(await call('/equipment','GET',{},null)).data.find(item=>item.id==='builtin-chair')
+  const result=await call('/equipment/'+item.id+'/withdraw','POST',{revision:item.revision},users.admin)
+  assert.equal(result.status,200,result.data.error)
+  assert.equal(store.get('SELECT public_id FROM wf_submissions WHERE id=?',result.data.id).public_id,item.id)
+})
+
 test('client layouts reference original stage versions and expose only deliberately shared equipment',async t=>{
   const {call,users,store}=await fixture(t)
   await call('/equipment/available-stand','PUT',{data:equipment})
