@@ -90,6 +90,8 @@ The live database is account-data/stageplot.sqlite under LIBRARY_DATA_PATH. It s
 
 The JSON equipment/stage folders are initial import inputs. Later edits live in SQLite. Pulling newer images does not refresh library data from JSON or require deleting the database.
 
+Once their records are verified in SQLite and you have a database backup, old JSON item/stage files can be archived or removed. Import files added or changed after the initial migration using the app Owner's import controls first. Keep the mounted directories and `account-data`; archived records remain restorable from SQLite without their source files. See [safe JSON cleanup](IMPORTS.md#can-i-delete-the-old-json-files).
+
 Avoid removing volumes or changing the data path during routine updates.
 
 ## Backups and restoration

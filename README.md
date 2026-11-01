@@ -22,6 +22,8 @@ Equipment starts private. Share it with a team, or submit it for public review. 
 
 Organisation owners can rename their team in its settings. PDF headers show the organisation logo beside the organisation, layout and stage names when available.
 
+The **app Owner** has **Import & restore** for archived stages/equipment, stage/equipment JSON files and **Use as template** on stage cards. These create private copies and preserve originals. See [imports, templates and safe cleanup of old JSON](docs/IMPORTS.md).
+
 See [accounts and permissions](docs/ACCOUNTS.md), [organisation libraries](docs/ORGANISATIONS.md) and [sharing](docs/SHARING.md).
 
 ## Run locally

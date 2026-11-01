@@ -78,6 +78,6 @@ Canvas printing uses a fixed printable-page grid with a logo/details header and 
 
 ## Retention and deployment
 
-SQLite is authoritative. Source JSON and older event/production data are retained; they are not destructively converted or republished. Existing compatible equipment can be imported/restored as described in the guide.
+SQLite is authoritative. Archived originals and older event/production data remain stored. The app Owner can restore stage/equipment records and import JSON as new private copies. Owner-only stage templates get fresh IDs/versions without inherited sharing or client links. Normal equipment copies from accessible records remain available to signed-in users. Original JSON files are optional after verified import and a database backup; removing them does not remove SQLite records. See [import and retention](IMPORTS.md).
 
 `RELEASE_VERSION` in `src/version.js` is the single source for UI, container and GitHub release versions. Build hooks and the version command sync package manifests and lockfiles from it. latest and SHA tags continue to support routine main-branch Compose updates. See [deployment](DEPLOYMENT.md) for operational steps and backups.

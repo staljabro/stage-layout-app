@@ -47,7 +47,9 @@ Stage curtains live in the top-level `curtains` array of `stageplot-stage@1`, al
 
 Equipment uses stageplot-item@3. Geometry is metres; equipment fields display centimetres. Image layers, collision shapes, rotation parts, components, grouping and folders remain part of the saved item definition.
 
-The live data source is SQLite. Keep source JSON as import/retention inputs; do not overwrite or delete the database to re-import them. Legacy event/production records remain stored separately from the current workspace.
+The live data source is SQLite. Source JSON is an initial import input and may be archived/removed after verified import and a database backup. Do not overwrite or delete the database to re-import it. Legacy event/production records remain stored separately from the current workspace.
+
+Owner-only routes are `GET /legacy-stages`, `GET /legacy-equipment`, `POST /stages/import`, `POST /equipment/import` and `POST /stages/:id/template` under `/api/workspace`. Import bodies contain `{data}` or `{assetId}`, with optional stage `name` and `organisationIds`. Template creation preserves editor data and uses a fresh stage ID/version with no inherited grants. Recheck the Owner's live database role after reading request bodies. Normal authenticated equipment copies use `/equipment/:id/copy` and recheck source access; they do not accept raw artwork bodies.
 
 Existing app Editor/Contributor roles and organisation Member roles migrate to User without changing ownership. Test fixtures for historical migration intentionally retain old role names; current application role values are user/admin/owner.
 

@@ -88,8 +88,8 @@ A commit without a version bump can update latest while the displayed version re
 
 `RELEASE_VERSION` in `src/version.js` controls all release numbers. Editing package.json alone does not change the app or release version; builds overwrite package mirrors from the source. After a direct source edit, run `npm run release:version` to sync metadata before committing, or let the build sync it automatically.
 
-## Import retained equipment
+## Import retained stages and equipment
 
-Compatible stageplot-item@3 JSON files can be imported from Equipment. Artwork, collisions and adjustable controls are retained.
+The **app Owner** can open **Import & restore** for archived stages and equipment. Choose **Use as template** for a stage or **Restore private copy** for equipment. Stage cards also offer Owner-only templates for accessible current stages.
 
-App Admins/Owner can restore retained older shared records through Existing equipment as private copies. Original records and old workspace data remain stored; they are not bulk-republished or converted into layouts automatically.
+Only the app Owner can import compatible `stageplot-stage@1` or `stageplot-item@3` JSON files. App Admin and organisation Owner roles do not grant these tools. Restored copies are private, and originals remain stored. After verifying import and making a SQLite backup, old source JSON can be archived or deleted. See [import, restoration and safe cleanup](IMPORTS.md).

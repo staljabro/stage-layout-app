@@ -56,6 +56,8 @@ The app Owner can assign User/Admin, disable/re-enable accounts and set friendly
 
 Organisation User/Admin/Owner permissions are separate. An organisation Owner can transfer that team's ownership in the app; it does not transfer the global Owner role.
 
+Only the global app Owner can import equipment/stage JSON, restore archived records or use stage templates. App Admins and organisation Owners do not receive these tools. Normal equipment copies and layout creation remain available according to asset access. See [import and restoration](docs/IMPORTS.md).
+
 Stageplot stores neither GitHub passwords nor retained GitHub access tokens. GitHub handles credentials and account recovery.
 
 ## Data and backups

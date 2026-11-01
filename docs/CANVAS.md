@@ -14,6 +14,8 @@ Use the boundary lock, stage layer locks and eyes to protect or hide stage artwo
 
 **Save stage version** records a new source version. Existing layouts keep their previous source version until someone with permission deliberately applies an update.
 
+The app Owner can choose **Use as template** on an accessible stage card, or restore an archived stage through **Import & restore**, to create an independent editable stage. The source remains unchanged and its sharing is not copied. [Stage templates and JSON imports](IMPORTS.md).
+
 ## Curtains
 
 Choose **Curtain** in the stage toolbar. Drag the line to position it, or select it and drag either endpoint to change its length and direction. The inspector also provides anchor coordinates, line length in metres and whole-degree rotation.

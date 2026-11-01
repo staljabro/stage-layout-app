@@ -78,3 +78,5 @@ Use **Remove from my library** to hide a shared stage or layout from your accoun
 Use **Delete layout** only for a layout you own. Deletion stops its private edit link while leaving the source stage intact.
 
 For repeat work, maintain a source stage, create a new layout for each arrangement, and use organisations for equipment shared with your team.
+
+The app Owner also has **Import & restore** for archived stages/equipment, stage/equipment JSON imports and **Use as template** on stage cards. These create new private assets and preserve originals. App Admins and organisation Owners do not receive these tools. [Owner import and template guide](IMPORTS.md).

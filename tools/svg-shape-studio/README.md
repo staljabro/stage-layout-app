@@ -31,6 +31,7 @@ Stage authoring includes **Curtain** lines with fixed 10 cm peak-to-trough waves
 
 - [Guide home](../../docs/README.md)
 - [Equipment creation](../../docs/EQUIPMENT.md)
+- [Owner imports, restoration and stage templates](../../docs/IMPORTS.md)
 - [Canvas reference](../../docs/CANVAS.md)
 - [Development and release workflow](../../docs/DEVELOPMENT.md)
 - [Architecture](../../docs/APP_FLOW_REVIEW.md)
