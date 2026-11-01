@@ -183,7 +183,7 @@ test('public review edits and approval preserve the creators private original an
   await call('/submissions/'+update.id,'POST',{revision:update.revision,action:'approve'},users.admin)
   assert.equal((await call('/equipment','GET',{},null)).data.find(item=>item.label==='Second proposal').id,publicItem.id)
   assert.equal(store.get('SELECT COUNT(*) AS n FROM wf_publications').n,1)
-  const fork=await call('/equipment/import','POST',{assetId:publicItem.id},users.other)
+  const fork=await call('/equipment/'+publicItem.id+'/copy','POST',{},users.other)
   assert.equal(fork.status,201);assert.equal(fork.data.public,false);assert.equal(fork.data.ownerId,users.other.id)
 })
 test('client layouts reference original stage versions and expose only deliberately shared equipment',async t=>{
@@ -239,18 +239,19 @@ test('anonymous generic layouts can be claimed without taking ownership of anoth
 })
 test('existing equipment imports preserve artwork, collision, controls and original legacy records',async t=>{
   const {call,users,store}=await fixture(t)
+  const owner={...users.admin,role:'owner'};store.run("UPDATE users SET role='owner' WHERE id=?",owner.id)
   const legacy={...equipment,id:'legacy-empire-stand',profiles:['empire'],stageplotPublished:true,rotationParts:equipment.rotationParts}
   store.saveAsset('items',legacy.id,legacy,users.admin,null)
   const original=store.get("SELECT data FROM assets WHERE kind='items' AND id=?",legacy.id).data
   assert.equal((await call('/equipment','GET',{},null)).data.some(item=>item.id===legacy.id),false)
   assert.equal((await call('/legacy-equipment','GET',{},users.author)).status,403)
-  const restored=await call('/equipment/import','POST',{assetId:legacy.id},users.admin)
+  const restored=await call('/equipment/import','POST',{assetId:legacy.id},owner)
   assert.equal(restored.status,201,restored.data.error)
   for(const key of ['schema','shapes','collisionShapes','rotationParts','editor','dimensions'])assert.deepEqual(restored.data[key],legacy[key])
   assert.equal(restored.data.public,false)
   assert.equal(store.get("SELECT data FROM assets WHERE kind='items' AND id=?",legacy.id).data,original)
-  const file=await call('/equipment/import','POST',{data:legacy})
-  assert.equal(file.status,201);assert.equal(file.data.ownerId,users.author.id)
+  const file=await call('/equipment/import','POST',{data:legacy},owner)
+  assert.equal(file.status,201);assert.equal(file.data.ownerId,owner.id)
 })
 
 test('organisation client invitations admit external clients and stop when stage sharing is removed',async t=>{

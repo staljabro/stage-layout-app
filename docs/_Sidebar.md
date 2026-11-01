@@ -10,6 +10,7 @@
 - [Sharing and clients](SHARING.md)
 - [Review, exports and recovery](EXPORTS_AND_RECOVERY.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
+- [Import, restore and templates](IMPORTS.md)
 
 ## Administration
 

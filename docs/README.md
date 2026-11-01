@@ -18,6 +18,7 @@ Welcome to the Stageplot documentation. Use this as a wiki: start with a task, t
 - **[Deployment and updates](DEPLOYMENT.md)** — the current push-to-main and Compose workflow, image tags, persistent data and backups.
 - **[GitHub OAuth and account administration](../ACCOUNT_GUIDE.md)** — server settings, Owner setup and older-account linking.
 - **[Development](DEVELOPMENT.md)** — local setup, tests, builds and release versioning.
+- **[Import, restore and templates](IMPORTS.md)** — app Owner tools, retained stages/equipment and safe JSON cleanup.
 - **[Architecture](APP_FLOW_REVIEW.md)** — data model, permissions, API and migration boundaries.
 - **[Repository home](../README.md)**.
 

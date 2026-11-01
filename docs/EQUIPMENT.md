@@ -52,7 +52,7 @@ Toggleable artwork exposes named show/hide controls on each placed item. Articul
 
 **Save equipment** saves a private original. Choose organisations in the save dialog to share it privately with those teams. The creator controls sharing; organisation administrators can maintain team-shared equipment.
 
-Use **Make private copy** when you can use an item but do not have permission to edit its original. Import equipment JSON accepts compatible `stageplot-item@3` files, including existing artwork, collisions and rotation controls.
+Use **Make private copy** when you can use an item but do not have permission to edit its original. The **app Owner** can use **Import equipment JSON** for compatible `stageplot-item@3` files, including existing artwork, collisions and rotation controls. File import and archive restoration are Owner-only; normal private copies remain available to signed-in users. See [import and restoration](IMPORTS.md).
 
 ## Public submissions and maintenance
 

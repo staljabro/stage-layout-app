@@ -3,11 +3,31 @@ import {uid,token,fail,manager} from './account-store.mjs'
 import {isEquipmentItem} from './library-membership.mjs'
 import {createWorkspaceModel} from './workspace-model.mjs'
 import {validOrganisationLogo} from '../src/organisation-logo.js'
+import {assetSnapshot} from '../src/project-snapshots.js'
 
 export function createUserWorkspace(store) {
   const {get,all,run,transaction,asset,saveAsset}=store
   const model=createWorkspaceModel(store),stageLibrary=createStageLibraryRoutes(store,model)
   const {now,requireUser,requireAdmin,label,text,parsed,member,org,organisationBranding,shares,setShares,isPublic,canReadEquipment,canEditEquipment,equipmentData,decorateEquipment,catalogue,stageRow,accessStage,normaliseStage,stageSummary,layoutAccess,getLayout,layoutSummary,recordLayout,createLayout,saveLayout,submit}=model
+  const requireOwner=user=>{requireUser(user);const current=get('SELECT role,disabled FROM users WHERE id=?',user.id);if(user.role!=='owner'||current?.role!=='owner'||current.disabled)fail(403,'Only the app Owner can import or restore library records and create stage templates')}
+  const importRequest=async body=>{const input=await body();if(!input||typeof input!=='object'||Array.isArray(input))fail(400,'Invalid import request');return input}
+  const archived=(kind,id,user)=>{const row=asset(kind,id);if(!row||row.deleted||row.owner_id&&row.owner_id!==user.id)fail(404,'Archived item not found');return parsed(row)}
+  const copyEquipment=(source,user,organisationIds)=>{const id='item-'+uid(),cleaned=equipmentData({...source,id}),saved=saveAsset('items',id,cleaned,user,user.id);setShares('equipment',id,organisationIds||[],user,user.id);return decorateEquipment(asset('items',saved.id),user)}
+  const copyStage=(source,input,user)=>{
+    if(!source||source.schema!=='stageplot-stage@1')fail(400,'Choose a stageplot-stage@1 stage file')
+    const id='stage-'+uid(),data=structuredClone(source)
+    data.label=input.name??source.label
+    for(const key of ['public','generic','canEdit','canShare','submission','version','revision','ownerName','permission','canRemoveFromLibrary','removedFromLibrary','layoutFolders'])delete data[key]
+    data.layerFolders??=data.editor?.assetFolders||data.editor?.zoneFolders||[]
+    if(!Array.isArray(data.availableEquipment??[])||!Array.isArray(data.availableEquipmentSnapshots??[]))fail(400,'Invalid available equipment')
+    const snapshots=new Map((data.availableEquipmentSnapshots||[]).map(item=>[item.id,equipmentData(item)]))
+    for(const entry of data.availableEquipment||[]){const row=asset('items',entry.assetId);if(row&&!row.deleted&&(canReadEquipment(row,user)||!row.owner_id||row.owner_id===user.id))snapshots.set(entry.assetId,equipmentData(parsed(row)))}
+    const cleaned=normaliseStage(data,id,user,{availableEquipmentSnapshots:[...snapshots.values()]})
+    run('INSERT INTO wf_stages VALUES(?,?,?,?,1,0,?,?)',id,user.id,cleaned.label,JSON.stringify(cleaned),now(),now())
+    run('INSERT INTO wf_stage_versions VALUES(?,1,?)',id,JSON.stringify(cleaned))
+    setShares('stage',id,input.organisationIds||[],user,user.id)
+    return stageSummary(stageRow(id),user,true)
+  }
   return async({path,method,user,body,send})=>{
     if(!path.startsWith('/api/workspace/'))return false
     const route=path.slice('/api/workspace'.length),reply=(status,data)=>{send(status,data);return true}
@@ -89,6 +109,16 @@ export function createUserWorkspace(store) {
       if(method==='GET')return reply(200,all('SELECT * FROM wf_stages WHERE generic=0 ORDER BY updated DESC').filter(row=>{try{return accessStage(row.id,user)}catch{return false}}).map(row=>stageSummary(row,user)))
       if(method==='POST'){const input=await body(),id='stage-'+uid(),data=normaliseStage(input.data,id,user);return reply(201,transaction(()=>{run('INSERT INTO wf_stages VALUES(?,?,?,?,1,0,?,?)',id,user.id,data.label,JSON.stringify(data),now(),now());run('INSERT INTO wf_stage_versions VALUES(?,1,?)',id,JSON.stringify(data));setShares('stage',id,input.organisationIds||[],user,user.id);return stageSummary(stageRow(id),user,true)}))}
     }
+    if(route==='/legacy-stages'&&method==='GET'){requireOwner(user);return reply(200,all("SELECT * FROM assets WHERE kind='stages' AND deleted=0 AND (owner_id IS NULL OR owner_id=?) ORDER BY id",user.id).map(row=>{const data=parsed(row);return {id:row.id,name:data.label,dimensions:data.dimensions,preview:assetSnapshot(data)}}))}
+    if(route==='/stages/import'&&method==='POST'){
+      requireOwner(user);const input=await importRequest(body)
+      return reply(201,transaction(()=>{requireOwner(user);return copyStage(input.assetId?archived('stages',input.assetId,user):input.data,input,user)}))
+    }
+    const template=route.match(/^\/stages\/([a-z0-9-]+)\/template$/)
+    if(template&&method==='POST'){
+      requireOwner(user);const input=await importRequest(body)
+      return reply(201,transaction(()=>{requireOwner(user);return copyStage(JSON.parse(accessStage(template[1],user).data),input,user)}))
+    }
     const stagePath=route.match(/^\/stages\/([a-z0-9-]+)(?:\/(layouts|invitation|access|sharing))?$/)
     if(stagePath){
       const [,id,action]=stagePath,stage=accessStage(id,user)
@@ -127,11 +157,15 @@ export function createUserWorkspace(store) {
       }
     }
     if(route==='/equipment/import'&&method==='POST'){
-      const input=await body();let data=input.data
-      if(input.assetId){const row=asset('items',input.assetId);if(!row||row.deleted||!canReadEquipment(row,user)&&!(manager(user)&&!row.owner_id))fail(404,'Equipment not found');data=parsed(row)}
-      const id='item-'+uid(),cleaned=equipmentData({...data,id});return reply(201,transaction(()=>{const saved=saveAsset('items',id,{...cleaned,id},user,user.id);setShares('equipment',id,input.organisationIds||[],user,user.id);return decorateEquipment(asset('items',saved.id),user)}))
+      requireOwner(user);const input=await importRequest(body)
+      return reply(201,transaction(()=>{requireOwner(user);return copyEquipment(input.assetId?archived('items',input.assetId,user):input.data,user,input.organisationIds)}))
     }
-    if(route==='/legacy-equipment'&&method==='GET'){requireAdmin(user);return reply(200,all("SELECT * FROM assets WHERE kind='items' AND owner_id IS NULL AND deleted=0").filter(row=>!isPublic(row)&&isEquipmentItem(parsed(row))).map(row=>({id:row.id,label:parsed(row).label,dimensions:parsed(row).dimensions,schema:parsed(row).schema})))}
+    if(route==='/legacy-equipment'&&method==='GET'){requireOwner(user);return reply(200,all("SELECT * FROM assets WHERE kind='items' AND deleted=0 AND owner_id IS NULL").filter(row=>!isPublic(row)&&isEquipmentItem(parsed(row))).map(row=>({id:row.id,label:parsed(row).label,dimensions:parsed(row).dimensions,schema:parsed(row).schema})))}
+    const equipmentCopy=route.match(/^\/equipment\/([a-z0-9-]+)\/copy$/)
+    if(equipmentCopy&&method==='POST'){
+      const input=await body()
+      return reply(201,transaction(()=>{const source=asset('items',equipmentCopy[1]);if(!canReadEquipment(source,user))fail(404,'Equipment not found');return copyEquipment(parsed(source),user,input.organisationIds)}))
+    }
     const itemPath=route.match(/^\/equipment\/([a-z0-9-]+)$/)
     if(itemPath){
       const id=itemPath[1],row=asset('items',id)

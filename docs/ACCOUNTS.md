@@ -22,6 +22,7 @@ Stageplot does not store GitHub passwords or retain the OAuth access token after
 | Edit public equipment and public stages | No | Yes | Yes |
 | Edit supplied generic stages | No | No | Yes |
 | Delete public equipment | No | No | Yes |
+| Import stage/equipment JSON, restore archives and use stage templates | No | No | Yes |
 | Manage app accounts, roles and disabled status | No | No | Yes |
 
 Admin status is not blanket access to everyone's private originals. Reviewers see submitted snapshots. Private collaboration still depends on ownership, organisation membership or an explicit share.
