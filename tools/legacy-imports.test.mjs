@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os'
 import {join,dirname,resolve} from 'node:path'
 import {openStore} from './account-store.mjs'
 import {createUserWorkspace} from './user-workspace.mjs'
+import {isEquipmentItem} from './library-membership.mjs'
+import {equipmentSession} from '../src/editor/equipment-session.js'
 
 const nodes=[{x:0,y:0},{x:8,y:0},{x:8,y:6},{x:0,y:6}]
 const equipment={id:'old-stand',schema:'stageplot-item@3',label:'Archived stand',dimensions:{widthMeters:.5,depthMeters:.5},shapes:[{id:'body',type:'rect',x:0,y:0,width:.5,height:.5,fill:'#111'}],collisionShapes:[],editor:{layers:[]}}
@@ -79,6 +81,32 @@ test('normal users can copy accessible equipment while raw imports and private a
   assert.equal((await call('/equipment/import','POST',{assetId:copy.data.id})).status,404)
   const imported=await call('/equipment/import','POST',{data:equipment})
   assert.equal(imported.status,201,imported.data.error);assert.equal(imported.data.ownerId,users.owner.id)
+})
+
+test('legacy seated-person artwork imports and saves as visible equipment without changing its custom-shape original',async t=>{
+  const {store,call,users}=await fixture(t)
+  const original={...structuredClone(equipment),id:'advanced-person-sitting-legs-apart',label:'Person Sitting - Legs apart',dimensions:{widthMeters:.69,depthMeters:.82},editor:{layers:structuredClone(equipment.shapes),advancedShapeRole:'custom',placementMode:'layers'}}
+  assert.equal(original.label,'Person Sitting - Legs apart');assert.equal(isEquipmentItem(original),false)
+  store.saveAsset('items',original.id,original,null,null)
+  const imported=await call('/equipment/import','POST',{data:original})
+  assert.equal(imported.status,201,imported.data.error)
+  assert.equal(isEquipmentItem(imported.data),true);assert.equal(imported.data.editor.advancedShapeRole,undefined)
+  assert.deepEqual(imported.data.shapes,original.shapes)
+  assert.deepEqual(imported.data.editor.layers,original.editor.layers)
+  assert.equal(original.editor.advancedShapeRole,'custom','normalisation does not mutate uploaded/source artwork')
+  assert.equal(JSON.parse(store.asset('items',original.id).data).editor.advancedShapeRole,'custom','original custom shapes remain reusable')
+  assert.ok((await call('/equipment')).data.filter(isEquipmentItem).some(item=>item.id===imported.data.id),'the personal equipment catalogue includes the import')
+  const source=(await call('/stages','POST',{data:stage})).data
+  const layout=(await call('/stages/'+source.id+'/layouts','POST',{name:'Use imported person'})).data
+  assert.ok((await call('/layouts/'+layout.id)).data.equipment.some(item=>item.id===imported.data.id),'the layout drawer receives the imported equipment')
+  const hiddenId='item-previously-hidden'
+  store.saveAsset('items',hiddenId,{...original,id:hiddenId},users.owner,users.owner.id)
+  const loaded=(await call('/equipment/'+hiddenId)).data
+  assert.equal(equipmentSession(loaded).advancedShapeRole,null,'the equipment editor clears legacy custom-shape classification')
+  const repaired=await call('/equipment/'+hiddenId,'PUT',{data:loaded,revision:loaded.revision,organisationIds:[]})
+  assert.equal(repaired.status,200,repaired.data.error);assert.equal(isEquipmentItem(repaired.data),true)
+  assert.equal(repaired.data.id,hiddenId);assert.equal(repaired.data.revision,loaded.revision+1)
+  assert.deepEqual(repaired.data.shapes,original.shapes,'re-saving repairs the existing item without recreating artwork')
 })
 
 test('removing initial JSON files after bootstrap leaves archives and restoration available in SQLite',async t=>{

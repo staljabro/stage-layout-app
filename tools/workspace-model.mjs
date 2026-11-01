@@ -68,6 +68,9 @@ export function createWorkspaceModel(store) {
     const validShape=shape=>shape&&typeof shape==='object'&&(shape.type!=='image'||typeof shape.dataUrl==='string'&&shape.dataUrl.length<=16_000_000&&/^data:image\/(?:png|jpeg|webp|gif|avif);base64,[a-z0-9+/=\r\n]+$/i.test(shape.dataUrl)&&['x','y','width','height'].every(key=>Number.isFinite(shape[key]))&&shape.width>0&&shape.height>0)&&(shape.type!=='compound'||Array.isArray(shape.children)&&shape.children.every(validShape))
     if(!input.shapes.every(validShape)||input.editor?.layers&&!Array.isArray(input.editor.layers)||Array.isArray(input.editor?.layers)&&!input.editor.layers.every(validShape))fail(400,'Equipment artwork contains an invalid image')
     const data={...input,label:label(input.label),profiles:[]}
+    // Workbench equipment saves/imports produce placeable equipment. Reusable
+    // artwork is saved separately through the custom-shape routes.
+    if(input.editor){data.editor={...input.editor};delete data.editor.advancedShapeRole}
     for(const key of ['ownerId','deleted','canEdit','canShare','organisationIds','public','builtin','submission','workflowStatus','unsentChanges','shareToken','shareEquipmentIds','personal'])delete data[key]
     return data
   }

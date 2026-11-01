@@ -60,6 +60,8 @@ App Admins/Owner maintain public stages and equipment. Generic stages and public
 
 Stage and equipment edits share a canvas and undo history. Layout visitors see locked source stage layers and installed equipment, with editable placed equipment.
 
+Workbench equipment imports/saves remove legacy `editor.advancedShapeRole` classification so normal equipment remains visible in the dashboard and placement drawer. Dedicated custom-shape saves retain it. A recovery section exposes the current user's older `item-` records carrying that tag and lets them explicitly correct the existing record without changing artwork, ID or sharing. Original `shape-`/`advanced-` presets remain separate.
+
 Component IDs remain stable on rename/reorder. Components default on; explicit false values and notes survive serialization. Enabled requirements are reported under their parent without consuming separate inventory stock.
 
 Image crops inset visible bounds without stretching. Image save preparation downsizes full images to one pixel per centimetre, including effective compound scaling, and replaces data in both artwork and editor copies.

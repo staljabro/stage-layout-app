@@ -54,6 +54,8 @@ Toggleable artwork exposes named show/hide controls on each placed item. Articul
 
 Use **Make private copy** when you can use an item but do not have permission to edit its original. The **app Owner** can use **Import equipment JSON** for compatible `stageplot-item@3` files, including existing artwork, collisions and rotation controls. File import and archive restoration are Owner-only; normal private copies remain available to signed-in users. See [import and restoration](IMPORTS.md).
 
+Equipment saves/imports treat the result as placeable equipment, including files that carried an old custom-shape tag. If a previously saved item is missing, **Recover saved equipment** on Equipment offers **Show in equipment library** to repair its classification while retaining the same ID and artwork. Reusable artwork saved with **Save as custom shape** remains separate.
+
 ## Public submissions and maintenance
 
 Select **Submit to the public library** when saving a private item. Reviewers can edit the submitted snapshot, keep it pending, approve it or decline it with feedback. Approval creates or updates a separate public record and preserves the creator's private original.

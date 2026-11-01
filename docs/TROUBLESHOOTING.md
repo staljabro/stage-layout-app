@@ -30,6 +30,14 @@ Layout editing locks source stage geometry and installed equipment by design. Op
 
 Private assets shared with a team require current membership. App Admin status alone does not reveal everyone's private originals.
 
+## Saved equipment is missing from both libraries
+
+An older item can carry `editor.advancedShapeRole: "custom"`. This marks reusable design artwork, which is excluded from equipment lists even when the item was saved successfully.
+
+In **Equipment**, look for **Recover saved equipment** and choose **Show in equipment library** beside the affected item. This corrects the classification on your existing private item, preserving its ID, artwork and sharing. Genuine reusable shapes with their normal shape IDs stay in Custom Shapes.
+
+Equipment imports and saves now clear this legacy classification automatically. You can also reopen an affected item using its existing editor link and save it again. When the item appears in `/api/workspace/equipment`, it is stored in SQLite; changing library paths is not needed to correct this tag.
+
 ## Equipment is missing from a client library
 
 Check Available equipment on the saved source stage. An empty selection defaults to all public equipment; an explicit selection restricts the client palette and can deliberately include private equipment.

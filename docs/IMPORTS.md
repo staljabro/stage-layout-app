@@ -33,6 +33,8 @@ Under **Archived equipment**, choose **Restore private copy** to create a new ed
 
 Imports create private items owned by your account. Share with organisations or submit for public review separately. Ordinary **Make private copy** remains available to signed-in users for equipment they can access.
 
+Legacy files tagged as custom shapes are normalised to placeable equipment when imported here. The source preset/file is preserved. Already-imported private equipment with this older tag can be corrected from **Equipment → Recover saved equipment → Show in equipment library**, preserving its ID and artwork. Saving the affected item again in the equipment editor also corrects the tag.
+
 ## Where records are stored
 
 Current records and archived originals live in `account-data/stageplot.sqlite`. On a Compose host this is `${LIBRARY_DATA_PATH}/account-data/stageplot.sqlite`; inside the API container it is `/data/account-data/stageplot.sqlite`.
