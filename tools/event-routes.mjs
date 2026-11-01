@@ -20,6 +20,8 @@ export function createEventRoutes(store) {
   column('events','kind',"TEXT NOT NULL DEFAULT 'festival'")
   column('events','client',"TEXT NOT NULL DEFAULT ''")
   column('events','end_date',"TEXT NOT NULL DEFAULT ''")
+  column('events','invitation_token','TEXT')
+  column('event_bands','registration_key','TEXT')
   column('event_stages','space_id','TEXT')
   column('event_stages','space_version','INTEGER')
   column('event_bands','sort_order','INTEGER NOT NULL DEFAULT 0')
@@ -27,12 +29,24 @@ export function createEventRoutes(store) {
   db.exec(`CREATE TABLE IF NOT EXISTS spaces(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,venue TEXT NOT NULL DEFAULT '',profile TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL,updated TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS space_versions(space_id TEXT NOT NULL REFERENCES spaces(id),version INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(space_id,version));
     CREATE INDEX IF NOT EXISTS spaces_owner ON spaces(owner_id);`)
+  db.exec(`CREATE TABLE IF NOT EXISTS space_access(space_id TEXT NOT NULL REFERENCES spaces(id),user_id TEXT NOT NULL REFERENCES users(id),permission TEXT NOT NULL,PRIMARY KEY(space_id,user_id));
+    CREATE TABLE IF NOT EXISTS space_links(space_id TEXT NOT NULL REFERENCES spaces(id),permission TEXT NOT NULL,token TEXT UNIQUE NOT NULL,PRIMARY KEY(space_id,permission));
+    CREATE UNIQUE INDEX IF NOT EXISTS event_registration ON event_bands(event_id,registration_key) WHERE registration_key IS NOT NULL;`)
+  const firstManagedMigration=!get("SELECT name FROM sqlite_master WHERE type='table' AND name='administrative_stages'")
+  db.exec(`CREATE TABLE IF NOT EXISTS administrative_stages(space_id TEXT PRIMARY KEY REFERENCES spaces(id));CREATE TABLE IF NOT EXISTS revoked_stage_access(space_id TEXT NOT NULL REFERENCES spaces(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(space_id,user_id));`)
+  if(firstManagedMigration)run("INSERT OR IGNORE INTO administrative_stages SELECT s.id FROM spaces s JOIN users u ON u.id=s.owner_id WHERE u.role IN ('owner','admin')")
   const now=()=>new Date().toISOString()
   const name=value=>{if(typeof value!=='string'||!value.trim()||value.trim().length>200)fail(400,'Enter a name of up to 200 characters');return value.trim()}
   const note=value=>{if(typeof value!=='string'||value.length>10000)fail(400,'Notes must be text of up to 10,000 characters');return value}
   const ownerEvent=(id,user)=>{if(!user)fail(401,'Sign in to manage your events');const event=get('SELECT * FROM events WHERE id=? AND owner_id=?',id,user.id);if(!event)fail(404,'Event not found');if(event.profile==='empire'&&!user.empire)fail(403,'Empire access is required');return event}
-  const ownerSpace=(id,user)=>{if(!user)fail(401,'Sign in to manage your spaces');const space=get('SELECT * FROM spaces WHERE id=? AND owner_id=?',id,user.id);if(!space)fail(404,'Space not found');if(space.profile==='empire'&&!user.empire)fail(403,'Empire access is required');return space}
-  const publicSpace=(space,includeData=false)=>({id:space.id,name:space.name,venue:space.venue,profile:space.profile,version:space.version,updated:space.updated,dimensions:JSON.parse(space.data).dimensions,equipmentCount:(JSON.parse(space.data).fixedEquipment||[]).length,...(includeData?{data:JSON.parse(space.data)}:{})})
+  const manager=user=>['owner','admin'].includes(user?.role)
+  const spacePermission=(space,user)=>{
+    if(space.owner_id===user.id||manager(user)&&get('SELECT space_id FROM administrative_stages WHERE space_id=?',space.id))return 'manage'
+    return get('SELECT permission FROM space_access WHERE space_id=? AND user_id=?',space.id,user.id)?.permission||null
+  }
+  const ownerSpace=(id,user)=>{if(!user)fail(401,'Sign in to access stages');const space=get('SELECT * FROM spaces WHERE id=?',id);if(!space||!spacePermission(space,user))fail(404,'Stage not found');if(space.profile==='empire'&&!user.empire)fail(403,'Empire access is required');return space}
+  const manageSpace=(id,user)=>{const space=ownerSpace(id,user);if(spacePermission(space,user)!=='manage')fail(403,'Only the stage owner or its administrators can manage access');return space}
+  const publicSpace=(space,includeData=false,user=null)=>({id:space.id,name:space.name,venue:space.venue,profile:space.profile,version:space.version,updated:space.updated,ownerName:get('SELECT name FROM users WHERE id=?',space.owner_id)?.name||'Stage owner',permission:user?spacePermission(space,user):undefined,dimensions:JSON.parse(space.data).dimensions,equipmentCount:(JSON.parse(space.data).fixedEquipment||[]).length,...(includeData?{data:JSON.parse(space.data)}:{})})
   const stageRow=id=>{const stage=get('SELECT * FROM event_stages WHERE id=?',id);if(!stage)fail(404,'Stage not found');return stage}
   const bandRow=id=>{const band=get('SELECT * FROM event_bands WHERE id=?',id);if(!band)fail(404,'Band plot not found');return band}
   const equipment=event=>all("SELECT * FROM assets WHERE kind='items' AND deleted=0 AND owner_id IS NULL").map(row=>JSON.parse(row.data)).filter(item=>isEquipmentItem(item)&&assetProfiles(item).includes(event.profile)).map(item=>assetSnapshot(profileItem(item,event.profile)))
@@ -49,7 +63,7 @@ export function createEventRoutes(store) {
     return {id:band.id,eventId:band.event_id,eventName:event.name,kind:event.kind,client:event.client,slot:band.slot,order:band.sort_order,stageId:band.stage_id,stageName:stage.name,name:band.name,data:JSON.parse(band.data),revision:band.revision,status:band.status,notes:band.notes,reviewNote:band.review_note,updated:band.updated,stageVersion:band.stage_version,latestStageVersion:stage.version,owned,...(owned?{guestToken:band.guest_token}:{}),profile:event.profile}
   }
   const record=(id,actor)=>{const band=bandRow(id);const snapshot={...publicBand(band),submittedRevision:band.submitted_revision};run('INSERT INTO event_band_revisions VALUES(?,?,?,?,?)',id,band.revision,JSON.stringify(snapshot),actor,band.updated)}
-  const summary=event=>({...event,endDate:event.end_date,owner_id:undefined,stages:all('SELECT * FROM event_stages WHERE event_id=? ORDER BY name',event.id).map(stage=>({id:stage.id,name:stage.name,version:stage.version,spaceId:stage.space_id,spaceVersion:stage.space_version,latestSpaceVersion:stage.space_id?get('SELECT version FROM spaces WHERE id=?',stage.space_id)?.version:null,dimensions:JSON.parse(stage.data).dimensions,equipmentCount:(JSON.parse(stage.data).fixedEquipment||[]).length})),bands:all('SELECT * FROM event_bands WHERE event_id=? ORDER BY sort_order,name',event.id).map(band=>{const value=publicBand(band,true);delete value.data;return value})})
+  const summary=event=>({...event,endDate:event.end_date,owner_id:undefined,invitation_token:undefined,invitationToken:event.invitation_token||null,stages:all('SELECT * FROM event_stages WHERE event_id=? ORDER BY name',event.id).map(stage=>({id:stage.id,name:stage.name,version:stage.version,spaceId:stage.space_id,spaceVersion:stage.space_version,latestSpaceVersion:stage.space_id?get('SELECT version FROM spaces WHERE id=?',stage.space_id)?.version:null,dimensions:JSON.parse(stage.data).dimensions,equipmentCount:(JSON.parse(stage.data).fixedEquipment||[]).length})),bands:all('SELECT * FROM event_bands WHERE event_id=? ORDER BY sort_order,name',event.id).map(band=>{const value=publicBand(band,true);delete value.data;return value})})
   const attachSpace=(event,space,label)=>{
     if(space.profile!==event.profile)fail(400,'Choose a space from the same equipment library')
     const id='event-stage-'+uid(),data=stageData({...JSON.parse(space.data),...(label?{label}: {})},id,event)
@@ -99,7 +113,7 @@ export function createEventRoutes(store) {
     return resolved.items.filter(item=>!isItemInsideSpace(item,stage.collisionBoundary)||(stage.fixedEquipment||[]).some(fixed=>fixed.collisionEnabled!==false&&itemsCollide(item,fixed))||(stage.zones||[]).some(zone=>zone.solid&&zone.nodes?.length>=3&&collisionPolygons(item).some(polygon=>polygonsIntersect(polygon,zone.collisionBoundary||sampleStageBoundary(zone.nodes))))).map(item=>item.label)
   }
   return async({path,method,user,body,send})=>{
-    if(!/^\/api\/(events|productions|spaces|event-stages|event-bands|band-links)(\/|$)/.test(path))return false
+    if(!/^\/api\/(events|productions|spaces|space-links|event-invitations|event-stages|event-bands|band-links)(\/|$)/.test(path))return false
     const reply=(status,data)=>{send(status,data);return true}
     const guest=path.match(/^\/api\/band-links\/([a-f0-9]{48})$/)
     if(guest){
@@ -108,24 +122,75 @@ export function createEventRoutes(store) {
       if(method==='PUT')return reply(200,saveBand(band.id,await body(),'band',true,guest[1]))
       fail(405,'Method not allowed')
     }
+    const invitation=path.match(/^\/api\/event-invitations\/([a-f0-9]{48})$/)
+    if(invitation){
+      const event=get('SELECT * FROM events WHERE invitation_token=?',invitation[1]);if(!event||event.kind==='production')fail(404,'This invitation is no longer available. Ask the organiser for a current link.')
+      if(method==='GET')return reply(200,{name:event.name,kind:event.kind,date:event.date,stages:all('SELECT id,name FROM event_stages WHERE event_id=? ORDER BY name',event.id)})
+      if(method==='POST'){
+        const input=await body();name(input.name)
+        if(typeof input.registrationKey!=='string'||!/^[a-f0-9-]{32,64}$/.test(input.registrationKey))fail(400,'Start a new registration from the invitation page')
+        const result=transaction(()=>{
+          const current=get('SELECT invitation_token FROM events WHERE id=?',event.id);if(current?.invitation_token!==invitation[1])fail(404,'This invitation is no longer available')
+          const existing=get('SELECT * FROM event_bands WHERE event_id=? AND registration_key=?',event.id,input.registrationKey)
+          if(existing){if(!existing.guest_token)fail(404,'This edit link is no longer available');return {name:existing.name,guestToken:existing.guest_token}}
+          const created=createLayouts(event,{name:input.name,stageId:input.stageId})[0]
+          run('UPDATE event_bands SET registration_key=? WHERE id=?',input.registrationKey,created.id);run('UPDATE events SET updated=? WHERE id=?',now(),event.id)
+          return {name:created.name,guestToken:created.guestToken}
+        });return reply(201,result)
+      }
+      fail(405,'Method not allowed')
+    }
+    const sharedSpace=path.match(/^\/api\/space-links\/([a-f0-9]{48})$/)
+    if(sharedSpace){
+      const link=get('SELECT * FROM space_links WHERE token=?',sharedSpace[1]);if(!link)fail(404,'This stage invitation is no longer available')
+      const space=get('SELECT * FROM spaces WHERE id=?',link.space_id);if(!space)fail(404,'Stage not found')
+      if(method==='GET')return reply(200,{name:space.name,venue:space.venue,permission:link.permission,ownerName:get('SELECT name FROM users WHERE id=?',space.owner_id)?.name||'Stage owner'})
+      if(!user)fail(401,'Sign in to accept this shared stage')
+      if(method==='POST'){
+        if(space.profile==='empire'&&!user.empire)fail(403,'Empire access is required')
+        transaction(()=>{if(get('SELECT user_id FROM revoked_stage_access WHERE space_id=? AND user_id=?',space.id,user.id))fail(403,'Your access was removed. Ask the stage owner to grant access again.');const current=get('SELECT token FROM space_links WHERE space_id=? AND permission=?',space.id,link.permission);if(current?.token!==sharedSpace[1])fail(404,'This stage invitation is no longer available');const access=spacePermission(space,user);if(!['edit','manage'].includes(access))run('INSERT INTO space_access(space_id,user_id,permission) VALUES(?,?,?) ON CONFLICT(space_id,user_id) DO UPDATE SET permission=excluded.permission',space.id,user.id,link.permission)})
+        return reply(200,publicSpace(space,true,user))
+      }
+      fail(405,'Method not allowed')
+    }
     if(!user)fail(401,'Sign in to manage your events')
     if(path==='/api/spaces'){
-      if(method==='GET')return reply(200,all('SELECT * FROM spaces WHERE owner_id=? ORDER BY venue,name',user.id).filter(space=>space.profile!=='empire'||user.empire).map(space=>publicSpace(space)))
+      if(method==='GET')return reply(200,all('SELECT * FROM spaces ORDER BY venue,name').filter(space=>spacePermission(space,user)&&(space.profile!=='empire'||user.empire)).map(space=>publicSpace(space,false,user)))
       if(method==='POST'){
         const input=await body(),profile=input.profile||'external',id='space-'+uid()
         if(!['external','empire'].includes(profile)||profile==='empire'&&!user.empire)fail(403,'This library profile is unavailable')
         const data=stageData(input.data,id,{profile})
-        transaction(()=>{run('INSERT INTO spaces VALUES(?,?,?,?,?,?,?,?)',id,user.id,data.label,String(input.venue||'').slice(0,200),profile,JSON.stringify(data),1,now());run('INSERT INTO space_versions VALUES(?,?,?)',id,1,JSON.stringify(data))})
-        return reply(201,publicSpace(ownerSpace(id,user),true))
+        transaction(()=>{run('INSERT INTO spaces VALUES(?,?,?,?,?,?,?,?)',id,user.id,data.label,String(input.venue||'').slice(0,200),profile,JSON.stringify(data),1,now());run('INSERT INTO space_versions VALUES(?,?,?)',id,1,JSON.stringify(data));if(manager(user))run('INSERT INTO administrative_stages VALUES(?)',id)})
+        return reply(201,publicSpace(ownerSpace(id,user),true,user))
       }
+    }
+    const accessPath=path.match(/^\/api\/spaces\/(space-[a-f0-9]+)\/access$/)
+    if(accessPath){
+      const space=manageSpace(accessPath[1],user)
+      const access=()=>({members:all('SELECT a.user_id AS userId,a.permission,u.name,u.email FROM space_access a JOIN users u ON u.id=a.user_id WHERE a.space_id=? ORDER BY u.name',space.id),links:all('SELECT permission,token FROM space_links WHERE space_id=?',space.id)})
+      if(method==='GET')return reply(200,access())
+      if(method==='POST'){
+        const input=await body();if(!['use','edit'].includes(input.permission))fail(400,'Choose can use or can edit')
+        if(input.link){if(input.disable)run('DELETE FROM space_links WHERE space_id=? AND permission=?',space.id,input.permission);else run('INSERT INTO space_links VALUES(?,?,?) ON CONFLICT(space_id,permission) DO UPDATE SET token=excluded.token',space.id,input.permission,token())}
+        else {
+          const identifier=String(input.user||'').trim(),recipient=get('SELECT * FROM users WHERE disabled=0 AND (id=? OR email=? COLLATE NOCASE)',identifier,identifier)||(get("SELECT name FROM sqlite_master WHERE type='table' AND name='github_identities'")?get('SELECT u.* FROM users u JOIN github_identities g ON g.user_id=u.id WHERE u.disabled=0 AND g.login=? COLLATE NOCASE',identifier.replace(/^@/,'')):null)
+          if(!recipient)fail(404,'No active account matches that email or GitHub username')
+          if(recipient.id===space.owner_id)fail(400,'The owner already has access')
+          if(space.profile==='empire'&&!recipient.empire)fail(403,'That account needs Empire access first')
+          transaction(()=>{if(input.disable){run('DELETE FROM space_access WHERE space_id=? AND user_id=?',space.id,recipient.id);run('INSERT OR IGNORE INTO revoked_stage_access VALUES(?,?)',space.id,recipient.id)}else {run('DELETE FROM revoked_stage_access WHERE space_id=? AND user_id=?',space.id,recipient.id);run('INSERT INTO space_access VALUES(?,?,?) ON CONFLICT(space_id,user_id) DO UPDATE SET permission=excluded.permission',space.id,recipient.id,input.permission)}})
+        }
+        return reply(200,access())
+      }
+      fail(405,'Method not allowed')
     }
     const spacePath=path.match(/^\/api\/spaces\/(space-[a-f0-9]+)$/)
     if(spacePath){
       const space=ownerSpace(spacePath[1],user)
-      if(method==='GET')return reply(200,publicSpace(space,true))
+      if(method==='GET')return reply(200,publicSpace(space,true,user))
       if(method==='PUT'){
+        if(!['manage','edit'].includes(spacePermission(space,user)))fail(403,'This stage is shared for use only')
         const input=await body(),data=stageData(input.data,space.id,space)
-        const saved=transaction(()=>{const current=ownerSpace(space.id,user);if(input.version!==current.version)fail(409,'Space changed. Reopen it before saving');run('UPDATE spaces SET name=?,venue=?,data=?,version=version+1,updated=? WHERE id=?',data.label,String(input.venue??current.venue).slice(0,200),JSON.stringify(data),now(),space.id);run('INSERT INTO space_versions VALUES(?,?,?)',space.id,current.version+1,JSON.stringify(data));return publicSpace(ownerSpace(space.id,user),true)})
+        const saved=transaction(()=>{const current=ownerSpace(space.id,user);if(!['manage','edit'].includes(spacePermission(current,user)))fail(403,'Stage editing access was removed');if(input.version!==current.version)fail(409,'Space changed. Reopen it before saving');run('UPDATE spaces SET name=?,venue=?,data=?,version=version+1,updated=? WHERE id=?',data.label,String(input.venue??current.venue).slice(0,200),JSON.stringify(data),now(),space.id);run('INSERT INTO space_versions VALUES(?,?,?)',space.id,current.version+1,JSON.stringify(data));return publicSpace(ownerSpace(space.id,user),true,user)})
         return reply(200,saved)
       }
     }
@@ -146,11 +211,15 @@ export function createEventRoutes(store) {
         });return reply(201,result)
       }
     }
-    const eventPath=path.match(/^\/api\/events\/([a-f0-9]+)(?:\/(stages|bands|order))?$/)
+    const eventPath=path.match(/^\/api\/events\/([a-f0-9]+)(?:\/(stages|bands|order|invitation))?$/)
     if(eventPath){
       const [,id,collection]=eventPath,event=ownerEvent(id,user)
       if(!collection&&method==='GET')return reply(200,summary(event))
       if(!collection&&method==='PUT'){const input=await body();const result=transaction(()=>{const current=ownerEvent(id,user);if(input.revision!==current.revision)fail(409,'Event details changed. Refresh before saving');run('UPDATE events SET name=?,date=?,notes=?,client=?,end_date=?,revision=revision+1,updated=? WHERE id=?',name(input.name),String(input.date||'').slice(0,30),note(input.notes||''),String(input.client??current.client).slice(0,200),String(input.endDate??current.end_date).slice(0,30),now(),id);return summary(ownerEvent(id,user))});return reply(200,result)}
+      if(collection==='invitation'&&method==='POST'){
+        if(event.kind==='production')fail(400,'Productions use their individual client link')
+        const input=await body();const result=transaction(()=>{const current=ownerEvent(id,user);if(input.revision!==current.revision)fail(409,'Event changed. Refresh before changing its invitation');run('UPDATE events SET invitation_token=?,revision=revision+1,updated=? WHERE id=?',input.disable?null:token(),now(),id);return summary(ownerEvent(id,user))});return reply(200,result)
+      }
       if(collection==='order'&&method==='POST'){
         const input=await body();const result=transaction(()=>{
           const current=ownerEvent(id,user),ids=all('SELECT id FROM event_bands WHERE event_id=?',id).map(band=>band.id)
@@ -196,7 +265,7 @@ export function createEventRoutes(store) {
           const current=stageRow(stage.id);if(input.version!==current.version)fail(409,'Stage changed. Refresh before saving a reusable space')
           const id='space-'+uid(),data=stageData({...JSON.parse(current.data),label:input.name||current.name},id,event)
           run('INSERT INTO spaces VALUES(?,?,?,?,?,?,?,?)',id,user.id,data.label,String(input.venue||'').slice(0,200),event.profile,JSON.stringify(data),1,now());run('INSERT INTO space_versions VALUES(?,?,?)',id,1,JSON.stringify(data));run('UPDATE event_stages SET space_id=?,space_version=1 WHERE id=?',id,current.id)
-          return publicSpace(ownerSpace(id,user),true)
+          return publicSpace(ownerSpace(id,user),true,user)
         });return reply(201,result)
       }
     }
@@ -210,7 +279,7 @@ export function createEventRoutes(store) {
       if(method==='POST'&&action){
         const input=await body();const result=transaction(()=>{
           const current=bandRow(id);if(input.revision!==current.revision)fail(409,'This band plot changed. Refresh before continuing')
-          if(action==='link'){run('UPDATE event_bands SET guest_token=? WHERE id=?',input.disable?null:token(),id);return publicBand(bandRow(id),true)}
+          if(action==='link'){run('UPDATE event_bands SET guest_token=?,registration_key=NULL WHERE id=?',input.disable?null:token(),id);return publicBand(bandRow(id),true)}
           if(action==='rename'){const label=name(input.name),data=JSON.parse(current.data);data.project=label;run('UPDATE event_bands SET name=?,data=?,slot=? WHERE id=?',label,JSON.stringify(data),String(input.slot??current.slot).slice(0,200),id)}
           else if(action==='review'){if(!['approved','changes_requested'].includes(input.status))fail(400,'Choose approve or request changes');run('UPDATE event_bands SET status=?,review_note=?,submitted_revision=COALESCE(submitted_revision,revision) WHERE id=?',input.status,note(input.note||''),id)}
           else if(action==='apply-stage'){

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
 import {existsSync} from 'node:fs'
-import {mkdtemp,readFile,rm} from 'node:fs/promises'
+import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,dirname,resolve,basename} from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -28,19 +28,19 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
 
       if(request.method==='PUT'&&url.pathname.startsWith('/api/stages/')){const saved={...mutations.at(-1),revision:1,ownerId:'owner'};const index=createdStages.findIndex(stage=>stage.id===saved.id);if(index<0)createdStages.push(saved);else createdStages[index]=saved;response.setHeader('Content-Type','application/json');response.end(JSON.stringify(saved));return}
       const data=url.pathname==='/api/auth/session'?{user:signedIn?{id:'owner',name:'Test Owner',email:'owner@example.test',role:accountRole,empire:empireAccess}:null,appUrl:'/planner-fixture',studioUrl:'/studio-fixture',githubConfigured:true,ownerConfigured:true}:
-        url.pathname==='/api/submissions'?[...proposals,...(accountRole==='contributor'?[{id:'declined-proposal',kind:'items',asset_id:'personal-feedback',status:'rejected',review_note:'Please correct the chair width.',snapshot:item}]:[])]:url.pathname==='/api/items'?[item,...(accountRole==='contributor'?[{...item,id:'personal-feedback',ownerId:'owner',label:'Personal chair'}]:[])]:url.pathname==='/api/stages'?[stage,...createdStages].filter(candidate=>!url.searchParams.has('stage')||candidate.id===url.searchParams.get('stage')):url.pathname.endsWith('/history')?[{revision:1,created:new Date().toISOString(),data:item}]:
+        url.pathname==='/api/submissions'?[...proposals,...(accountRole==='user'?[{id:'declined-proposal',kind:'items',asset_id:'personal-feedback',status:'rejected',review_note:'Please correct the chair width.',snapshot:item}]:[])]:url.pathname==='/api/items'?[item,...(accountRole==='user'?[{...item,id:'personal-feedback',ownerId:'owner',label:'Personal chair'}]:[])]:url.pathname==='/api/stages'?[stage,...createdStages].filter(candidate=>!url.searchParams.has('stage')||candidate.id===url.searchParams.get('stage')):url.pathname.endsWith('/history')?[{revision:1,created:new Date().toISOString(),data:item}]:
         url.pathname==='/api/users'?[{id:'owner',name:'Test Owner',email:'owner@example.test',role:'owner'}]:
         url.pathname==='/api/access-requests'?[{github_id:'42',login:'test-user',name:'Test user',email:'user@example.test',status:'pending'}]:
         url.pathname==='/api/projects'?Array.from({length:20},(_,id)=>({id:String(id),name:'Saved show '+id,revision:1,deleted:id===19,updated:new Date().toISOString()})):[]
       response.setHeader('Content-Type','application/json');response.end(JSON.stringify(data));return
     }
-    if(!['/planner-fixture','/studio-fixture'].includes(url.pathname))return next()
-    const studio=url.pathname==='/studio-fixture',app=studio?'/tools/svg-shape-studio/src':'/src'
+    if(!['/planner-fixture','/studio-fixture','/equipment-fixture'].includes(url.pathname))return next()
+    const studio=url.pathname!=='/planner-fixture',app=studio?'/tools/svg-shape-studio/src':'/src',entry=url.pathname==='/equipment-fixture'?'/src/editor/equipment-studio.jsx':studio?app+'/App.jsx':'/src/events.jsx'
     const html=`<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module">
       import {createElement as h} from 'react';
       import {createRoot} from 'react-dom/client';
       import {AccountProvider} from '/src/accounts.jsx';
-      import App from '${app}/App.jsx';
+      import App from '${entry}';
       import '${app}/styles.css';
       createRoot(document.getElementById('root')).render(h(AccountProvider,{studio:${studio}},h(App)));
     </script></body></html>`
@@ -74,54 +74,32 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     await call('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false})
     const base='http://127.0.0.1:'+server.httpServer.address().port
     await call('Page.navigate',{url:base+'/planner-fixture'})
-    await waitFor(`document.querySelector('.stage-picker-backdrop') && document.querySelector('.top-actions button')`)
-    await waitFor("document.querySelector('.stage-picker-actions button:last-child')?.textContent==='Sign in'")
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.stage-picker .btn.ghost')).color"),'rgb(48, 49, 44)')
-    await evaluate("document.querySelector('.stage-picker-actions button:last-child').click()")
+    await waitFor("document.querySelector('.event-welcome')")
+    await click('Sign in')
     await waitFor("document.querySelector('.account-dialog')")
     assert.equal((await modal()).topmost,true)
     signedIn=true
     await call('Page.navigate',{url:base+'/planner-fixture'})
-    await waitFor("document.querySelector('.stage-picker-actions a')?.textContent==='Shape Studio'")
-    assert.equal(await evaluate("document.querySelector('.stage-picker-actions a').getAttribute('href')"),'/studio-fixture')
-    await click('Test Owner · owner')
-    await waitFor(`document.querySelector('.account-dialog')`)
+    await waitFor("document.querySelector('a.app-navigation')?.textContent==='Equipment library'")
+    assert.equal(await evaluate("new URL(document.querySelector('a.app-navigation').href).pathname"),'/studio-fixture')
+    await click('Test Owner \u00b7 owner')
+    await waitFor("document.querySelector('.account-dialog')")
     let layout=await modal()
-    assert.equal(layout.topmost,true,'account popup must appear above the stage picker')
+    assert.equal(layout.topmost,true,'account controls appear above the workspace')
     assert.equal(layout.inBody,true)
-    await click('Manage users & access requests')
-    await waitFor(`document.querySelector('.account-access-request')`)
+    await click('Manage users & account linking')
+    await waitFor("document.querySelector('.account-access-request')")
     assert.equal((await modal()).formDisplay,'grid')
-    await evaluate(`document.querySelector('[aria-label="Close account"]').click()`)
-    await evaluate(`Array.from(document.querySelectorAll('.stage-picker-list button')).find(button=>button.textContent.includes('Test stage')).click()`)
-    await click('Save / Load')
-    await waitFor("document.querySelector('[aria-label=\"Save and load\"]')")
-    assert.equal(await evaluate("Array.from(document.querySelectorAll('.project-file-actions button')).map(b=>b.textContent).join(',')"),'Update cloud project,Save cloud project,New Project,Load Project File,Download Project File,Export PDF')
-    assert.equal(await evaluate("document.querySelector('.project-file-actions button').disabled"),true)
-    assert.equal(await evaluate("document.querySelectorAll('.top-actions .btn.primary').length"),1)
-    await click('Close')
-    assert.equal(await evaluate("document.querySelector('a.app-navigation').getAttribute('href')"),'/studio-fixture')
-    await click('Help')
-    await waitFor("document.querySelector('.help-dialog')")
-    assert.ok(await evaluate("document.querySelector('.help-dialog').textContent.includes('Update cloud project')"))
-    assert.ok(await evaluate("document.querySelector('.help-footer a').href.endsWith('/docs/USER_GUIDE.md')"))
+    await evaluate("document.querySelector('[aria-label=\"Close account\"]').click()")
+    await click('Help');await waitFor("document.querySelector('.help-dialog')")
+    assert.ok(await evaluate("document.querySelector('.help-dialog').textContent.includes('client invitation')"))
     await evaluate("document.querySelector('[aria-label=\"Close help\"]').click()")
-    await click('My projects')
-    await waitFor(`document.querySelectorAll('.account-row').length===20`)
-    layout=await modal()
-    assert.equal(layout.scrollable,true)
-    assert.ok(layout.top>=0 && layout.bottom<=layout.viewport,'long project list must stay inside the viewport')
-    await evaluate('window.confirm=()=>true')
-    await click('Delete permanently')
-    await waitFor("!document.querySelector('.account-dialog button:disabled')")
-    assert.ok(mutations.at(-1).path.endsWith('/purge'))
-
-    await call('Page.navigate',{url:base+'/studio-fixture'})
-    await click('Library')
+    await call('Page.navigate',{url:base+'/studio-fixture?section=studio'})
+    await click('Equipment library')
     await waitFor("document.querySelector('.equipment-management-row.pending-update-row')")
     assert.equal(await evaluate("document.querySelectorAll('.library-tabs [role=tab]').length"),3)
     assert.equal(await evaluate("document.querySelectorAll('.equipment-management-modal .publish-equipment-toggle,.equipment-management-modal .stock-quantity-field').length"),0,'untagged users see no profile or stock controls')
-    assert.equal(await evaluate("document.querySelector('a.app-navigation').getAttribute('href')"),'/planner-fixture')
+    assert.equal(await evaluate("new URL(document.querySelector('a.app-navigation').href).pathname"),'/planner-fixture')
     assert.equal(await evaluate("(()=>{const link=getComputedStyle(document.querySelector('.actions > a.app-navigation')),button=getComputedStyle(document.querySelector('.actions > button'));return ['fontSize','fontWeight','backgroundColor','color','borderTopColor','borderRadius','padding'].every(key=>link[key]===button[key])})()"),true,'Studio navigation must match toolbar button styling')
 
     assert.equal(await evaluate("new Set(Array.from(document.querySelectorAll('.library-tabs button')).map(b=>b.getBoundingClientRect().top)).size"),1)
@@ -147,8 +125,14 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     assert.ok(await evaluate("document.querySelector('.managed-stage-row').getBoundingClientRect().height<=73"))
     assert.equal(await evaluate("document.querySelectorAll('.managed-stage-row select[aria-label=\"Visibility for Test stage\"]').length"),1)
     assert.equal(await evaluate("document.querySelector('[aria-label=\"Stage sharing\"]')"),null)
-    await click('New items (1)')
-    await waitFor("!document.querySelector('#library-panel-new').hidden")
+    await click('Review queue (2)')
+    await waitFor("!document.querySelector('#library-panel-reviews').hidden")
+    assert.equal(await evaluate("document.querySelectorAll('.equipment-review-queue .new-submission-row').length"),2,'review queue includes new items and item updates')
+    await evaluate("(()=>{const select=document.querySelector('[aria-label=\"Submission type\"]');select.value='update';select.dispatchEvent(new Event('change',{bubbles:true}))})()")
+    await waitFor("document.querySelectorAll('.equipment-review-queue .new-submission-row').length===1")
+    assert.ok(await evaluate("document.querySelector('.equipment-review-queue').textContent.includes('Corrected chair')"))
+    await evaluate("(()=>{const select=document.querySelector('[aria-label=\"Submission type\"]');select.value='new';select.dispatchEvent(new Event('change',{bubbles:true}))})()")
+    await waitFor("document.querySelector('.new-submission-row')?.textContent.includes('New stage')")
     assert.equal(await evaluate("document.querySelectorAll('.new-submission-row').length"),1)
     await click('Review submission')
     await waitFor("document.querySelector('[aria-label=\"Review submission\"]')")
@@ -156,25 +140,27 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     await click('Close')
     await click('Review submission')
     await waitFor("document.querySelector('[aria-label=\"Review submission\"]')")
-    await evaluate('window.confirm=()=>true')
     await click('Approve as new item')
+    await click('Continue')
     await waitFor("!document.querySelector('.account-dialog')")
     assert.equal(mutations.at(-1).mode,'new')
     await click('Review submission')
     await waitFor("document.querySelector('[aria-label=\"Review submission\"]')")
     await click('Decline')
+    await click('Continue')
     await waitFor("!document.querySelector('.account-dialog')")
     assert.ok(mutations.at(-1).path.endsWith('/reject'))
     await click('Equipment')
     await click('Review update (1)')
     await waitFor("document.querySelector('[aria-label=\"Review submission\"]')")
     await click('Approve item update')
+    await click('Continue')
     await waitFor("!document.querySelector('.account-dialog')")
     assert.equal(mutations.at(-1).mode,'update')
     assert.equal(mutations.at(-1).targetId,'test-chair')
-    await evaluate("document.querySelector('.equipment-management-modal .modal-header button').click()")
+    await evaluate("document.querySelector('.equipment-management-modal [aria-label=\"Back to editor\"]').click()")
     await click('Test Owner · owner')
-    await click('Manage users & access requests')
+    await click('Manage users & account linking')
     await waitFor(`document.querySelector('.account-access-request')`)
     assert.equal((await modal()).formDisplay,'grid')
     assert.equal(await evaluate("document.querySelector('[aria-label=\"Role for owner@example.test\"]')"),null)
@@ -182,34 +168,36 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     await call('Emulation.setDeviceMetricsOverride',{width:480,height:640,deviceScaleFactor:1,mobile:false})
     layout=await modal()
     assert.ok(layout.width<=456 && layout.top>=0 && layout.bottom<=640,'account popup must fit a narrow viewport')
-    accountRole='contributor'
-    await call('Page.navigate',{url:base+'/studio-fixture'})
-    await click('Library')
+    accountRole='user'
+    await call('Page.navigate',{url:base+'/studio-fixture?section=studio'})
+    await click('Equipment library')
     await waitFor("document.querySelector('.library-tabs')")
     assert.equal(await evaluate("document.querySelectorAll('.library-tabs [role=tab]').length"),2)
     await click('View feedback')
     await waitFor("document.querySelector('[aria-label=\"Submission feedback\"]')")
     assert.equal(await evaluate("document.querySelector('.submission-feedback').textContent"),'Please correct the chair width.')
     await click('Close')
-    await evaluate('window.confirm=()=>true')
     assert.equal(await evaluate("document.querySelectorAll('.equipment-management-row').length"),2,'shared item and personal copy both remain visible')
     assert.ok(await evaluate("document.querySelector('.equipment-management-modal').textContent.includes('Personal chair - Personal copy')"))
     await evaluate("Array.from(document.querySelectorAll('.equipment-management-row')).find(r=>r.textContent.includes('Test chair')).querySelectorAll('button')[1].click()")
+    if(await evaluate("Boolean(document.querySelector('.app-message-dialog[open]'))"))await click('Continue')
     await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Save personal copy')")
-    await click('Library')
+    await click('Equipment library')
     await waitFor("document.querySelector('.equipment-management-modal')")
     await evaluate("Array.from(document.querySelectorAll('.equipment-management-row')).find(r=>r.textContent.includes('Personal chair')).querySelectorAll('button')[1].click()")
+    if(await evaluate("Boolean(document.querySelector('.app-message-dialog[open]'))"))await click('Continue')
     await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Update personal copy')")
     accountRole='owner'
-    await call('Page.navigate',{url:base+'/studio-fixture'})
-    await click('Library')
+    await call('Page.navigate',{url:base+'/studio-fixture?section=studio'})
+    await click('Equipment library')
     await waitFor("document.querySelector('.equipment-management-row')")
-    await evaluate('window.confirm=()=>true')
     await click('Edit')
+    if(await evaluate("Boolean(document.querySelector('.app-message-dialog[open]'))"))await click('Continue')
     await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Update shape')")
-    await click('Library')
+    await click('Equipment library')
     await click('Review update (1)')
     await click('Open submission in editor')
+    if(await evaluate("Boolean(document.querySelector('.app-message-dialog[open]'))"))await click('Continue')
     await click('Save submission changes')
     await waitFor("document.querySelector('[aria-label=\"Save submission changes\"]')")
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.account-dialog button')).filter(b=>['Save new item','Update submitted item (without approving)','Approve changes'].includes(b.textContent)).length"),3)
@@ -220,22 +208,34 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     assert.equal(await evaluate("(()=>{const text=getComputedStyle(document.querySelector('.inspector textarea')),number=getComputedStyle(document.querySelector('.inspector input[type=number]')),label=getComputedStyle(document.querySelector('.text-format-options label'));return text.fontSize===number.fontSize&&text.fontWeight===number.fontWeight&&text.fontFamily===number.fontFamily&&label.fontSize===number.fontSize})()"),true,'text inspector controls must share value typography')
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.text-format-options')).marginBottom"),'14px')
     empireAccess=true
-    await call('Page.navigate',{url:base+'/studio-fixture'})
-    await waitFor("document.querySelector('button.app-navigation')")
-    await click('Stageplot')
-    await waitFor("document.querySelector('[aria-label=\"Choose Stageplot profile\"]')")
-    assert.equal(await evaluate("document.querySelectorAll('.profile-choice').length"),2)
-    assert.equal(await evaluate("new URL(Array.from(document.querySelectorAll('.profile-choice')).find(a=>a.textContent==='Empire Stageplot').href).searchParams.get('profile')"),'empire')
-    assert.equal(await evaluate("new URL(Array.from(document.querySelectorAll('.profile-choice')).find(a=>a.textContent==='External Stageplot').href).searchParams.has('profile')"),false)
-    await click('Close')
-    await click('Library')
+    await call('Page.navigate',{url:base+'/studio-fixture?section=studio'})
+    await waitFor("document.querySelector('a.app-navigation')")
+    assert.equal(await evaluate("new URL(document.querySelector('a.app-navigation').href).pathname"),'/planner-fixture','Empire accounts return directly without a profile chooser')
+    await click('Equipment library')
     await waitFor("document.querySelector('.stock-quantity-field')")
     assert.ok(await evaluate("document.querySelectorAll('.equipment-management-modal .publish-equipment-toggle').length>0"))
-    await evaluate("document.querySelector('.equipment-management-modal .modal-header button').click()")
+    await evaluate("document.querySelector('.equipment-management-modal [aria-label=\"Back to editor\"]').click()")
     await click('Help')
     await waitFor("document.querySelector('.help-dialog')")
-    assert.ok(await evaluate("document.querySelector('.help-dialog').textContent.includes('Update submitted item (without approving)')"))
+    assert.ok(await evaluate("document.querySelector('.help-dialog').textContent.includes('Save review edits')"))
     assert.equal(await evaluate("document.querySelector('.help-dialog').textContent.includes('Public planner URL')"),false)
+
+    const returnTo=base+'/planner-fixture?view=spaces&profile=empire'
+    await call('Emulation.setDeviceMetricsOverride',{width:1600,height:1000,deviceScaleFactor:1,mobile:false})
+    await call('Page.navigate',{url:base+'/equipment-fixture?section=reviews&returnTo='+encodeURIComponent(returnTo)})
+    await waitFor("document.querySelector('#library-panel-reviews')?.hidden===false")
+    await waitFor("document.querySelectorAll('.equipment-review-queue .new-submission-row').length===1")
+    assert.equal(await evaluate("document.querySelectorAll('.library-tabs [role=tab]').length"),2,'standalone equipment library excludes stage authoring')
+    assert.equal(await evaluate("document.querySelector('a.app-navigation').href"),returnTo,'return navigation preserves the exact originating workspace and profile')
+    if(process.env.STAGEPLOT_CAPTURE_UI){const screenshot=await call('Page.captureScreenshot',{format:'png'});await writeFile(join(tmpdir(),'stageplot-equipment-library.png'),Buffer.from(screenshot.data,'base64'))}
+    await click('Equipment Studio')
+    await waitFor("!document.querySelector('.equipment-library-page')")
+    await click('New item')
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('.preset-modal button')).some(button=>button.textContent==='Stage')"),false)
+    accountRole='user'
+    await call('Page.navigate',{url:base+'/equipment-fixture?section=reviews'})
+    await waitFor("document.querySelector('#library-tab-items')?.getAttribute('aria-selected')==='true'")
+    assert.equal(await evaluate("document.querySelector('#library-tab-reviews')"),null,'review-only navigation is not shown to users')
 
   }finally {
     if(child&&child.exitCode===null&&child.signalCode===null) {

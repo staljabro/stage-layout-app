@@ -1,36 +1,36 @@
-# Shape Studio
+# Shared canvas development entry
 
-Shape Studio is Stageplot's equipment artwork editor. The stage editor is reused inside Stageplot's event workspace; standalone Studio is reserved for equipment. The Library API persists live data in SQLite; repository JSON files are first-start import inputs, not the live library.
+The working editor is [src/editor](../../src/editor) and the current application is [src/workbench](../../src/workbench). Stage authoring and client layouts use the embeddedStage adapter; equipment authoring/public review use embeddedEquipment.
 
-For end-user instructions, read the [comprehensive user guide](../../docs/USER_GUIDE.md#shape-studio). For GitHub sign-in and deployment, see [Accounts and deployment](../../ACCOUNT_GUIDE.md).
+Run normal development from the repository root with npm run dev:all and open http://localhost:5173. The optional entry in this directory mounts the same current app; it is not a separate user workflow or a required production service.
 
-## Development
+All signed-in Users can create stages and equipment. App roles are User/Admin/Owner. New GitHub accounts become Users automatically; no separate authoring role or normal signup approval is required.
 
-From the repository root:
+## Compatibility
 
-```powershell
-npm.cmd run setup
-npm.cmd run dev:all
-```
+Modules in this directory re-export shared canvas utilities for existing geometry tests. Equipment remains stageplot-item@3, stored in metres with equipment fields displayed in centimetres.
 
-Node 24 is required. Setup installs both dependency sets, including Studio's polygon-clipping and fit-curve dependencies. Configure GitHub sign-in before using Studio; Contributor, Admin or Owner access is required. Studio normally runs at http://localhost:5174 and Stageplot at http://localhost:5173.
+Artwork, image crop, collision geometry, components, named part controls, whole-degree rotation, snapping, folders and groups are covered by the shared tests. Equipment images replace the old equipment reference-image tool; stage backgrounds remain supported.
 
-To run only Studio, use npm install and npm run dev from this directory; shared library operations still require the API. Use the same hostname for both local apps so they share the session cookie.
-
-## Editor conventions
-
-Equipment fields display centimetres, stage fields display metres, and stored geometry uses metres. Collision geometry is distinct from artwork. Dedicated collision layers are omitted from published artwork. Custom shapes are reusable Studio-only building blocks.
-
-The shared version comes from src/version.js at the repository root. Version changes are handled by the maintainer when committing.
-
-## Verification
+## Build and test
 
 From the repository root:
 
 ```powershell
-npm.cmd run lint
+npm run lint
 node --test --test-isolation=none src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
-npm.cmd run build --prefix tools/svg-shape-studio
+npm run build
+npm run build --prefix tools/svg-shape-studio
 ```
 
-The browser regression test uses installed Chrome/Edge when available and skips when no supported browser is installed. Shared account, project and help components live under the root src directory; styling changes should be checked in both applications.
+`RELEASE_VERSION` in `src/version.js` is the version source for both entries and all releases. Use `npm run release:version -- VERSION` from the root to update it and sync package mirrors, or edit the source directly. Both builds sync packages and lockfiles automatically; `npm run release:version` without an argument also syncs them.
+
+Stage authoring includes **Curtain** lines with fixed 10 cm peak-to-trough waves and 40 cm wavelength. New curtains start black with collision enabled; untick the inspector collision checkbox for decorative curtains. The dotted editing guide shows the enabled centre-line collision. Line length trims or extends folds. Stage layer interactions, endpoint handles and colour/thickness/opacity and collision controls are shared with the main canvas. See the [stage editor guide](../../docs/CANVAS.md#curtains).
+
+## Documentation
+
+- [Guide home](../../docs/README.md)
+- [Equipment creation](../../docs/EQUIPMENT.md)
+- [Canvas reference](../../docs/CANVAS.md)
+- [Development and release workflow](../../docs/DEVELOPMENT.md)
+- [Architecture](../../docs/APP_FLOW_REVIEW.md)

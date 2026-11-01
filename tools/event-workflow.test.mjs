@@ -9,7 +9,7 @@ import {createEventRoutes} from './event-routes.mjs'
 test('event owners and guest bands collaborate on separate plots with protected stages and recoverable revisions',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'stageplot-events-'))
   const store=await openStore(directory)
-  const jimmy={id:'jimmy',role:'editor',empire:false},other={id:'other',role:'editor',empire:false}
+  const jimmy={id:'jimmy',role:'user',empire:false},other={id:'other',role:'user',empire:false}
   for(const user of [jimmy,other])store.run('INSERT INTO users VALUES(?,?,?,?,?,0,0,?)',user.id,user.id+'@test.invalid',user.id,'editor','','')
   const chair={schema:'stageplot-item@3',id:'chair',label:'Chair',profiles:['external'],dimensions:{widthMeters:1,depthMeters:1},shapes:[{id:'body',type:'rect',x:0,y:0,width:1,height:1}],collisionShapes:[]}
   store.saveAsset('items','chair',chair,jimmy)

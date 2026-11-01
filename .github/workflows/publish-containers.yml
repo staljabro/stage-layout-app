@@ -9,9 +9,18 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: publish-containers
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      publish_version: ${{ steps.version.outputs.publish_version }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -23,7 +32,13 @@ jobs:
             tools/svg-shape-studio/package-lock.json
       - run: npm ci
       - run: npm ci --prefix tools/svg-shape-studio
+      - name: Read release version from src/version.js
+        id: version
+        run: node tools/release-version.mjs --github
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run lint
+      - run: npm run build
       - run: node --test --test-isolation=none src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
 
   publish:
@@ -34,8 +49,6 @@ jobs:
         include:
           - name: stageplot
             target: stageplot
-          - name: studio
-            target: studio
           - name: library-api
             target: library-api
     steps:
@@ -53,6 +66,9 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=sha-
+            type=raw,value=${{ needs.verify.outputs.version }},enable=${{ needs.verify.outputs.publish_version == 'true' && github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -62,3 +78,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+  release:
+    needs: [verify, publish]
+    if: github.ref == 'refs/heads/main' && needs.verify.outputs.publish_version == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Publish versioned GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          IS_PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        shell: bash
+        run: |
+          options=()
+          if [[ "$IS_PRERELEASE" == "true" ]]; then options+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Stageplot $RELEASE_VERSION" --generate-notes "${options[@]}"

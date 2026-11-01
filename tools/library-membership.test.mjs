@@ -78,25 +78,30 @@ test('accounts enforce roles, asset ownership, approvals, revisions, sharing and
     assert.equal((await fetch(callback,{redirect:'manual',headers:{Cookie:jar.browser}})).status,400,'OAuth state can be used only once')
     await login('bad-email','6-unverified','email-required')
     await login('provider-error','broken','error')
-    await login('collision','6-collision','pending')
+    await login('collision','6-collision','link-required')
     assert.equal((await request('/auth/session','GET',undefined,'collision')).user,null,'email matches do not grant access')
     await request('/access-requests/6/approve','POST',{role:'owner'},'owner',409)
     await request('/access-requests/6/approve','POST',{role:'owner',existingUserId:legacyOwnerId},'owner',409)
     await request('/access-requests/6/reject','POST',{},'owner')
-    await login('collision','6-collision','denied')
+    await login('collision','6-collision','link-required')
     const members={}
     for(const [role,id] of [['admin','2'],['contributor','3'],['editor','4'],['other','5']]){
-      await login(role,id,'pending')
-      assert.equal((await request('/auth/session','GET',undefined,role)).user,null)
-      if(role==='editor')await request('/access-requests/'+id+'/approve','POST',{role},'owner',409)
-      members[role]=await request('/access-requests/'+id+'/approve','POST',{role:role==='other'?'contributor':role,...(role==='editor'?{existingUserId:legacyEditorId}:{})},'owner')
+      await login(role,id,role==='editor'?'link-required':'signed-in')
+      if(role==='editor'){
+        await request('/access-requests/'+id+'/approve','POST',{role:'user'},'owner',409)
+        await request('/access-requests/'+id+'/approve','POST',{role:'user',existingUserId:legacyEditorId},'owner')
+        await login(role,id)
+      }
+      members[role]=(await request('/auth/session','GET',undefined,role)).user
+      assert.equal(members[role].role,'user','GitHub registrations start as User without approval')
+      if(role==='admin')await request('/users/'+members[role].id,'PUT',{role:'admin'},'owner')
       await login(role,id)
     }
     await request('/users','GET',undefined,'admin',403)
     await request('/access-requests','GET',undefined,'contributor',403)
     await request('/access-requests/2/approve','POST',{role:'owner'},'contributor',403)
     await request('/users','POST',{},'owner',404)
-    await request('/items?scope=all','GET',undefined,'editor',403)
+    await request('/items?scope=all','GET',undefined,'editor')
     await request('/items/existing-chair','PUT',chair,'editor',403)
     await request('/items/existing-chair','DELETE',undefined,'contributor',403)
     await request('/groups','PUT',[],'contributor',403)
@@ -275,7 +280,8 @@ test('accounts enforce roles, asset ownership, approvals, revisions, sharing and
     await request('/users/'+owner.id,'PUT',{disabled:true},'owner',409)
     await request('/users/'+members.admin.id,'PUT',{role:'owner'},'owner',400)
     const oldCookie=jar.contributor
-    await request('/users/'+members.contributor.id,'PUT',{role:'editor'},'owner')
+    await request('/users/'+members.contributor.id,'PUT',{role:'editor'},'owner',400)
+    await request('/users/'+members.contributor.id,'PUT',{role:'user'},'owner')
     jar.old=oldCookie;assert.equal((await request('/auth/session','GET',undefined,'old')).user,null)
     await request('/auth/password','POST',{},'owner',404)
     await request('/users/'+members.editor.id,'PUT',{disabled:true},'owner')

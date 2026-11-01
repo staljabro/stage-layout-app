@@ -1,16 +1,18 @@
 {
   "name": "stage-layout-app",
   "private": true,
-  "version": "0.1.1-alpha.0",
+  "version": "0.3.0-alpha.0",
   "type": "module",
   "scripts": {
     "setup": "npm install && npm install --prefix tools/svg-shape-studio",
     "dev": "vite",
     "dev:all": "node tools/dev-all.mjs",
     "library": "node --env-file-if-exists=.env --watch tools/library-server.mjs",
+    "prebuild": "node tools/set-version.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "release:version": "node tools/set-version.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

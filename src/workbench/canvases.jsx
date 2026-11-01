@@ -1,0 +1,42 @@
+import {appAlert} from '../app-dialogs.js'
+import {lazy,Suspense,useEffect,useRef,useState} from 'react'
+import {useAccount} from '../accounts.jsx'
+import {stageSpace,projectFile,resolveProject} from '../project-file.js'
+import {pinProject} from '../project-snapshots.js'
+import {request,go,returnLocation,newId} from './api.js'
+import {Shell,Empty,ErrorNotice,NameDialog} from './ui.jsx'
+import {StageSharing} from './sharing.jsx'
+import '../editor/styles.css'
+const Editor=lazy(()=>import('../editor/design-editor.jsx'))
+const opening=<div className="workbench-loading" role="status">Opening your editor...</div>
+function Frame({error,children}) {return error?<Shell><Empty title="Unable to open the editor"><ErrorNotice error={error}/><a href={window.location.pathname}>Return to dashboard</a></Empty></Shell>:children||opening}
+export function Canvas(props) {return <Suspense fallback={opening}><div className="design-editor-scope"><Editor {...props}/></div></Suspense>}
+export function StageCanvas({id,organisationId}) {
+  const {user}=useAccount()
+  const [shareStageOwner,setShareStageOwner]=useState(false)
+  const [stage,setStage]=useState(null),[equipment,setEquipment]=useState([]),[groups,setGroups]=useState([]),[organisations,setOrganisations]=useState([]),[error,setError]=useState(''),[sharing,setSharing]=useState(false),[creating,setCreating]=useState(false)
+  const version=useRef(null)
+  useEffect(()=>{let active=true;Promise.all([request('/stages/'+id),request('/equipment'),request('/groups'),request('/organisations'),organisationId?request('/organisations/'+organisationId+'/stock'):[]]).then(([stage,equipment,groups,organisations,stock])=>{if(active){version.current=stage.version;setStage(stage);const quantities=new Map(stock.map(row=>[row.assetId,row.quantity]));setEquipment([...equipment.map(item=>({...item,stockQuantity:organisationId?quantities.get(item.id)??null:null})),...(stage.data.availableEquipmentSnapshots||[]).filter(item=>!equipment.some(existing=>existing.id===item.id))]);setGroups(groups);setOrganisations(organisations)}}).catch(error=>{if(active)setError(error.message)});return()=>{active=false}},[id,organisationId])
+  if(error||!stage)return <Frame error={error}/>
+  if(!stage.canEdit)return <Shell><Empty title={stage.name}><p>This stage is available for your equipment layouts.</p><button onClick={()=>setCreating(true)}>Create layout</button></Empty>{creating&&<NameDialog title="Create layout" initial="My layout" onClose={()=>setCreating(false)} onSubmit={async name=>{const layout=await request('/stages/'+id+'/layouts','POST',{name,organisationId:organisationId||null,shareWithStageOwner:shareStageOwner});go({layout:layout.id})}}>{stage.ownerId&&stage.ownerId!==user?.id&&<label className="save-organisation-option"><input type="checkbox" checked={shareStageOwner} onChange={event=>setShareStageOwner(event.target.checked)}/>Share this layout with {stage.ownerName||'the stage owner'}</label>}</NameDialog>}</Shell>
+  return <><Canvas key={id} embeddedStage={{data:stage.data,equipment,groups,organisationId,organisation:organisations.find(organisation=>organisation.id===organisationId),canEditStage:true,canSubmit:!stage.public&&!stage.generic,notes:stage.data.notes||'',onSave:async(input,submit)=>{const {layoutEquipment,layoutFolders,...data}=input;void layoutEquipment;void layoutFolders;const saved=await request('/stages/'+id,'PUT',{data,version:version.current});version.current=saved.version;const result=submit?await request('/stages/'+id+'/submit','POST',{version:saved.version}):saved;setStage(old=>({...old,...result}))},onShare:stage.canShare?()=>setSharing(true):null,onCreateEquipment:()=>go({editEquipment:'new',draft:newId(),returnTo:window.location.href}),onBack:()=>go({view:'stages'}),backLabel:'Back to stages'}}/>{sharing&&<StageSharing stage={stage} organisations={organisations} onClose={()=>setSharing(false)} onChanged={async()=>setStage(await request('/stages/'+id))}/>}</>
+}
+export function LayoutCanvas({id,token}) {
+  const {user,showAccount}=useAccount(),[document,setDocument]=useState(null),[error,setError]=useState('')
+  const endpoint=token?'/layout-links/'+token:'/layouts/'+id,revision=useRef(null)
+  useEffect(()=>{let active=true;request(endpoint).then(value=>{if(active){revision.current=value.revision;setDocument(value)}}).catch(error=>{if(active)setError(error.message)});return()=>{active=false}},[endpoint])
+  if(error||!document)return <Frame error={error}/>
+  const space=stageSpace(document.data.assetSnapshots.stage),resolved=resolveProject(document.data,document.equipment||[],[])
+  return <Canvas key={document.id} embeddedStage={{sessionId:'layout-'+document.id,organisationId:document.organisationId,organisation:document.organisation,data:document.data.assetSnapshots.stage,equipment:document.equipment||[],groups:document.groups||[],layoutEquipment:resolved.items,layerFolders:resolved.layerFolders,layoutName:document.name,notes:document.notes,reviewNote:document.reviewNote,statusLabel:document.status.replaceAll('_',' ')+' / revision '+document.revision,guest:Boolean(token),canEditStage:false,autosave:true,onSave:async(design,submit)=>{const data=pinProject(projectFile(document.name,space,design.layoutEquipment,'',{},design.layoutFolders||[]),space,design.layoutEquipment);const saved=await request(endpoint,'PUT',{data,notes:design.notes,submit,revision:revision.current});revision.current=saved.revision;setDocument(old=>({...old,...saved}))},onClaim:token&&document.canClaim?async()=>{try{const saved=await request(endpoint+'/claim','POST',{});go({layout:saved.id})}catch(error){(await appAlert(error.message))}}:null,onDashboard:token&&user?()=>go({view:'layouts'}):null,onSignIn:!user?showAccount:null,onCreateEquipment:user?()=>go({editEquipment:'new',draft:newId(),returnTo:window.location.href}):null,onBack:()=>go({view:'layouts'}),backLabel:'Back to layouts'}}/>
+}
+export function EquipmentCanvas({id,draft,reviewId,returnTo}) {
+  const [data,setData]=useState(null),[library,setLibrary]=useState([]),[groups,setGroups]=useState([]),[organisations,setOrganisations]=useState([]),[error,setError]=useState('')
+  const revision=useRef(null),reviewRevision=useRef(null),back=()=>window.location.assign(reviewId?returnLocation(null,window.location.pathname+'?view=reviews'):returnLocation(returnTo))
+  useEffect(()=>{let active=true;Promise.all([reviewId?request('/submissions').then(rows=>{const row=rows.find(row=>row.id===reviewId);if(!row||row.status!=='pending')throw new Error('This submission is no longer awaiting review');reviewRevision.current=row.revision;return {...row.snapshot,canEdit:true,canShare:false}}):id==='new'?Promise.resolve({id:'item-'+draft,schema:'stageplot-item@3',label:'My equipment',dimensions:{widthMeters:1,depthMeters:1},shapes:[],collisionShapes:[],editor:{layers:[]},revision:0,canEdit:true,canShare:true,organisationIds:[]}):request('/equipment/'+id),request('/equipment'),request('/groups'),request('/organisations')]).then(([data,library,groups,organisations])=>{if(active){revision.current=data.revision;setData(data);setLibrary(library);setGroups(groups);setOrganisations(organisations)}}).catch(error=>{if(active)setError(error.message)});return()=>{active=false}},[id,draft,reviewId])
+  if(error||!data)return <Frame error={error}/>
+  if(!data.canEdit)return <Frame error="You can use this equipment. Create a private copy from your library to edit it."/>
+  return <Canvas key={data.id} embeddedEquipment={{data,library,groups,organisations,review:Boolean(reviewId),onBack:back,onSave:async(item,options)=>{
+    if(reviewId){await request('/submissions/'+reviewId,'POST',{data:item,revision:reviewRevision.current,action:options.action,feedback:options.feedback});if(options.action!=='save'){back();return item}const row=(await request('/submissions')).find(row=>row.id===reviewId);reviewRevision.current=row.revision;const saved={...row.snapshot,canEdit:true,canShare:false};setData(saved);return saved}
+    const saved=await request('/equipment/'+data.id,'PUT',{data:item,revision:revision.current,organisationIds:options.organisationIds,submit:options.submit});revision.current=saved.revision;setData(saved);const url=new URL(window.location.href);url.searchParams.set('editEquipment',saved.id);url.searchParams.delete('draft');window.history.replaceState({},'',url);return saved
+  }}}/>
+}

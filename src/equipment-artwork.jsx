@@ -1,4 +1,6 @@
+import {equipmentVisible} from './layer-visibility.js'
 import { TextArtwork } from './text-shape.jsx'
+import {ImageLayerArtwork} from './image-layer.jsx'
 
 const regularPolygonPoints = (width, height, sides = 6) => Array.from({ length: Math.max(3, sides) }, (_, index) => {
   const angle = -Math.PI / 2 + index * Math.PI * 2 / Math.max(3, sides)
@@ -45,7 +47,8 @@ function VectorShape({ shape }) {
   const pivot = shape.type === 'tripod' ? tripodVectorGeometry(shape).hub : { x: shape.width / 2, y: shape.height / 2 }
   const transform = `translate(${shape.x} ${shape.y}) rotate(${shape.rotation || 0} ${pivot.x} ${pivot.y})`
   let node
-  if (shape.type === 'compound') node = <g transform={`scale(${shape.width / shape.artworkWidth} ${shape.height / shape.artworkHeight})`}>{shape.children.map((child,index)=><VectorShape key={index} shape={child}/>)}</g>
+  if (shape.type === 'image') node = <ImageLayerArtwork shape={shape}/>
+  else if (shape.type === 'compound') node = <g transform={`scale(${shape.width / shape.artworkWidth} ${shape.height / shape.artworkHeight})`}>{shape.children.map((child,index)=><VectorShape key={index} shape={child}/>)}</g>
   else if (shape.type === 'text') node = <TextArtwork item={shape} />
   else if (shape.type === 'path') node = <path d={shape.d} {...style} />
   else if (shape.type === 'circle' || shape.type === 'ellipse') node = <ellipse cx={shape.width / 2} cy={shape.height / 2} rx={shape.width / 2} ry={shape.height / 2} {...style} />
@@ -70,12 +73,10 @@ export function VectorArtwork({ shapes, width, depth, rotationParts = [], contro
 export function CustomItemArtwork({ item }) {
   if (item.customType === 'staging') return <svg style={{width:"100%",height:"100%"}} viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true">
     <rect width={item.widthMeters} height={item.depthMeters} fill={item.fill} fillOpacity={item.fillOpacity} stroke="none" />
-    {Array.from({length:Math.max(0,item.widthMeters-1)},(_,index)=><line key={`x-${index}`} x1={index+1} y1="0" x2={index+1} y2={item.depthMeters} stroke={item.sublineColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
-    {Array.from({length:Math.max(0,item.depthMeters-1)},(_,index)=><line key={`y-${index}`} x1="0" y1={index+1} x2={item.widthMeters} y2={index+1} stroke={item.sublineColor} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
     <rect width={item.widthMeters} height={item.depthMeters} fill="none" stroke={item.line} strokeOpacity={item.lineOpacity} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-    {item.showHeight !== false && <text x={item.widthMeters / 2} y={item.depthMeters / 2} fill={item.textColor} stroke="none" fontSize={Math.min(.28, item.depthMeters * .32)} fontWeight="700" textAnchor="middle" dominantBaseline="middle">{item.heightMm}mm</text>}
+    {item.showHeight !== false && <text x={item.widthMeters / 2} y={item.depthMeters / 2} fill={item.textColor} fillOpacity={item.textOpacity??1} stroke="none" fontSize={Math.min(.28, item.depthMeters * .32)} fontWeight="700" textAnchor="middle" dominantBaseline="middle">{item.heightMm}mm</text>}
   </svg>
-  if (item.customType === 'text') return <svg style={{width:"100%",height:"100%"}} viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><TextArtwork item={{ ...item, width: item.widthMeters, height: item.depthMeters }} /></svg>
+  if (item.customType === 'text') return <svg style={{width:"100%",height:"100%"}} viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><g transform={`translate(${item.fontSize*.1} ${item.fontSize*.1})`}><TextArtwork item={{ ...item, width: item.widthMeters, height: item.depthMeters }} /></g></svg>
   return null
 }
 
@@ -83,8 +84,8 @@ export function EquipmentArtwork({item}) {
   return item.customType ? <CustomItemArtwork item={item}/> : <VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility}/>;
 }
 export function FixedEquipmentArtwork({items=[]}) {
-  return items.filter(item=>item.visible!==false).map(item=><g key={item.id} transform={`translate(${item.xMeters} ${item.yMeters}) rotate(${item.rotation||0})`}>
+  return items.filter(equipmentVisible).map(item=><g key={item.id} transform={`translate(${item.xMeters} ${item.yMeters}) rotate(${item.rotation||0})`}>
     <svg style={{width:item.widthMeters,height:item.depthMeters}} x={-item.widthMeters/2} y={-item.depthMeters/2} width={item.widthMeters} height={item.depthMeters} overflow="visible"><EquipmentArtwork item={item}/></svg>
-    {item.showLabel&&<text x="0" y={item.depthMeters/2+.15} textAnchor="middle" fontSize=".15" fill="#25261f" stroke="none">{item.label}</text>}
+    {item.showLabel&&<text x="0" y={(item.labelOffset??1)*(item.depthMeters/2+.2)} textAnchor="middle" fontSize=".15" fill="#25261f" stroke="none">{item.label}</text>}
   </g>);
 }

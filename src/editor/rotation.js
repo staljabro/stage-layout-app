@@ -1,0 +1,45 @@
+import {wholeDegrees} from '../rotation-angle.js'
+import {imageBounds} from '../image-layer.js'
+export const objectPivot = (item) => item.type === 'tripod'
+  ? { x: Math.sqrt(3) / 2 * (item.legRadius ?? item.width / Math.sqrt(3)), y: item.legRadius ?? item.width / Math.sqrt(3) }
+  : { x: item.width / 2, y: item.height / 2 };
+
+export const normalizeRotation = (degrees) => ((degrees + 180) % 360 + 360) % 360 - 180;
+
+export function lockTripodPartPivots(parts, items) {
+  return parts.map(original => {
+    const part={...original,...(original.minRotation!==undefined?{minRotation:Math.ceil(original.minRotation)}:{}),...(original.maxRotation!==undefined?{maxRotation:Math.floor(original.maxRotation)}:{}),...(original.defaultRotation!==undefined?{defaultRotation:wholeDegrees(original.defaultRotation)}:{})};
+    const tripod = items.find(item => item.rotationPartId === part.id && item.type === 'tripod');
+    if (!tripod) return part;
+    const hub = objectPivot(tripod);
+    return { ...part, pivotX: tripod.x + hub.x, pivotY: tripod.y + hub.y, pivotLockedToTripod: true };
+  });
+}
+
+export function rotateObjects(items, center, degrees) {
+  degrees=wholeDegrees(degrees);
+  const angle = degrees * Math.PI / 180;
+  return items.map(item => {
+    const pivot = objectPivot(item);
+    const dx = item.x + pivot.x - center.x, dy = item.y + pivot.y - center.y;
+    return {
+      ...item,
+      x: center.x + dx * Math.cos(angle) - dy * Math.sin(angle) - pivot.x,
+      y: center.y + dx * Math.sin(angle) + dy * Math.cos(angle) - pivot.y,
+      rotation: normalizeRotation(wholeDegrees(item.rotation) + degrees),
+    };
+  });
+}
+
+export function rotatedBounds(items) {
+  const points = items.flatMap(item => {
+    const pivot = objectPivot(item), angle = (item.rotation || 0) * Math.PI / 180;
+    const bounds=item.type==='image'?imageBounds(item):{x:0,y:0,width:item.width,height:item.height}
+    return [[bounds.x,bounds.y],[bounds.x+bounds.width,bounds.y],[bounds.x,bounds.y+bounds.height],[bounds.x+bounds.width,bounds.y+bounds.height]].map(([x, y]) => ({
+      x: item.x + pivot.x + (x - pivot.x) * Math.cos(angle) - (y - pivot.y) * Math.sin(angle),
+      y: item.y + pivot.y + (x - pivot.x) * Math.sin(angle) + (y - pivot.y) * Math.cos(angle),
+    }));
+  });
+  if (!points.length) return null;
+  return { x: Math.min(...points.map(p => p.x)), y: Math.min(...points.map(p => p.y)), right: Math.max(...points.map(p => p.x)), bottom: Math.max(...points.map(p => p.y)) };
+}

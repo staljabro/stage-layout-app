@@ -6,8 +6,12 @@ import {EventHelp} from './help-dialog.jsx'
 
 export function EventHeader({children}) {
   const [help,setHelp]=useState(false)
-  return <><header className="events-header"><a className="events-brand" href={window.location.pathname}><AppMark/><span>STAGEPLOT<small>SPACES · PRODUCTIONS · EVENTS</small></span></a><nav>{children}<button className="btn ghost" onClick={()=>setHelp(true)}>Help</button><AppNavigation/><AccountButton/></nav></header>{help&&<EventHelp onClose={()=>setHelp(false)}/>}</>
+  return <><header className="events-header"><a className="events-brand" href={window.location.pathname}><AppMark/><span>STAGEPLOT<small>STAGES · PRODUCTIONS · EVENTS</small></span></a><nav>{children}<button className="btn ghost" onClick={()=>setHelp(true)}>Help</button><AppNavigation/><AccountButton/></nav></header>{help&&<EventHelp onClose={()=>setHelp(false)}/>}</>
 }
 export function Dialog({title,onClose,children}) {
   return <AccountModal><section className="account-dialog event-dialog" role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button type="button" aria-label="Close dialog" onClick={onClose}>Close</button></header>{children}</section></AccountModal>
+}
+
+export function SaveStatus({busy,dirty,error,version,revision}) {
+  return <span className="workspace-save-state" role="status">{busy?'Saving...':error?'Save failed':dirty?'Unsaved changes':version?'Saved - version '+version:revision?'Saved - revision '+revision:'Saved'}</span>
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { allocateStock, equipmentRows, equipmentCsv, stockQuantity } from './inventory.js'
+import { allocateStock, equipmentRows, equipmentCsv, stockQuantity,assignEquipmentSources } from './inventory.js'
 import { projectFile, resolveProject } from './project-file.js'
 
 test('equipment list distinguishes custom deck sizes and excludes annotations',()=>{
@@ -10,9 +10,38 @@ test('equipment list distinguishes custom deck sizes and excludes annotations',(
     {id:3,customType:'staging',label:'Deck',widthMeters:3,depthMeters:1,heightMm:200},
   ],[])
   assert.equal(rows.length,2)
-  assert.equal(rows[0].source,'Custom staging')
+  assert.equal(rows[0].source,'Stage deck')
   assert.notEqual(rows[0].name,rows[1].name)
   assert.equal(rows.reduce((sum,row)=>sum+row.quantity,0),2)
+})
+
+test('installed and locked equipment use stock first while blank, zero and positive quantities remain distinct',()=>{
+  const library=[{id:'stand',stockQuantity:2},{id:'blank',stockQuantity:null},{id:'zero',stockQuantity:0}]
+  const placements=[{id:1,assetId:'stand'},{id:2,assetId:'stand'},{id:3,assetId:'blank'},{id:4,assetId:'zero'}]
+  const result=allocateStock(placements,library,true,[{id:'installed',assetId:'stand'}])
+  assert.equal(result.external.has(1),false)
+  assert.equal(result.external.has(2),true)
+  assert.equal(result.external.has(3),false)
+  assert.equal(result.external.has(4),true)
+  assert.equal(result.remaining.get('blank'),null)
+  assert.equal(result.remaining.get('zero'),0)
+  const locked=allocateStock([{id:1,assetId:'stand'},{id:2,assetId:'stand'},{id:9,assetId:'stand',locked:true}],library)
+  assert.equal(locked.external.has(9),false)
+  assert.equal(locked.external.has(2),true)
+})
+
+test('automatic sourcing draws from venue quantities after installed equipment and preserves source overrides',()=>{
+  const library=[{id:'stand',stockQuantity:3}],fixed=[{id:'installed',assetId:'stand'}]
+  const items=[1,2,3].map(id=>({id,assetId:'stand',supply:'client'}))
+  const defaults=assignEquipmentSources(items,library,true,fixed)
+  assert.deepEqual(defaults.map(item=>item.supply),['venue','venue','client'])
+  assert.ok(defaults.every(item=>item.supplyOverride==='auto'&&!item.useExternal))
+  const override=assignEquipmentSources(defaults.map(item=>item.id===1?{...item,supplyOverride:'client'}:item),library,true,fixed)
+  assert.deepEqual(override.map(item=>item.supply),['client','venue','venue'])
+  assert.equal(override[0].useExternal,true)
+  const restored=assignEquipmentSources(override.map(item=>item.id===1?{...item,supplyOverride:'auto'}:item),library,true,fixed)
+  assert.deepEqual(restored.map(item=>item.supply),['venue','venue','client'])
+  assert.equal(restored[0].useExternal,false)
 })
 
 const asset={id:'chair',label:'Chair',stockQuantity:2,dimensions:{widthMeters:1,depthMeters:1},shapes:[],collisionShapes:[]}

@@ -19,4 +19,9 @@ export default [
       ...reactRefresh.configs.vite.rules,
     },
   },
+  {files: ['src/editor/design-editor.jsx'], rules: {'no-unused-vars': ['error', {ignoreRestSiblings: true}]}},
+  {files:['src/**/*.{js,jsx}'],rules:{
+    'no-restricted-globals':['error','alert','confirm','prompt'],
+    'no-restricted-properties':['error',...['alert','confirm','prompt','open'].map(property=>({object:'window',property,message:'Use the shared app dialogs or app print preview.'}))],
+  }},
 ]

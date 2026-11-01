@@ -1,3 +1,4 @@
+import {createUserWorkspace} from './user-workspace.mjs'
 import {createEventRoutes} from './event-routes.mjs'
 import {validFixedEquipment} from '../src/stage-equipment.js'
 import {createServer} from 'node:http'
@@ -12,6 +13,7 @@ const root=resolve(process.env.STAGEPLOT_LIBRARY_ROOT || resolve(dirname(fileURL
 const store=await openStore(root)
 const {db,get,all,run,transaction,asset,saveAsset}=store
 const eventRoutes=createEventRoutes(store)
+const userWorkspace=createUserWorkspace(store)
 const userLabel=id=>{
   const account=get('SELECT users.name,users.friendly_name,github_identities.login FROM users LEFT JOIN github_identities ON github_identities.user_id=users.id WHERE users.id=?',id)
   return account?.friendly_name || (account?.login?'@'+account.login:account?.name) || 'Contributor'
@@ -69,9 +71,10 @@ const server=createServer(async(request,response)=>{
     const cookie=request.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('stageplot_session='))?.slice(18)
     const session=cookie ? get('SELECT users.* FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>? AND users.disabled=0',digest(cookie),Date.now()) : null
     const user=publicUser(session)
-    if(profile==='empire'&&!user?.empire)fail(403,'Empire access is required')
+    if(!path.startsWith('/api/workspace/')&&profile==='empire'&&!user?.empire)fail(403,'Empire access is required')
     const startSession=account=>{const value=token();run('DELETE FROM sessions WHERE expires<?',Date.now());run('INSERT INTO sessions VALUES(?,?,?)',digest(value),account.id,Date.now()+7*86400000);response.setHeader('Set-Cookie',[...(response.getHeader('Set-Cookie')?[].concat(response.getHeader('Set-Cookie')):[]),sessionCookie(request,value,7*86400)]);return publicUser(account)}
     if(await githubAuth({request,response,url,user,send,body,startSession}))return
+    if(await userWorkspace({path,method,user,body:()=>body(request),send}))return
     if(await eventRoutes({path,method,user,body:()=>body(request),send}))return
     if(path==='/api/auth/logout' && method==='POST'){if(cookie)run('DELETE FROM sessions WHERE hash=?',digest(cookie));response.setHeader('Set-Cookie',sessionCookie(request,'',0));return send(200,{ok:true})}
     const userMatch=path.match(/^\/api\/users\/([a-f0-9]+)$/)
@@ -81,7 +84,7 @@ const server=createServer(async(request,response)=>{
       if(input.empire!==undefined&&typeof input.empire!=='boolean')fail(400,'Empire access must be true or false')
       if(input.friendlyName!==undefined&&(typeof input.friendlyName!=='string'||input.friendlyName.trim().length>100||/[\r\n]/.test(input.friendlyName)))fail(400,'Friendly name must be a single line of up to 100 characters')
       if(account.role==='owner'&&(input.role!==undefined||input.disabled!==undefined))fail(409,'The Owner account cannot be changed or disabled')
-      if(!roles.includes(role) || role==='owner'&&account.role!=='owner')fail(400,'Choose Editor, Contributor or Admin')
+      if(!roles.includes(role) || role==='owner'&&account.role!=='owner')fail(400,'Choose User or Admin. The Owner identity is configured on the server.')
       if(input.password!==undefined)fail(400,"Passwords are managed by GitHub")
       transaction(()=>{
         const latest=get('SELECT * FROM users WHERE id=?',account.id)
@@ -133,7 +136,7 @@ const server=createServer(async(request,response)=>{
       requireUser(user)
       if(method==='GET' && !submissionMatch[1])return send(200,all(manager(user)?'SELECT * FROM submissions ORDER BY created DESC':'SELECT * FROM submissions WHERE owner_id=? ORDER BY created DESC',...(manager(user)?[]:[user.id])).filter(s=>user.empire||!empireOnly(JSON.parse(s.snapshot))).map(s=>({...s,snapshot:JSON.parse(s.snapshot),owner_name:userLabel(s.owner_id)})))
       if(method==='POST' && !submissionMatch[1]) {
-        if(!designer(user))fail(403,'Contributor access is required')
+        if(!designer(user))fail(403,'Sign in to create equipment and stages')
         const input=await body(request),row=asset(input.kind,input.assetId)
         if(!row || row.deleted || row.owner_id!==user.id)fail(403,'Submit one of your personal assets')
         const data=parsed(row)
@@ -160,7 +163,7 @@ const server=createServer(async(request,response)=>{
           if(!message)return ''
           return message+'\n\nReviewer: '+userLabel(user.id)
         }
-        if(input.snapshotRevision!==undefined && input.snapshotRevision!==JSON.parse(submission.snapshot).revision)fail(409,'The contributor updated this proposal. Reload and review it again')
+        if(input.snapshotRevision!==undefined && input.snapshotRevision!==JSON.parse(submission.snapshot).revision)fail(409,'The creator updated this proposal. Reload and review it again')
         if(input.submittedAt!==undefined && input.submittedAt!==submission.created)fail(409,'The proposal changed. Reload and review it again')
         const value=transaction(()=>{
           let result
@@ -178,8 +181,8 @@ const server=createServer(async(request,response)=>{
             }
             if(input.action==='update') {
               const draft=asset(submission.kind,submission.asset_id)
-              if(!draft || draft.deleted || draft.owner_id!==submission.owner_id)fail(409,'The contributor draft is no longer available')
-              if(draft.revision!==original.revision)fail(409,'The contributor changed their personal copy after submitting. Ask them to resubmit before saving reviewer edits')
+              if(!draft || draft.deleted || draft.owner_id!==submission.owner_id)fail(409,'The creator draft is no longer available')
+              if(draft.revision!==original.revision)fail(409,'The creator changed their personal copy after submitting. Ask them to resubmit before saving reviewer edits')
               const privateData=parsed(draft)
               const updated={...edited,stockQuantity:null,visibility:privateData.visibility,shareToken:privateData.shareToken,shareEquipmentIds:privateData.shareEquipmentIds,proposedReplacementId:privateData.proposedReplacementId}
               validateAsset(submission.kind,updated)

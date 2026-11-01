@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './events.jsx'
+import App from './workbench/app.jsx'
 import { AccountProvider } from './accounts.jsx'
 import './styles.css'
 

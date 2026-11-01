@@ -1,3 +1,4 @@
+import {wholeDegrees} from './rotation-angle.js'
 import { sampleStageBoundary } from './stage-geometry.js';
 import { assetSnapshot } from './project-snapshots.js';
 import { itemsCollide } from './geometry.js';
@@ -5,8 +6,8 @@ import { assetProfiles } from '../tools/library-membership.mjs';
 
 // Store only artwork, geometry and placement data, never library/editor metadata.
 export function fixedEquipmentSnapshot(item,id) {
-  const keys=['assetId','label','widthMeters','depthMeters','xMeters','yMeters','rotation','shapes','collisionShapes','rotationParts','controls','partVisibility','collisionEnabled','showLabel','customType','heightMm','showHeight','fill','fillOpacity','line','lineOpacity','sublineColor','textColor','text','fontSize','bold','italic'];
-  return structuredClone(Object.fromEntries([['id',id],...keys.filter(key=>item[key]!==undefined).map(key=>[key,item[key]])]));
+  const keys=['supplyOverride','supply','useExternal','snapPoints','equipmentGroup','equipmentFolder','labelOffset','components','componentState','textOpacity','assetId','label','widthMeters','depthMeters','xMeters','yMeters','rotation','shapes','collisionShapes','rotationParts','controls','partVisibility','collisionEnabled','showLabel','visible','customType','heightMm','showHeight','fill','fillOpacity','line','lineOpacity','sublineColor','textColor','text','fontSize','bold','italic'];
+  return structuredClone(Object.fromEntries([['id',id],...keys.filter(key=>item[key]!==undefined).map(key=>[key,key==='rotation'?wholeDegrees(item[key]):key==='controls'?Object.fromEntries(Object.entries(item.controls).map(([id,value])=>[id,{...value,rotation:wholeDegrees(value.rotation)}])):item[key]])]));
 }
 
 export function stageFromLayout(space,items,{id,label,profile='external'}) {

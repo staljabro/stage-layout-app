@@ -47,9 +47,16 @@ export function createGithubAuth(store,authCookies) {
       run('DELETE FROM github_requests WHERE github_id=?',identity.id)
       return {account:owner}
     }
-    const previous=get('SELECT * FROM github_requests WHERE github_id=?',identity.id)
-    run("INSERT INTO github_requests VALUES(?,?,?,?,?,?) ON CONFLICT(github_id) DO UPDATE SET login=excluded.login,email=excluded.email,name=excluded.name,updated=excluded.updated",identity.id,identity.login,identity.email,identity.name,previous?.status || 'pending',new Date().toISOString())
-    return {status:previous?.status==='rejected'?'denied':'pending'}
+    const existing=get('SELECT id FROM users WHERE email=? COLLATE NOCASE',identity.email)
+    if(existing){
+      run("INSERT INTO github_requests VALUES(?,?,?,?,?,?) ON CONFLICT(github_id) DO UPDATE SET login=excluded.login,email=excluded.email,name=excluded.name,status=excluded.status,updated=excluded.updated",identity.id,identity.login,identity.email,identity.name,'link-required',new Date().toISOString())
+      return {status:'link-required'}
+    }
+    const id=uid()
+    run('INSERT INTO users(id,email,name,role,password,disabled) VALUES(?,?,?,?,?,0)',id,identity.email,identity.name,'user','github-only')
+    attach(identity.id,id,identity.login)
+    run('DELETE FROM github_requests WHERE github_id=?',identity.id)
+    return {account:get('SELECT * FROM users WHERE id=?',id)}
   })
   const attempts=new Map()
   const requestGithub=async(url,options={})=>{

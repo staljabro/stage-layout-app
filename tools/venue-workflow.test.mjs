@@ -8,8 +8,8 @@ import {createEventRoutes} from './event-routes.mjs'
 
 test('reusable venue spaces support independent productions and twenty ordered eisteddfod layouts',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'stageplot-venue-')),store=await openStore(directory)
-  const owner={id:'venue-owner',role:'editor',empire:false},other={id:'another-owner',role:'editor',empire:false}
-  for(const user of [owner,other])store.run('INSERT INTO users(id,email,name,role,password) VALUES(?,?,?,?,?)',user.id,user.id+'@test.invalid',user.id,'editor','')
+  const owner={id:'venue-owner',role:'user',empire:false},other={id:'another-owner',role:'user',empire:false}
+  for(const user of [owner,other])store.run('INSERT INTO users(id,email,name,role,password) VALUES(?,?,?,?,?)',user.id,user.id+'@test.invalid',user.id,'user','')
   const chair={schema:'stageplot-item@3',id:'chair',label:'Orchestra chair',profiles:['external'],dimensions:{widthMeters:.5,depthMeters:.5},shapes:[],collisionShapes:[]}
   store.saveAsset('items','chair',chair,owner)
   store.saveAsset('items','mic',{...chair,id:'mic',label:'Mic stand'},owner)

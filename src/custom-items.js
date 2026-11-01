@@ -1,3 +1,6 @@
+import {wholeDegrees} from './rotation-angle.js'
+import {textLayout} from './text-layout.js'
+import {placementMetadata} from './layer-visibility.js'
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback
 
 export function stagingSnapPoints(widthMeters, depthMeters) {
@@ -16,7 +19,7 @@ export function customStagingItem(values = {}) {
   return {
     ...values,
     customType: 'staging',
-    label: values.label || 'Custom staging - Prostage',
+    label: !values.label || values.label==='Custom staging - Prostage' ? 'Stage deck' : values.label,
     widthMeters,
     depthMeters,
     heightMm: Math.max(0, Math.round(finite(values.heightMm, 200))),
@@ -27,6 +30,7 @@ export function customStagingItem(values = {}) {
     lineOpacity: finite(values.lineOpacity, 1),
     sublineColor: values.sublineColor || '#85837c',
     textColor: values.textColor || '#25261f',
+    textOpacity: finite(values.textOpacity, 1),
     collisionEnabled: values.collisionEnabled === true,
     collisionShapes: [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
     snapPoints: stagingSnapPoints(widthMeters, depthMeters),
@@ -34,7 +38,7 @@ export function customStagingItem(values = {}) {
 }
 
 export function customTextItem(values = {}) {
-  return {
+  const item={
     ...values,
     customType: 'text',
     label: values.label || 'Custom Text',
@@ -43,14 +47,14 @@ export function customTextItem(values = {}) {
     bold: values.bold === true,
     italic: values.italic === true,
     fill: values.fill || '#25261f',
-    lineSpacing: 1.2,
+    lineSpacing: finite(values.lineSpacing,1.2),
     textAlign: 'left',
-    widthMeters: Math.max(.01, finite(values.widthMeters, 1.6)),
-    depthMeters: Math.max(.01, finite(values.depthMeters, .3)),
     collisionEnabled: values.collisionEnabled === true,
     collisionShapes: [],
     snapPoints: [],
   }
+  const measured=textLayout(item)
+  return {...item,widthMeters:measured.width+item.fontSize*.2,depthMeters:measured.height+item.fontSize*.2}
 }
 
 export function customItemData(item) {
@@ -58,11 +62,11 @@ export function customItemData(item) {
     type: 'staging', widthMeters: item.widthMeters, depthMeters: item.depthMeters,
     heightMm: item.heightMm, showHeight: item.showHeight !== false,
     fill: item.fill, fillOpacity: item.fillOpacity, line: item.line,
-    lineOpacity: item.lineOpacity, sublineColor: item.sublineColor, textColor: item.textColor,
+    lineOpacity: item.lineOpacity, sublineColor: item.sublineColor, textColor: item.textColor, textOpacity:item.textOpacity,
   }
   if (item.customType === 'text') return {
     type: 'text', text: item.text, fontSize: item.fontSize, bold: item.bold === true,
-    italic: item.italic === true, fill: item.fill,
+    italic: item.italic === true, fill: item.fill, lineSpacing:item.lineSpacing,
     widthMeters: item.widthMeters, depthMeters: item.depthMeters,
   }
   return null
@@ -70,8 +74,9 @@ export function customItemData(item) {
 
 export function restoreCustomItem(placement, id) {
   const common = {
+    ...placementMetadata(placement),
     id, supply:'client', xMeters: placement.xMeters, yMeters: placement.yMeters,
-    rotation: Number.isFinite(placement.rotation) ? placement.rotation : 0,
+    rotation: wholeDegrees(placement.rotation),
     label: typeof placement.label === 'string' ? placement.label : undefined,
     showLabel: placement.showLabel === true, visible: placement.visible !== false,
     collisionEnabled: placement.collisionEnabled === true,

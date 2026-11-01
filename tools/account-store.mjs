@@ -6,9 +6,9 @@ import { join } from 'node:path'
 export const uid = () => randomBytes(16).toString('hex')
 export const token = () => randomBytes(24).toString('hex')
 export const digest = value => createHash('sha256').update(value).digest('hex')
-export const roles = ['owner','admin','contributor','editor']
+export const roles = ['user','admin','owner']
 export const manager = user => ['owner','admin'].includes(user?.role)
-export const designer = user => manager(user) || user?.role === 'contributor'
+export const designer = user => roles.includes(user?.role)
 export const fail = (status,message) => {throw Object.assign(new Error(message),{status})}
 export const publicUser = row => row ? {id:row.id,email:row.email,name:row.name,friendlyName:row.friendly_name || '',role:row.role,disabled:!!row.disabled,empire:!!row.empire,githubId:row.github_id || null,githubLogin:row.github_login || null} : null
 export async function openStore(root) {
@@ -32,6 +32,10 @@ export async function openStore(root) {
   const all=(sql,...args)=>db.prepare(sql).all(...args)
   const run=(sql,...args)=>db.prepare(sql).run(...args)
   const transaction=fn=>{db.exec('BEGIN IMMEDIATE');try{const value=fn();db.exec('COMMIT');return value}catch(error){db.exec('ROLLBACK');throw error}}
+  transaction(()=>{
+    run("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE role NOT IN ('user','admin','owner'))")
+    run("UPDATE users SET role='user' WHERE role NOT IN ('user','admin','owner')")
+  })
   const asset=(kind,id)=>get('SELECT * FROM assets WHERE kind=? AND id=?',kind,id)
   const saveAsset=(kind,id,data,user,owner=null,deleted=0)=>{
     const previous=asset(kind,id),revision=(previous?.revision || 0)+1

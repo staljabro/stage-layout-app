@@ -1,16 +1,38 @@
-# Stageplot documentation
+# Stageplot guide
 
-These guides are Markdown pages designed to be browsed directly on GitHub. They describe the current application; deployment details belong in the account guide.
+Welcome to the Stageplot documentation. Use this as a wiki: start with a task, then follow the linked chapters for details.
 
-- [Comprehensive user guide](USER_GUIDE.md)
-  - [Accounts, roles and Empire access](USER_GUIDE.md#accounts-and-access)
-  - [Events, stages and band plots](USER_GUIDE.md#stageplot)
-  - [Cloud projects, files, PDF and sharing](USER_GUIDE.md#saving-loading-and-sharing)
-  - [Creating equipment](USER_GUIDE.md#shape-studio)
-  - [Personal copies and submissions](USER_GUIDE.md#collaboration-and-submissions)
-  - [Owner tasks and troubleshooting](USER_GUIDE.md#administration-and-troubleshooting)
-- [Account and deployment guide](../ACCOUNT_GUIDE.md): GitHub setup, containers, persistent storage and backups.
-- [Project README](../README.md): overview, local development and production commands.
-- [Studio developer notes](../tools/svg-shape-studio/README.md).
+## Start here
 
-For a first session, create an event, build a stage, and invite two bands. For a collaborator, read the submissions section before editing a shared item.
+- **[Create your first stage and layout](USER_GUIDE.md)** — the complete everyday workflow.
+- **[Accounts and permissions](ACCOUNTS.md)** — GitHub signup, User/Admin/Owner roles, privacy and ownership.
+- **[Stage and layout editor](CANVAS.md)** — boundary editing, equipment placement, layers, snapping, collisions and keyboard controls.
+- **[Equipment creation](EQUIPMENT.md)** — artwork, images, crop, components and public submissions.
+- **[Organisations, branding and stock](ORGANISATIONS.md)** — private team libraries, membership, logos and quantities.
+- **[Sharing and client invitations](SHARING.md)** — individual access, festival registration and collaborative links.
+- **[Review, exports and recovery](EXPORTS_AND_RECOVERY.md)** — approvals, CSV/PDF, source updates, revisions and local drafts.
+- **[Troubleshooting](TROUBLESHOOTING.md)** — sign-in, saving, images, stock, sharing and updates.
+
+## Running your own instance
+
+- **[Deployment and updates](DEPLOYMENT.md)** — the current push-to-main and Compose workflow, image tags, persistent data and backups.
+- **[GitHub OAuth and account administration](../ACCOUNT_GUIDE.md)** — server settings, Owner setup and older-account linking.
+- **[Development](DEVELOPMENT.md)** — local setup, tests, builds and release versioning.
+- **[Architecture](APP_FLOW_REVIEW.md)** — data model, permissions, API and migration boundaries.
+- **[Repository home](../README.md)**.
+
+## What Stageplot calls things
+
+| Term | Meaning |
+| --- | --- |
+| Stage | A saved venue boundary, stage layers and installed equipment. |
+| Layout / stageplot | An equipment arrangement referencing a particular stage version. |
+| Curtain | A stage line with fixed 10 cm peak-to-trough folds, adjustable length and styling. See [curtains](CANVAS.md#curtains). |
+| Installed equipment | Equipment placed by the stage author; clients cannot move it. |
+| Available equipment | The movable equipment offered to layout users. |
+| Component | A named requirement attached to equipment, with a per-placement checkbox and note. |
+| Organisation | A private team library, its members, branding and stock. |
+| Client invitation | One reusable link that creates a separate layout for each registration. |
+| Edit link | A private link for collaborating on one existing layout. |
+
+The current application uses one workspace and canvas. App roles and organisation roles are explained separately in [Accounts](ACCOUNTS.md); ordinary GitHub signups do not require approval.
