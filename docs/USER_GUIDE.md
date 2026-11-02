@@ -44,13 +44,15 @@ Images behave like other artwork layers. Cropping trims edges without stretching
 
 For your own arrangement, choose **Create layout** on the stage card. Enter a name. You own a layout created this way even when the stage belongs to someone else. Optionally share it with the stage owner.
 
-Click equipment in the bottom drawer or drag it onto the stage. Select an item to adjust its position, whole-degree rotation, label, component checkboxes and notes, or equipment source.
+Click equipment in the bottom drawer or drag it onto the stage. Select an item to adjust its position, whole-degree rotation, label, component checkboxes and notes, or equipment source. **Part rotation** provides independent controls for articulated parts. Installed items expose their part angles while their positions stay locked. Stage deck width/depth accepts 0.1 m increments, including 2.4 m decks.
 
 Use **Stage parts** in the inspector to show or hide zones, labels, curtains or groups that the stage author marked **Toggleable in Stageplot**. Choices belong to your layout; hiding a collision zone or curtain lets equipment pass through.
 
 Shift-click to select several items. Their common inspector controls remain visible even when values differ; **Mixed** identifies those values, and an edit applies to the whole selection. This works in stage building, equipment design and layouts.
 
 Installed equipment and stage geometry are locked in layout editing. Expand the initially collapsed Stage layers to inspect the source stage. Stage authoring remains available through the stage's own Edit action when you have permission.
+
+If a layout's source stage has changed, its dashboard card offers **Update to stage version N** when you have source-stage access. Equipment positions stay in place; check them after applying the update.
 
 For a team layout, select the organisation workspace before creating it. Installed stock is counted first; automatic sourcing then uses venue stock before client supply.
 

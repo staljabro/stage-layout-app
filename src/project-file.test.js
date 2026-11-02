@@ -99,7 +99,7 @@ test('project-created staging and text survive without library assets',()=>{
   assert.equal(file.items[0].assetId,undefined);assert.equal(file.items[0].custom.type,'staging');
   const result=resolveProject(file,[],[stage]);
   assert.equal(result.dropped,0);assert.equal(result.items.length,2);
-  assert.equal(result.items[0].widthMeters,3);assert.equal(result.items[0].depthMeters,2);
+  assert.equal(result.items[0].widthMeters,3.2);assert.equal(result.items[0].depthMeters,1.7);
   assert.equal(result.items[0].heightMm,400);assert.equal(result.items[0].showHeight,false);
   assert.equal(result.items[1].text,'Stage\nleft');assert.equal(result.items[1].bold,true);
 });

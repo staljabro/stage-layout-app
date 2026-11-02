@@ -46,7 +46,7 @@ New artwork defaults to physical collision off. Enable it only for layers that d
 
 **Corner snapping in Stageplot** adds snap points at the equipment canvas corners. It is off by default.
 
-Toggleable artwork exposes named show/hide controls on each placed item. Articulated rotation parts expose independent whole-degree controls. Compatible shared controls appear for multiple selected items, including different values marked **Mixed**. Edit once to apply a value to every selected item; this also works for artwork layers, components and named adjustable parts. Hiding a visual part does not rewrite collision geometry.
+Toggleable artwork exposes named show/hide controls on each placed item. Articulated rotation parts expose independent whole-degree controls under **Part rotation** in the layout inspector, separately from overall equipment rotation. Installed items with adjustable parts can be selected from the canvas or expanded Stage layers list; only their part angles change, and those changes belong to the layout. Compatible shared controls appear for multiple selected items, including different values marked **Mixed**. Edit once to apply a value to every selected item; this also works for artwork layers, components and named adjustable parts. Hiding a visual part does not rewrite collision geometry.
 
 ## Private saves and team sharing
 

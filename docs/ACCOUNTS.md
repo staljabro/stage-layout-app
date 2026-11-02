@@ -21,6 +21,8 @@ Stageplot does not store GitHub passwords or retain the OAuth access token after
 | Review public submissions | No | Yes | Yes |
 | Withdraw public equipment and return it to reviews | No | Yes | Yes |
 | Edit public equipment and public stages | No | Yes | Yes |
+| Hide/show public equipment and stages | No | Yes | Yes |
+| Remove stages from the public library | No | Yes | Yes |
 | Edit supplied generic stages | No | No | Yes |
 | Delete public equipment | No | No | Yes |
 | Import stage/equipment JSON, restore archives and use stage templates | No | No | Yes |

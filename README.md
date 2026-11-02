@@ -24,6 +24,8 @@ Organisation owners can rename their team in its settings. PDF headers show the 
 
 The **app Owner** has **Import & restore** for archived stages/equipment, stage/equipment JSON files and **Use as template** on stage cards. These create private copies and preserve originals. See [imports, templates and safe cleanup of old JSON](docs/IMPORTS.md).
 
+App Admins and the Owner can **Hide from public library** on equipment or stages, then restore them through **Hidden items**. Hiding preserves saved assets and layouts. They can also **Remove public stage**; existing layouts retain their pinned stage version.
+
 App Admins and the Owner can **Return to reviews** to withdraw public equipment, edit its published version and approve it again. Existing layouts retain their saved equipment, and reapproval keeps the same public item ID.
 
 See [accounts and permissions](docs/ACCOUNTS.md), [organisation libraries](docs/ORGANISATIONS.md) and [sharing](docs/SHARING.md).

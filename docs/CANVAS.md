@@ -34,7 +34,7 @@ Curtains belong to the source stage. They appear in stage/layout previews, clien
 
 Equipment placed in stage authoring becomes installed equipment. Clients see it as part of the stage and cannot move it.
 
-**Available equipment** configures the movable equipment offered to layout users. It is a category-grouped checklist of public and saved equipment with Check all/Uncheck all. No selected items means all public equipment. An explicit list can include deliberately shared private equipment.
+**Available equipment** configures the movable equipment offered to layout users. It is a category-grouped checklist of public and saved equipment with Check all/Uncheck all. No selected items means all public equipment. An explicit list can include deliberately shared private equipment. Create and save the private item, tick it in **Available equipment**, save the stage version, then send the invitation. Clients can place those items without access to the rest of your private library. The drawer separates **Public equipment** from **Private and shared equipment**. Existing layouts use their pinned available-equipment list until you apply a source-stage update.
 
 Optional quantities are blank for untracked, zero for none, or positive whole numbers. Stage-specific quantities take precedence over organisation quantities when supplied.
 
@@ -43,6 +43,8 @@ Optional quantities are blank for untracked, zero for none, or positive whole nu
 Open a saved layout or choose **Create layout** on a stage card. Layout editing locks stage geometry and installed equipment. Stage layers starts collapsed; expand it to inspect source contents.
 
 Click equipment in the bottom drawer or drag it onto the stage. Drag placed equipment to move it. The inspector provides coordinates, rotation, labels, named parts, components and supply source. Multiple selected items expose compatible shared controls even when their values differ.
+
+Equipment with articulated parts shows a separate **Part rotation** section in the inspector. For installed equipment, click the item on the canvas or its **(installed parts)** entry in the expanded Stage layers list. Its position and overall rotation stay locked. Part choices save with the layout and appear in previews and PDF exports; the source stage stays unchanged.
 
 Rotation handles follow the item's orientation. Rotation fields and gestures use whole degrees. Shift gives a coarser 15-degree gesture.
 
@@ -56,7 +58,7 @@ Groups also expose their members' shared properties. Named adjustable equipment 
 
 **Stage deck** and **Text annotation** have previews in the equipment drawer and can be added like equipment.
 
-A stage deck supports width/depth, height, Show deck height, fill/line/text colours and separate opacity controls. Deck collision starts off. The global Collision checks switch starts on.
+A stage deck supports width/depth in **0.1 m increments** (including 2 m and 2.4 m decks), height, Show deck height, fill/line/text colours and separate opacity controls. Deck dimensions and collision footprints retain tenths of a metre. Snap points include the metre grid and fractional deck edges. Deck collision starts off. The global Collision checks switch starts on.
 
 Text annotations grow to fit their contents and line breaks. Equipment labels are separate: enable Show label and move Label position above, over or below the item. Zero places the label over the item.
 

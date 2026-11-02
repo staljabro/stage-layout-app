@@ -1,13 +1,14 @@
 import {stagePath,sampleStageBoundary} from '../stage-geometry.js'
 import {CurtainArtwork} from '../stage-curtain.jsx'
 import {stageLineBounds} from '../stage-curtain.js'
+import {applyFixedEquipmentControls} from '../equipment-part-controls.js'
 import {applyStagePartVisibility} from '../stage-part-visibility.js'
 import {EquipmentArtwork} from '../equipment-artwork.jsx'
 import {resolveProject} from '../project-file.js'
 import {equipmentVisible,stageAssetVisible} from '../layer-visibility.js'
 export function StageThumbnail({stage:sourceStage,layout}) {
   if(!sourceStage)return null
-  const stage=layout?applyStagePartVisibility(sourceStage,layout.stage?.partVisibility):sourceStage
+  const stage=layout?applyFixedEquipmentControls(applyStagePartVisibility(sourceStage,layout.stage?.partVisibility),layout.stage?.fixedEquipmentControls):sourceStage
   const equipment=layout?resolveProject({...layout,assetSnapshots:{...layout.assetSnapshots,stage}},layout.assetSnapshots?.equipment||[],[stage]).items:[]
   const placements=[...(stage.fixedEquipment||[]),...equipment].filter(equipmentVisible),boundary=sampleStageBoundary(stage.boundary.nodes)
   const xs=[0,stage.dimensions.widthMeters,...boundary.map(point=>point.x),...placements.flatMap(item=>[item.xMeters-item.widthMeters,item.xMeters+item.widthMeters])],ys=[0,stage.dimensions.depthMeters,...boundary.map(point=>point.y),...placements.flatMap(item=>[item.yMeters-item.depthMeters,item.yMeters+item.depthMeters])]

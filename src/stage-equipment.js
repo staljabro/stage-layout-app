@@ -16,7 +16,7 @@ export function stageFromLayout(space,items,{id,label,profile='external'}) {
   const profiles=(source?assetProfiles(source):[profile]).filter(candidate=>items.every(item=>!item.assetId||assetProfiles(item).includes(candidate)));
   if(!profiles.length)throw new Error('The stage and selected equipment must share a library profile.');
   const nodes=space.boundary?.nodes || [{x:0,y:0},{x:space.width,y:0},{x:space.width,y:space.depth},{x:0,y:space.depth}];
-  const existing=source?.fixedEquipment || [];
+  const existing=space.fixedEquipment || source?.fixedEquipment || [];
   return {
     ...(source?assetSnapshot(source):{}),schema:'stageplot-stage@1',id,label:label.trim(),
     profiles,visibility:'draft',personal:true,

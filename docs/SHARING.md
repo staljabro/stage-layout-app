@@ -63,4 +63,10 @@ Layouts reference a saved stage version. Editing the source does not silently ch
 
 Curtains are part of that pinned source version. Clients see the saved curtain styling and collide with its centre line when its collision checkbox is enabled, but cannot move its endpoints or edit its appearance. Save a new source version and explicitly apply it to existing layouts when changing curtains.
 
-A user with source-stage access can apply a newer source version in Details & sharing. Equipment positions stay in place; inspect them for overlaps and fit. This is separate from restoring a layout's own equipment revision.
+When a newer source exists, the layout dashboard card shows **Update to stage version N** for users with access to that source. Confirm to apply it. The same action remains available in **Details & sharing**. Equipment positions stay in place; inspect them for overlaps and fit. This is separate from restoring a layout's own equipment revision.
+
+## Hide or remove public library entries
+
+App **Admins** and the **Owner** can choose **Hide from public library** on equipment or stage cards. Hidden entries disappear from normal browsing and default canvas palettes without being deleted or returned to reviews. Choose **Hidden items**, then **Show in public library** to restore one. Visibility survives restarts and published artwork updates; changing it does not create a new stage version.
+
+Hiding is a catalogue preference, not an access revocation. Existing layouts and deliberately shared available-equipment snapshots keep working. A known stage link can still be used. To stop new layouts on a public stage, choose **Remove public stage** and confirm. Saved source versions remain available to existing layouts, and the creator's private original remains intact. A later approval can publish that source again. Generic stages are maintained separately by the app Owner.

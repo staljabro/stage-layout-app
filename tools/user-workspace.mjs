@@ -8,7 +8,7 @@ import {assetSnapshot} from '../src/project-snapshots.js'
 export function createUserWorkspace(store) {
   const {get,all,run,transaction,asset,saveAsset}=store
   const model=createWorkspaceModel(store),stageLibrary=createStageLibraryRoutes(store,model)
-  const {now,requireUser,requireAdmin,label,text,parsed,member,org,organisationBranding,shares,setShares,isPublic,canReadEquipment,canEditEquipment,equipmentData,decorateEquipment,catalogue,stageRow,accessStage,normaliseStage,stageSummary,layoutAccess,getLayout,layoutSummary,recordLayout,createLayout,saveLayout,submit}=model
+  const {now,requireUser,requireAdmin,label,text,parsed,member,org,organisationBranding,shares,setShares,isPublic,publicLibraryState,canReadEquipment,canEditEquipment,equipmentData,decorateEquipment,catalogue,stageRow,accessStage,normaliseStage,stageSummary,layoutAccess,getLayout,layoutSummary,recordLayout,createLayout,saveLayout,submit}=model
   const requireOwner=user=>{requireUser(user);const current=get('SELECT role,disabled FROM users WHERE id=?',user.id);if(user.role!=='owner'||current?.role!=='owner'||current.disabled)fail(403,'Only the app Owner can import or restore library records and create stage templates')}
   const importRequest=async body=>{const input=await body();if(!input||typeof input!=='object'||Array.isArray(input))fail(400,'Invalid import request');return input}
   const requireLibraryManager=user=>{requireAdmin(user);const current=get('SELECT role,disabled FROM users WHERE id=?',user.id);if(!manager(current)||current.disabled)fail(403,'An active app Admin or Owner is required')}
@@ -34,6 +34,19 @@ export function createUserWorkspace(store) {
     const route=path.slice('/api/workspace'.length),reply=(status,data)=>{send(status,data);return true}
     if(await stageLibrary({route,method,user,body,reply}))return true
     if(route==='/equipment'&&method==='GET')return reply(200,catalogue(user))
+    if(route==='/hidden-equipment'&&method==='GET'){requireLibraryManager(user);return reply(200,catalogue(user,true).filter(item=>item.public&&item.hiddenFromPublicLibrary))}
+    const visibility=route.match(/^\/public-library\/(equipment|stage)\/([a-z0-9-]+)\/visibility$/)
+    if(visibility&&method==='PUT'){
+      requireLibraryManager(user);const input=await body()
+      return reply(200,transaction(()=>{requireLibraryManager(user);const [,kind,id]=visibility,current=kind==='equipment'?asset('items',id):model.stageRow(id)
+        if(kind==='equipment'?!isPublic(current):!model.publicStage(current)||publicLibraryState(kind,id).removed)fail(404,'Public library item not found')
+        if(typeof input?.hidden!=='boolean')fail(400,'Choose hide or show')
+        const state=publicLibraryState(kind,id)
+        if(input.libraryRevision!==state.revision)fail(409,'Library visibility changed. Reload before continuing')
+        run('INSERT INTO wf_public_library_state(kind,asset_id,hidden,revision) VALUES(?,?,?,1) ON CONFLICT(kind,asset_id) DO UPDATE SET hidden=excluded.hidden,revision=revision+1',kind,id,input.hidden?1:0)
+        return kind==='equipment'?decorateEquipment(current,user):stageSummary(current,user)
+      }))
+    }
     if(route==='/groups'&&method==='GET')return reply(200,JSON.parse(get("SELECT value FROM settings WHERE key='groups'")?.value||'[]'))
     if(route==='/generic-stages'&&method==='GET')return reply(200,all('SELECT * FROM wf_stages WHERE generic=1 ORDER BY name').map(row=>stageSummary(row,user)))
     const shared=route.match(/^\/stage-invitations\/([a-f0-9]{48})$/)
@@ -107,7 +120,7 @@ export function createUserWorkspace(store) {
       return reply(200,transaction(()=>{const source=kind==='stage'?stageSummary(accessStage(id,user),user):layoutSummary(getLayout(id,user),user);if(!source.canRemoveFromLibrary)fail(403,'Only shared items can be removed from your personal library');if(typeof input.removed!=='boolean')fail(400,'Choose remove or restore');if(input.removed)run('INSERT OR IGNORE INTO wf_library_removals VALUES(?,?,?)',user.id,kind,id);else run('DELETE FROM wf_library_removals WHERE user_id=? AND kind=? AND asset_id=?',user.id,kind,id);return {removed:input.removed}}))
     }
     if(route==='/stages'){
-      if(method==='GET')return reply(200,all('SELECT * FROM wf_stages WHERE generic=0 ORDER BY updated DESC').filter(row=>{try{return accessStage(row.id,user)}catch{return false}}).map(row=>stageSummary(row,user)))
+      if(method==='GET')return reply(200,all('SELECT * FROM wf_stages WHERE generic=0 ORDER BY updated DESC').filter(row=>!publicLibraryState('stage',row.id).hidden&&!publicLibraryState('stage',row.id).removed).filter(row=>{try{return accessStage(row.id,user)}catch{return false}}).map(row=>stageSummary(row,user)))
       if(method==='POST'){const input=await body(),id='stage-'+uid(),data=normaliseStage(input.data,id,user);return reply(201,transaction(()=>{run('INSERT INTO wf_stages VALUES(?,?,?,?,1,0,?,?)',id,user.id,data.label,JSON.stringify(data),now(),now());run('INSERT INTO wf_stage_versions VALUES(?,1,?)',id,JSON.stringify(data));setShares('stage',id,input.organisationIds||[],user,user.id);return stageSummary(stageRow(id),user,true)}))}
     }
     if(route==='/legacy-stages'&&method==='GET'){requireOwner(user);return reply(200,all("SELECT * FROM assets WHERE kind='stages' AND deleted=0 AND (owner_id IS NULL OR owner_id=?) ORDER BY id",user.id).map(row=>{const data=parsed(row);return {id:row.id,name:data.label,dimensions:data.dimensions,preview:assetSnapshot(data)}}))}

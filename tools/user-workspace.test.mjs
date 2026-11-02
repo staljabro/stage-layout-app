@@ -593,3 +593,89 @@ test('organisation invitations save automatic venue-first sources and respect ex
   assert.deepEqual(explicit.data.data.items.map(item=>item.supply),['client','venue','client'])
   assert.equal(explicit.data.data.items[0].useExternal,true)
 })
+
+
+test('public visibility is reversible for equipment and stages, with manager permissions and independent revisions',async t=>{
+  const {call,users,store}=await fixture(t)
+  store.saveAsset('items','public-stand',{...equipment,id:'public-stand',profiles:['external']},users.admin,null)
+  await call('/equipment/private-stand','PUT',{data:equipment})
+  const source=(await call('/stages','POST',{data:stage})).data
+  await call('/stages/'+source.id+'/submit','POST',{version:1})
+  const submission=(await call('/stage-submissions','GET',{},users.admin)).data[0]
+  await call('/stage-submissions/'+submission.id,'POST',{revision:submission.revision,action:'approve'},users.admin)
+  const published=(await call('/public-stages')).data[0]
+  for(const [kind,id] of [['equipment','public-stand'],['stage',published.id]]){
+    const endpoint='/public-library/'+kind+'/'+id+'/visibility'
+    assert.equal((await call(endpoint,'PUT',{hidden:true,libraryRevision:0},null)).status,401)
+    assert.equal((await call(endpoint,'PUT',{hidden:true,libraryRevision:0})).status,403)
+    assert.equal((await call(endpoint,'PUT',{hidden:'yes',libraryRevision:0},users.admin)).status,400)
+    const saved=await call(endpoint,'PUT',{hidden:true,libraryRevision:0},users.admin)
+    assert.equal(saved.status,200,saved.data.error)
+    assert.equal(saved.data.hiddenFromPublicLibrary,true)
+    assert.equal(saved.data.libraryRevision,1)
+    assert.equal((await call(endpoint,'PUT',{hidden:false,libraryRevision:0},users.admin)).status,409)
+  }
+  assert.equal((await call('/equipment','GET',{},null)).data.some(item=>item.id==='public-stand'),false)
+  assert.equal((await call('/equipment','GET',{},users.admin)).data.some(item=>item.id==='public-stand'),false,'manager canvas catalogues hide equipment too')
+  assert.equal((await call('/public-stages','GET',{},null)).data.length,0)
+  assert.equal((await call('/stages')).data.some(item=>item.id===published.id),false,'hidden stages do not leak through the ordinary stage listing')
+  assert.equal((await call('/hidden-equipment','GET',{},users.admin)).data[0].id,'public-stand')
+  assert.equal((await call('/hidden-public-stages','GET',{},users.admin)).data[0].id,published.id)
+  assert.equal((await call('/hidden-equipment')).status,403)
+  assert.equal((await call('/hidden-public-stages','GET',{},null)).status,401)
+  assert.equal((await call('/public-library/equipment/private-stand/visibility','PUT',{hidden:true,libraryRevision:0},users.admin)).status,404)
+  assert.equal(store.asset('items','public-stand').deleted,0,'hiding preserves the equipment record')
+  assert.equal(store.get('SELECT version FROM wf_stages WHERE id=?',published.id).version,1,'visibility does not create a source-stage version')
+  const explicit=(await call('/stages','POST',{data:{...stage,availableEquipment:[{assetId:'public-stand',quantity:null},{assetId:'private-stand',quantity:null}]}})).data
+  const invite=(await call('/stages/'+explicit.id+'/invitation','POST',{})).data
+  const plan=(await call('/stage-invitations/'+invite.token,'POST',{name:'Explicit client',registrationKey:'f'.repeat(32)},null)).data
+  const client=(await call('/layout-links/'+plan.guestToken,'GET',{},null)).data
+  assert.deepEqual(client.equipment.map(item=>[item.id,item.public]),[['public-stand',true],['private-stand',false]],'deliberately shared items stay placeable and retain library classification')
+  for(const [kind,id] of [['equipment','public-stand'],['stage',published.id]])assert.equal((await call('/public-library/'+kind+'/'+id+'/visibility','PUT',{hidden:false,libraryRevision:1},users.admin)).status,200)
+  assert.equal((await call('/public-stages')).data.length,1)
+  assert.equal((await call('/equipment','GET',{},null)).data.some(item=>item.id==='public-stand'),true)
+  const demoted=await call('/public-library/equipment/public-stand/visibility','PUT',()=>{store.run("UPDATE users SET role='user' WHERE id=?",users.admin.id);return {hidden:true,libraryRevision:2}},users.admin)
+  assert.equal(demoted.status,403,'role is rechecked after the request body is read')
+})
+
+test('admins remove public stages while preserving source versions and existing layouts',async t=>{
+  const {call,users,store}=await fixture(t),source=(await call('/stages','POST',{data:stage})).data
+  await call('/stages/'+source.id+'/submit','POST',{version:1})
+  let submission=(await call('/stage-submissions','GET',{},users.admin)).data[0]
+  await call('/stage-submissions/'+submission.id,'POST',{revision:submission.revision,action:'approve'},users.admin)
+  const published=(await call('/public-stages')).data[0],layout=(await call('/stages/'+published.id+'/layouts','POST',{name:'Existing plan'})).data
+  const endpoint='/stages/'+published.id+'/withdraw'
+  assert.equal((await call(endpoint,'POST',{version:1,libraryRevision:0})).status,403)
+  assert.equal((await call(endpoint,'POST',{version:9,libraryRevision:0},users.admin)).status,409)
+  assert.equal((await call(endpoint,'POST',{version:1,libraryRevision:0},users.admin)).status,200)
+  assert.equal((await call('/public-stages')).data.length,0)
+  assert.equal((await call('/stages/'+published.id+'/layouts','POST',{name:'New plan'})).status,404)
+  assert.equal((await call('/layouts/'+layout.id)).data.data.assetSnapshots.stage.id,published.id)
+  assert.equal(store.get('SELECT count(*) AS n FROM wf_stage_versions WHERE stage_id=?',published.id).n,1)
+  assert.equal((await call('/stages/'+source.id)).status,200,'creator?s original stage stays private and intact')
+  await call('/stages/'+source.id+'/submit','POST',{version:1})
+  submission=(await call('/stage-submissions','GET',{},users.admin)).data[0]
+  await call('/stage-submissions/'+submission.id,'POST',{revision:submission.revision,action:'approve'},users.admin)
+  assert.equal((await call('/public-stages')).data[0].id,published.id,'a later approval reuses the saved public stage')
+})
+
+test('client layouts retain independent installed part rotations and decimal decks, never source placement edits',async t=>{
+  const {call}=await fixture(t),fixed={...equipment,id:'fixed-stand',label:'Installed stand',widthMeters:.5,depthMeters:.5,xMeters:1,yMeters:2,rotation:20,controls:{arm:{rotation:10}}}
+  const source=(await call('/stages','POST',{data:{...stage,fixedEquipment:[fixed]}})).data
+  const invite=(await call('/stages/'+source.id+'/invitation','POST',{})).data
+  const create=async key=>(await call('/stage-invitations/'+invite.token,'POST',{name:'Plan '+key,registrationKey:key.repeat(32)},null)).data
+  const first=await create('a'),second=await create('b'),endpoint='/layout-links/'+first.guestToken,opened=(await call(endpoint,'GET',{},null)).data
+  const data=structuredClone(opened.data)
+  data.stage.fixedEquipmentControls={'fixed-stand':{arm:{rotation:32.6},unrelated:{rotation:90}}}
+  data.assetSnapshots.stage.fixedEquipment[0].xMeters=9
+  data.items=[{id:1,xMeters:3,yMeters:4,rotation:0,custom:{type:'staging',widthMeters:2.4,depthMeters:1.2}}]
+  const saved=await call(endpoint,'PUT',{data,revision:opened.revision},null)
+  assert.equal(saved.status,200,saved.data.error)
+  const reopened=(await call(endpoint,'GET',{},null)).data
+  assert.deepEqual(reopened.data.stage.fixedEquipmentControls,{'fixed-stand':{arm:{rotation:33}}})
+  assert.equal(reopened.data.items[0].custom.widthMeters,2.4)
+  assert.equal(reopened.data.items[0].custom.depthMeters,1.2)
+  assert.equal(reopened.data.assetSnapshots.stage.fixedEquipment[0].xMeters,1)
+  assert.deepEqual((await call('/stages/'+source.id)).data.data.fixedEquipment[0].controls,{arm:{rotation:10}})
+  assert.equal((await call('/layout-links/'+second.guestToken,'GET',{},null)).data.data.stage.fixedEquipmentControls,undefined)
+})

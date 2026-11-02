@@ -2,20 +2,22 @@ import {wholeDegrees} from './rotation-angle.js'
 import {textLayout} from './text-layout.js'
 import {placementMetadata} from './layer-visibility.js'
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback
+const deckSize=value=>Math.max(.1,Math.round(value*10)/10)
 
 export function stagingSnapPoints(widthMeters, depthMeters) {
-  const width = Math.max(1, Math.round(widthMeters))
-  const depth = Math.max(1, Math.round(depthMeters))
+  const width = deckSize(widthMeters)
+  const depth = deckSize(depthMeters)
+  const axis=length=>[...Array.from({length:Math.floor(length)+1},(_,index)=>index),...(Number.isInteger(length)?[]:[length])]
   const points = []
-  for (let y = 0; y <= depth; y += 1) {
-    for (let x = 0; x <= width; x += 1) points.push({ x, y })
+  for (const y of axis(depth)) {
+    for (const x of axis(width)) points.push({ x, y })
   }
   return points
 }
 
 export function customStagingItem(values = {}) {
-  const widthMeters = Math.max(1, Math.round(finite(values.widthMeters, 1)))
-  const depthMeters = Math.max(1, Math.round(finite(values.depthMeters, 1)))
+  const widthMeters = deckSize(finite(values.widthMeters, 1))
+  const depthMeters = deckSize(finite(values.depthMeters, 1))
   return {
     ...values,
     customType: 'staging',

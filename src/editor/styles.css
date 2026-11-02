@@ -237,6 +237,13 @@
 .inspector .shared-checkbox { display: flex; gap: 7px; align-items: center; }
 .inspector .stage-parts-inspector { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid #d6d5cd; }
 .inspector .stage-parts-inspector h3 { font: 700 14px 'DM Sans',sans-serif; }
+.design-editor-scope .canvas-library-section { display: flex; flex: none; align-items: stretch; gap: 8px; }
+.design-editor-scope .canvas-library-section .custom-tool { flex: 0 0 110px; width: 110px; height: 90px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 8px; border: 1px solid #d1d8c5; border-radius: 5px; background: #fff; color: #465638; font-size: 10px; }
+.design-editor-scope .canvas-equipment-divider { display: flex; flex: 0 0 90px; align-items: center; padding: 0 10px; border-left: 2px solid #bbc8a6; color: #59694a; font: 600 11px/1.5 'DM Sans',sans-serif; }
+.design-editor-scope .part-rotation-inspector { margin: 14px 0; padding: 12px 0; border-block: 1px solid #d6d5cd; }
+.design-editor-scope .part-rotation-inspector h4 { margin: 0 0 10px; font: 700 13px 'DM Sans',sans-serif; }
+.design-editor-scope .installed-equipment.adjustable { cursor: pointer; }
+.design-editor-scope .installed-equipment-select { display: block; width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #c8ceba; border-radius: 4px; background: #f6f8ee; color: #465638; text-align: left; font-size: 11px; }
 .inspector .text-format-options { margin: 0 0 14px; gap: 8px; }
 .inspector .text-format-options > label { display: flex; align-items: center; gap: 7px; margin: 0; color: #4f504a; font: 500 11px/1.4 'DM Sans', sans-serif; letter-spacing: normal; }
 .inspector input[type=checkbox] { flex: none; width: 14px; height: 14px; margin: 0; accent-color: #899f38; }
@@ -340,3 +347,5 @@
 .curtain-collision-guide{stroke:#368ac2;stroke-width:1.5;stroke-dasharray:1 4;stroke-linecap:round;vector-effect:non-scaling-stroke;pointer-events:none}
 @media print{.curtain-controls,.curtain-collision-guide{display:none!important}}
 .design-editor-scope .canvas-organisation-branding{flex:none;padding:6px 20px;background:#fff;border-bottom:1px solid #dce2d6}.design-editor-scope .canvas-organisation-branding .organisation-branding{margin:0;font-size:12px}.design-editor-scope .canvas-organisation-branding img{max-width:140px;max-height:44px}
+
+.design-editor-scope .canvas-library-section .custom-tool svg { width: 60px; height: 38px; overflow: visible; }
