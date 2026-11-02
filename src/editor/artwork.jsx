@@ -3,7 +3,6 @@ import {textLayout} from '../text-layout.js'
 import {vectorPath} from './vector-conversion.js'
 import {polygonPoints,hexagonPoints,trapezoidPoints,pointsAttribute,tripodGeometry} from './artwork-geometry.js'
 import {ImageLayerArtwork} from '../image-layer.jsx'
-import {imageBounds} from '../image-layer.js'
 function PersonArtwork({ item, seated, common }) {
   const w = item.width;
   const h = item.height;
@@ -101,8 +100,9 @@ export function Shape({
   onHandlePointerDown,
   vectorEditor,
   collisionGuide = false,
+  controlUnit,
 }) {
-  const artworkBounds=item.type==='image'?imageBounds(item):{x:0,y:0,...(item.type==="text"?textLayout(item):{width:item.width,height:item.height})};
+  const artworkBounds={x:0,y:0,...(item.type==="text"?textLayout(item):{width:item.width,height:item.height})};
   const common = collisionGuide
     ? {
         fill: "none",
@@ -243,15 +243,17 @@ export function Shape({
       {item.type === "text" && !collisionGuide && <rect width={artworkBounds.width} height={artworkBounds.height} fill="transparent" stroke="none" pointerEvents="fill" className="text-shape-hit" />}
       {item.type === "image" && !collisionGuide && <rect x={artworkBounds.x} y={artworkBounds.y} width={artworkBounds.width} height={artworkBounds.height} fill="transparent" stroke="none" pointerEvents="fill" className="image-shape-hit" />}
       {selected && vectorEditor}
-      {selected && onHandlePointerDown && <g className="rotation-handles"><line x1={handleX} y1={artworkBounds.y} x2={handleX} y2={artworkBounds.y-.19}/><circle cx={handleX} cy={artworkBounds.y-.22} r=".03" onPointerDown={event=>onHandlePointerDown(event,"rotate")}><title>Rotate object (Shift: 15-degree steps)</title></circle></g>}
-      {selected && !["vector","text","arc"].includes(item.type) && onHandlePointerDown && <g className="shape-handles">{(item.type === "circle" ? [[item.width,item.height/2,"radius"]] : [[artworkBounds.x,artworkBounds.y,"resize-nw"],[artworkBounds.x+artworkBounds.width,artworkBounds.y,"resize-ne"],[artworkBounds.x,artworkBounds.y+artworkBounds.height,"resize-sw"],[artworkBounds.x+artworkBounds.width,artworkBounds.y+artworkBounds.height,"resize-se"]]).map(([x,y,handle]) => <circle key={handle} cx={x} cy={y} r=".012" onPointerDown={(event) => onHandlePointerDown?.(event,handle)} />)}</g>}
+      {selected && onHandlePointerDown && <g className="rotation-handles"><line x1={handleX} y1={artworkBounds.y} x2={handleX} y2={artworkBounds.y-(controlUnit?25*controlUnit:.19)}/><circle cx={handleX} cy={artworkBounds.y-(controlUnit?30*controlUnit:.22)} r={controlUnit?5*controlUnit:.03} onPointerDown={event=>onHandlePointerDown(event,"rotate")}><title>Rotate object (Shift: 15-degree steps)</title></circle></g>}
+      {selected && !["vector","text","arc"].includes(item.type) && onHandlePointerDown && <g className="shape-handles">{(item.type === "circle" ? [[item.width,item.height/2,"radius"]] : [[artworkBounds.x,artworkBounds.y,"resize-nw"],[artworkBounds.x+artworkBounds.width,artworkBounds.y,"resize-ne"],[artworkBounds.x,artworkBounds.y+artworkBounds.height,"resize-sw"],[artworkBounds.x+artworkBounds.width,artworkBounds.y+artworkBounds.height,"resize-se"]]).map(([x,y,handle]) => <circle key={handle} cx={x} cy={y} r={controlUnit?3*controlUnit:.012} onPointerDown={(event) => onHandlePointerDown?.(event,handle)} />)}</g>}
       {selected && item.type !== "arc" && (
         <rect
-          className={`selection${item.type==="text"?" text-selection":""}`}
-          x={artworkBounds.x-.02}
-          y={artworkBounds.y-.02}
-          width={artworkBounds.width + 0.04}
-          height={artworkBounds.height + 0.04}
+          className={`selection${item.type==="text"?" text-selection":item.type==='image'?' image-selection':''}`}
+          x={artworkBounds.x-(item.type==='image'?0:.02)}
+          y={artworkBounds.y-(item.type==='image'?0:.02)}
+          width={artworkBounds.width+(item.type==='image'?0:.04)}
+          height={artworkBounds.height+(item.type==='image'?0:.04)}
+          style={item.type==='image'?{pointerEvents:'stroke'}:undefined}
+          onPointerDown={item.type==='image'?event=>{if(!event.ctrlKey||!onHandlePointerDown)return;const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(event.currentTarget.getScreenCTM().inverse());const edge=Object.entries({left:Math.abs(point.x),right:Math.abs(point.x-item.width),top:Math.abs(point.y),bottom:Math.abs(point.y-item.height)}).sort((a,b)=>a[1]-b[1])[0][0];onHandlePointerDown(event,'crop-'+edge)}:undefined}
         />
       )}
       {selected && item.type === "trapezoid" && (

@@ -48,8 +48,8 @@ import { APP_VERSION } from "../version.js";
 import { AppMark } from "../app-mark.jsx";
 import { normalizeZoneFolders, putZonesInFolder, removeZonesFromFolders } from "./stage-zone-folders.js";
 import {normaliseComponents} from '../equipment-components.js'
-import {normaliseCrop,validImageDataUrl,resizeCroppedImage} from '../image-layer.js'
-import {prepareEquipmentImages} from '../prepare-equipment-images.js'
+import {validImageDataUrl,resizeCroppedImage,fittedImageSize,resizeImageDimension,cropImageEdge,stageImages} from '../image-layer.js'
+import {prepareEquipmentImages,prepareStageImages} from '../prepare-equipment-images.js'
 import {OrganisationBranding} from '../organisation-branding.jsx'
 import {StageplotPrintHeading} from './stageplot-print.jsx'
 import {useStageplotPrint} from './stageplot-print.js'
@@ -90,7 +90,7 @@ function useDimensionState(initialValue) {
     const result = {...entry};
     if (result.type === "text") return sizeText(result);
     for (const key of ["width", "height", "legRadius"]) {
-      if (typeof result[key] === "number") result[key] = roundDimension(result[key]);
+      if (typeof result[key] === "number" && result.type!=="image") result[key] = roundDimension(result[key]);
     }
     return result;
   };
@@ -213,6 +213,7 @@ const defaultStageNodes = (width, depth) => [
 
 const resizeShape = (item, changes) => {
   if (item.type === "text") return sizeText({ ...item, ...changes });
+  if(item.type==="image"){const axis=changes.width!==undefined&&changes.height===undefined?"width":changes.height!==undefined&&changes.width===undefined?"height":null;return {...(axis?resizeImageDimension(item,axis,changes[axis]):item),...changes}}
   const width = Math.max(.01, changes.width ?? item.width), height = Math.max(.01, changes.height ?? item.height);
   const sx = width/item.width, sy = height/item.height;
   const result = {...item,...changes,width,height};
@@ -271,130 +272,7 @@ function ColourPicker({value,onChange}) {
   </div>;
 }
 function ReferenceInspector({referenceImage,setReferenceImage}) {
-  const unit = useContext(MeasurementUnit).toUpperCase();
-  return (                <>
-                  <p className="eyebrow advanced-title">REFERENCE IMAGE</p>
-                  <div className="field-row">
-                    <label className="field">
-                      X ({unit})
-                      <CommittedNumberInput
-                        type="number"
-                        step="0.01"
-                        value={referenceImage.x}
-                        onChange={(e) =>
-                          setReferenceImage({
-                            ...referenceImage,
-                            x: +e.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      Y ({unit})
-                      <CommittedNumberInput
-                        type="number"
-                        step="0.01"
-                        value={referenceImage.y}
-                        onChange={(e) =>
-                          setReferenceImage({
-                            ...referenceImage,
-                            y: +e.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      WIDTH ({unit})
-                      <CommittedNumberInput
-                        type="number"
-                        min=".05"
-                        step="0.01"
-                        value={referenceImage.width}
-                        onChange={(e) => {
-                          const width = +e.target.value;
-                          setReferenceImage({
-                            ...referenceImage,
-                            width,
-                            height:
-                              (referenceImage.lockAspect ?? true)
-                                ? width /
-                                  (referenceImage.aspectRatio ||
-                                    referenceImage.width /
-                                      referenceImage.height)
-                                : referenceImage.height,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label className="field">
-                      HEIGHT ({unit})
-                      <CommittedNumberInput
-                        type="number"
-                        min=".05"
-                        step="0.01"
-                        value={referenceImage.height}
-                        onChange={(e) => {
-                          const height = +e.target.value;
-                          setReferenceImage({
-                            ...referenceImage,
-                            height,
-                            width:
-                              (referenceImage.lockAspect ?? true)
-                                ? height *
-                                  (referenceImage.aspectRatio ||
-                                    referenceImage.width /
-                                      referenceImage.height)
-                                : referenceImage.width,
-                          });
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <label className="collision-toggle">
-                    <input
-                      type="checkbox"
-                      checked={referenceImage.lockAspect ?? true}
-                      onChange={(e) =>
-                        setReferenceImage({
-                          ...referenceImage,
-                          lockAspect: e.target.checked,
-                          aspectRatio:
-                            referenceImage.width / referenceImage.height,
-                        })
-                      }
-                    />
-                    <span>
-                      <b>Lock aspect ratio</b>
-                      <small>
-                        Preserve the image proportions while resizing.
-                      </small>
-                    </span>
-                  </label>
-                  <label className="collision-toggle">
-                    <input type="checkbox" checked={referenceImage.locked ?? false} onChange={(e) => setReferenceImage({ ...referenceImage, locked: e.target.checked })} />
-                    <span><b>Lock background image</b><small>Locked images can only be selected from the Assets list.</small></span>
-                  </label>
-                  <p className="handle-help">Hold Ctrl and drag an edge of the image frame to crop it.</p>
-                  <button className="delete" onClick={() => setReferenceImage(null)}>Remove background image</button>
-                  <label className="field">
-                    OPACITY{" "}
-                    <span>{Math.round(referenceImage.opacity * 100)}%</span>
-                    <input
-                      type="range"
-                      min=".05"
-                      max="1"
-                      step=".05"
-                      value={referenceImage.opacity}
-                      onChange={(e) =>
-                        setReferenceImage({
-                          ...referenceImage,
-                          opacity: +e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                </>
-);
+  return <><SharedInspector allowSingle items={[{...referenceImage,type:'image',assetType:'image'}]} context="stage" unit="m" onChange={(field,value)=>setReferenceImage(field.set(referenceImage,value))}/><button className="delete" onClick={()=>setReferenceImage(null)}>Delete image</button></>
 }
 
 function collisionFromLayer(item) {
@@ -560,7 +438,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const submitAsset=async(kind,asset)=>{try{await accountRequest("/submissions","POST",{kind,assetId:asset.id});await refreshLibrary();flash("Proposal submitted or updated. Your personal draft is still usable.")}catch(error){flash(error.message)}};
   const sessionKey=embeddedEquipment?'equipment-canvas:'+embeddedEquipment.data.id:embeddedStage?'canvas:'+(embeddedStage.sessionId||embeddedStage.data.id):'shape-studio:'+user?.id+':draft';
   const [recovery,setRecovery]=useState(()=>embeddedStage||embeddedEquipment?readSessionDraft(sessionKey):null);
-  const [session] = useState(() => embeddedEquipment?equipmentSession(embeddedEquipment.data):embeddedStage ? {documentMode:'stage',shapeName:embeddedStage.data.label,realWidth:embeddedStage.data.dimensions.widthMeters,realDepth:embeddedStage.data.dimensions.depthMeters,stageNodes:embeddedStage.data.boundary.nodes,zones:embeddedStage.data.zones||[],fixedEquipment:syncEquipmentFolders(embeddedStage.data.fixedEquipment||[],normaliseEquipmentFolders(embeddedStage.data.fixedEquipment||[],embeddedStage.data.equipmentFolders||[])),textItems:embeddedStage.data.textItems||[],referenceImages:embeddedStage.data.editor?.referenceImages||[],stageLines:stageLineAssets(embeddedStage.data),zoneFolders:normalizeZoneFolders(embeddedStage.data.editor?.assetFolders||embeddedStage.data.layerFolders,[...(embeddedStage.data.zones||[]),...(embeddedStage.data.textItems||[]),...(embeddedStage.data.editor?.referenceImages||[]),...stageLineAssets(embeddedStage.data)]),stageBoundaryLocked:readOnlyStage||embeddedStage.data.editor?.stageBoundaryLocked||false,items:[]} : (()=>{const stored=readSessionDraft(sessionKey);return equipmentOnly&&stored.documentMode==='stage'?{}:stored;})());
+  const [session] = useState(() => embeddedEquipment?equipmentSession(embeddedEquipment.data):embeddedStage ? {documentMode:'stage',shapeName:embeddedStage.data.label,realWidth:embeddedStage.data.dimensions.widthMeters,realDepth:embeddedStage.data.dimensions.depthMeters,stageNodes:embeddedStage.data.boundary.nodes,zones:embeddedStage.data.zones||[],fixedEquipment:syncEquipmentFolders(embeddedStage.data.fixedEquipment||[],normaliseEquipmentFolders(embeddedStage.data.fixedEquipment||[],embeddedStage.data.equipmentFolders||[])),textItems:embeddedStage.data.textItems||[],referenceImages:stageImages(embeddedStage.data),stageLines:stageLineAssets(embeddedStage.data),zoneFolders:normalizeZoneFolders(embeddedStage.data.editor?.assetFolders||embeddedStage.data.layerFolders,[...(embeddedStage.data.zones||[]),...(embeddedStage.data.textItems||[]),...(stageImages(embeddedStage.data)),...stageLineAssets(embeddedStage.data)]),stageBoundaryLocked:readOnlyStage||embeddedStage.data.editor?.stageBoundaryLocked||false,items:[]} : (()=>{const stored=readSessionDraft(sessionKey);return equipmentOnly&&stored.documentMode==='stage'?{}:stored;})());
   const [equipmentFolders,setEquipmentFolders]=useState(()=>session.equipmentFolders||embeddedStage?.layerFolders||embeddedStage?.data.equipmentFolders||[]);
   const [documentMode, setDocumentMode] = useState(session.documentMode ?? "item");
   const [shapeName, setShapeName] = useState(session.shapeName ?? "Untitled Item");
@@ -667,6 +545,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const projectSnapshot = JSON.stringify(documentMode === "item"
     ? {documentMode,shapeName,realWidth,realDepth,groupId,items,itemFolders,rotationParts,components,cornerSnapping,referenceImages,advancedShapeRole}
     : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,stageBoundaryVisible,fixedEquipment,layoutEquipment,stagePartVisibility,layoutFixedControls,equipmentFolders,layoutNotes,availableEquipment,zones,zoneFolders,textItems,stageLines,referenceImages});
+  const liveProjectSnapshot=useRef(projectSnapshot);
+  useEffect(()=>{liveProjectSnapshot.current=projectSnapshot},[projectSnapshot]);
   useEffect(() => {
     if (savedProject.current === null || resetProjectBaseline.current) {
       savedProject.current = projectSnapshot;
@@ -720,7 +600,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   };
   const setReferenceImage = (value) => {
     if (!selectedReferenceId) return;
-    if (documentMode === "item") checkpoint();
+    checkpoint();
     if (value === null) {
       setReferenceImages((old) =>
         old.filter((image) => image.id !== selectedReferenceId),
@@ -849,7 +729,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       equipmentFolders:normaliseEquipmentFolders(fixedEquipment,equipmentFolders).map(folder=>({...folder,itemIds:folder.itemIds.map(String)})),
       details: [],
       curtains:stageLines.filter(line=>line.type==="curtain"),
-      editor: { referenceImages, dimensionLines:stageLines.filter(line=>line.type!=="curtain"), stageBoundaryLocked, assetFolders:zoneFolders.map(folder=>({...folder,assetIds:folder.zoneIds,zoneIds:undefined})) },
+      images:referenceImages,
+      editor: { dimensionLines:stageLines.filter(line=>line.type!=="curtain"), stageBoundaryLocked, assetFolders:zoneFolders.map(folder=>({...folder,assetIds:folder.zoneIds,zoneIds:undefined})) },
     }),
     [
       activeLibraryId, draftAssetId,
@@ -1176,6 +1057,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         old.map((item) => {
           if (item.id !== id) return item;
           if (handle.startsWith("vector:")) return moveVectorHandle(original,handle,localX,localY,snapValue);
+          if(original.type==='image'&&handle.startsWith("crop-"))return cropImageEdge(original,handle.slice(5),localX,localY);
           if (handle === "radius") { const diameter=Math.max(.02,snapValue(original.width+localX*2)); return {...item,width:diameter,height:diameter,x:original.x+(original.width-diameter)/2,y:original.y+(original.height-diameter)/2}; }
           if (handle.startsWith("resize-")) {
             if(original.type==='image')return resizeCroppedImage(original,handle,localX,localY,snapValue);
@@ -1248,8 +1130,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         item.id === d.id
           ? {
               ...item,
-              x: Math.max(0, Math.min(realWidth - item.width, x)),
-              y: Math.max(0, Math.min(realDepth - item.height, y)),
+              x: item.type==='image'?x:Math.max(0, Math.min(realWidth - item.width, x)),
+              y: item.type==='image'?y:Math.max(0, Math.min(realDepth - item.height, y)),
             }
           : item,
       ),
@@ -1338,6 +1220,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setReferenceSelected(false);
   };
   const captureStageControl = (event) => {
+    if(event.target.closest?.(".ordered-stage-image"))return;
     if (event.button !== 0 || !activeStageControls.length || event.shiftKey || event.ctrlKey) return;
     const matrix = canvasRef.current.getScreenCTM();
     if (!matrix) return;
@@ -1472,43 +1355,14 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       else setRealDepth(size);
       return;
     }
-    if (
-      stageDragRef.current.handle === "image-move" ||
-      stageDragRef.current.handle === "image-resize" ||
-      stageDragRef.current.handle.startsWith("image-crop-")
-    ) {
-      const point = stagePointer(event, false);
-      const drag = stageDragRef.current;
-      setReferenceImages((old) =>
-        old.map((image) => {
-          if (image.id !== drag.imageId) return image;
-          if (drag.handle.startsWith("image-crop-")) {
-            const edge = drag.handle.slice("image-crop-".length);
-            const crop = { left: 0, top: 0, right: 0, bottom: 0, ...image.crop };
-            if (edge === "left") crop.left = Math.max(0, Math.min(.9 - crop.right, (point.x - image.x) / image.width));
-            if (edge === "right") crop.right = Math.max(0, Math.min(.9 - crop.left, (image.x + image.width - point.x) / image.width));
-            if (edge === "top") crop.top = Math.max(0, Math.min(.9 - crop.bottom, (point.y - image.y) / image.height));
-            if (edge === "bottom") crop.bottom = Math.max(0, Math.min(.9 - crop.top, (image.y + image.height - point.y) / image.height));
-            return { ...image, crop };
-          }
-          if (drag.handle === "image-move")
-            return {
-              ...image,
-              x: drag.original.x + point.x - drag.start.x,
-              y: drag.original.y + point.y - drag.start.y,
-            };
-          const width = Math.max(0.05, point.x - image.x);
-          return (image.lockAspect ?? true)
-            ? {
-                ...image,
-                width,
-                height:
-                  width / (image.aspectRatio || image.width / image.height),
-              }
-            : { ...image, width, height: Math.max(0.05, point.y - image.y) };
-        }),
-      );
-      return;
+    if(stageDragRef.current.handle.startsWith('image-')){
+      const point=stagePointer(event,false),drag=stageDragRef.current,original=drag.original,handle=drag.handle.slice(6),angle=(original.rotation||0)*Math.PI/180,dx=point.x-drag.start.x,dy=point.y-drag.start.y
+      const localX=dx*Math.cos(angle)+dy*Math.sin(angle),localY=-dx*Math.sin(angle)+dy*Math.cos(angle)
+      let changed=original
+      if(handle.startsWith('resize-'))changed=resizeCroppedImage(original,handle,localX,localY)
+      else if(handle.startsWith('crop-'))changed=cropImageEdge(original,handle.slice(5),localX,localY)
+      else if(handle==='rotate'){const centre={x:original.x+original.width/2,y:original.y+original.height/2},delta=(Math.atan2(point.y-centre.y,point.x-centre.x)-Math.atan2(drag.start.y-centre.y,drag.start.x-centre.x))*180/Math.PI,step=event.shiftKey?15:1;changed={...original,rotation:wholeDegrees(original.rotation+Math.round(delta/step)*step)}}
+      setReferenceImages(old=>old.map(image=>image.id===drag.imageId?changed:image));return
     }
     const { index: targetIndex, handle, zoneId } = stageDragRef.current;
     const point = stagePointer(event, !zoneId);
@@ -1558,63 +1412,19 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       }),
     );
   };
-  const loadReferenceImage = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const image = new Image();
-      image.onload = () => {
-        const width = Math.min(realWidth * 0.8, 5);
-        const id = `image-${Date.now()}`;
-        checkpoint();
-        setReferenceImages((old) => [
-          ...old,
-          {
-          id,
-          name: file.name,
-          zOrder: old.length + zones.length,
-          dataUrl: reader.result,
-          x: (realWidth - width) / 2,
-          y: realDepth * 0.1,
-          width,
-          height: (width * image.height) / image.width,
-          aspectRatio: image.width / image.height,
-          lockAspect: true,
-          opacity: 0.55,
-          locked: false,
-          crop: { left: 0, top: 0, right: 0, bottom: 0 },
-          },
-        ]);
-        setSelectedId(null);
-        setSelectedGroupId(null);
-        setMultiSelectedIds([]);
-        setSelectedReferenceId(id);
-        setSelectedStageNode(null);
-        setSelectedZoneId(null);
-      };
-      image.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-    event.target.value = "";
-  };
   const loadArtworkImage=event=>{
-    const file=event.target.files?.[0]
-    event.target.value=''
-    if(!file)return
+    const file=event.target.files?.[0];event.target.value='';if(!file)return
     if(file.size>12_000_000){flash('Images must be smaller than 12 MB.');return}
-    const reader=new FileReader()
-    reader.onload=()=>{
+    const reader=new FileReader();reader.onload=()=>{
       if(!validImageDataUrl(reader.result)){flash('Choose a PNG, JPEG, WebP, GIF or AVIF image.');return}
-      const image=new Image()
-      image.onload=()=>{
-        const width=Math.min(realWidth*.8,realWidth),height=Math.min(realDepth*.8,width*image.height/image.width),id=nextId.current++
-        checkpoint();setItems(old=>[...old,{id,type:'image',name:file.name||'Image',dataUrl:reader.result,x:(realWidth-width)/2,y:(realDepth-height)/2,width,height,rotation:0,opacity:1,crop:{left:0,right:0,top:0,bottom:0},collision:false,editorVisible:true}]);setSelectedId(id);setMultiSelectedIds([]);setSelectedGroupId(null);setSelectedReferenceId(null)
-      }
-      image.onerror=()=>flash('The image could not be read.')
-      image.src=reader.result
-    }
-    reader.readAsDataURL(file)
+      const image=new Image();image.onload=()=>{
+        const {width,height}=fittedImageSize(image.naturalWidth,image.naturalHeight,realWidth,realDepth),id=documentMode==='stage'?'image-'+Date.now():nextId.current++
+        const layer={id,type:'image',name:file.name||'Image',dataUrl:reader.result,x:(realWidth-width)/2,y:(realDepth-height)/2,width,height,aspectRatio:image.naturalWidth/image.naturalHeight,lockAspect:true,rotation:0,opacity:1,crop:{left:0,right:0,top:0,bottom:0},collision:false,editorVisible:true,zOrder:orderedAssets.length}
+        checkpoint();setSelectedGroupId(null);setMultiSelectedIds([]);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null)
+        if(documentMode==='stage'){setReferenceImages(old=>[...old,layer]);setSelectedId(null);setSelectedReferenceId(id);setSelectedStageAssetIds([id])}
+        else{setItems(old=>[...old,layer]);setSelectedId(id);setSelectedReferenceId(null)}
+      };image.onerror=()=>flash('The image could not be read.');image.src=reader.result
+    };reader.readAsDataURL(file)
   }
   const startReferenceDrag = (event, handle, imageOverride = referenceImage) => {
     if (event.button !== 0) return;
@@ -1628,13 +1438,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     stageDragRef.current = { handle, start, original: { ...imageOverride }, imageId: imageOverride.id };
     setSelectedReferenceId(imageOverride.id);
     setSelectedStageNode(null);
-  };
-  const startReferenceCrop = (event) => {
-    if (!event.ctrlKey || !referenceImage || referenceImage.locked) return;
-    const point = stagePointer(event, false);
-    const distances = { left: Math.abs(point.x - referenceImage.x), right: Math.abs(point.x - referenceImage.x - referenceImage.width), top: Math.abs(point.y - referenceImage.y), bottom: Math.abs(point.y - referenceImage.y - referenceImage.height) };
-    const edge = Object.entries(distances).sort((a, b) => a[1] - b[1])[0][0];
-    startReferenceDrag(event, `image-crop-${edge}`);
   };
   const startCanvasResize = (event, dimension) => {
     if (event.button !== 0) return;
@@ -1675,7 +1478,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     else if (assetType === "text") { setSelectedTextId(asset.id); setSelectedZoneId(null); }
     else { setSelectedTextId(null); setSelectedZoneId(null); }
     setSelectedStageLineId(assetType==="line"?asset.id:null);
-    setSelectedReferenceId(null); setSelectedStageNode(null);
+    setSelectedReferenceId(assetType==="image"?asset.id:null); setSelectedStageNode(null);
   };
   const updateBoundaryNode = (changes) =>
     selectedZoneId
@@ -1813,9 +1616,20 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     [copy[index], copy[target]] = [copy[target], copy[index]];
     setItems(copy);
   };
+  const applySavedImages=(prepared,snapshot=projectSnapshot)=>{
+    const state=JSON.parse(snapshot),unchanged=liveProjectSnapshot.current===snapshot
+    if(state.documentMode==='item'){
+      const layers=prepared.editor?.layers||state.items,folders=normalizeZoneFolders(state.itemFolders,layers)
+      if(unchanged){checkpoint();setItems(layers);setItemFolders(folders)}state.items=layers;state.itemFolders=folders
+    }else{
+      const images=stageImages(prepared),folders=normalizeZoneFolders(state.zoneFolders,[...state.zones,...state.textItems,...state.stageLines,...images])
+      if(unchanged){checkpoint();setReferenceImages(images);setZoneFolders(folders)}state.referenceImages=images;state.zoneFolders=folders
+    }
+    savedProject.current=JSON.stringify(state)
+  }
   const saveToLibrary = async (submit=false) => {
     if(embeddedEquipment){if(!items.length)return flash('Add artwork before saving');setSaveError('');setEquipmentSaveOpen(true);return;}
-    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{await embeddedStage.onSave({...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility,layoutFixedControls}:{}),layoutFolders:equipmentFolders,notes:layoutNotes},submit===true);savedProject.current=projectSnapshot;flash(readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage version saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
+    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{const design={...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility,layoutFixedControls}:{}),layoutFolders:equipmentFolders,notes:layoutNotes};const prepared=readOnlyStage?design:await prepareStageImages(design);await embeddedStage.onSave(prepared,submit===true);if(readOnlyStage)savedProject.current=projectSnapshot;else applySavedImages(prepared);flash(readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage version saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
     if (shapeSaving) return;
     if(editingSubmission){setReviewerMessage(editingSubmission.review_note || '');setSubmissionSaveOpen(true);return;}
     if(personalSource){
@@ -1842,7 +1656,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   };
   const saveEmbeddedEquipment=async options=>{
     if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');
-    try{const saved=await embeddedEquipment.onSave(await prepareEquipmentImages(itemData),options);if(saved?.id){setLibrary(old=>[...old.filter(item=>item.id!==saved.id),saved]);setActiveLibraryId(saved.id);setDraftAssetId(saved.id)}savedProject.current=projectSnapshot;setEquipmentSaveOpen(false);flash(options.submit?'Private equipment saved and submitted for review':'Equipment saved')}
+    try{const prepared=await prepareEquipmentImages(itemData);if(!prepared.shapes.length)throw new Error('No artwork remains inside the canvas. Move an image onto the canvas before saving.');const saved=await embeddedEquipment.onSave(prepared,options);if(saved?.id){setLibrary(old=>[...old.filter(item=>item.id!==saved.id),saved]);setActiveLibraryId(saved.id);setDraftAssetId(saved.id)}applySavedImages(prepared);setEquipmentSaveOpen(false);flash(options.submit?'Private equipment saved and submitted for review':'Equipment saved')}
     catch(error){setSaveError(error.message)}finally{saveLock.current=false;setShapeSaving(false)}
   };
   const cutSelected = (retainCutter=false) => {
@@ -1887,11 +1701,12 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     if (shapeSaving) return;
     setShapeSaving(true);
     try {
+      data=await prepareStageImages(data);
       const response = await fetch(`${STAGES_API}/${encodeURIComponent(data.id)}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data,null,2)});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
       setPersonalSource(null);
-      savedProject.current = snapshot;
+      applySavedImages(data,snapshot);
       setShapeName(result.label);
       setActiveLibraryId(result.id);
       setDraftAssetId(result.id);
@@ -2016,7 +1831,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setSelectedStageLineId(null);
     setSelectedTextId(null);
     setSelectedZoneId(null);
-    const savedImages = stage.editor?.referenceImages || (stage.editor?.referenceImage ? [{ ...stage.editor.referenceImage, id: "image-legacy", name: "Reference image" }] : []);
+    const savedImages = stageImages(stage);
     setReferenceImages(savedImages.map((image, index) => ({ ...image, zOrder: image.zOrder ?? (stage.zones?.length || 0) + index })));
     setZoneFolders(normalizeZoneFolders(stage.editor?.assetFolders || stage.editor?.zoneFolders, [...savedImages, ...(stage.zones || []), ...(stage.textItems || []), ...stageLineAssets(stage)]));
     setSelectedReferenceId(null);
@@ -2383,7 +2198,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   return (
     <MeasurementUnit.Provider value={documentMode === "stage" ? "m" : "cm"}>
     <div className={embeddedStage?`app unified-canvas ${readOnlyStage?'visitor-canvas':'stage-canvas'}`:"app"}>
-      {embeddedStage?<header><div className="brand"><AppMark/><div>STAGEPLOT<small>{readOnlyStage?'PERFORMANCE LAYOUT':'STAGE AND EQUIPMENT'}</small></div></div><input className="title" aria-label={readOnlyStage?'Performance name':'Stage name'} readOnly={readOnlyStage} value={readOnlyStage?embeddedStage.layoutName:shapeName} onChange={event=>setShapeName(event.target.value)}/><div className="actions">{embeddedStage.onDashboard&&<button onClick={embeddedStage.onDashboard}>Dashboard</button>}{embeddedStage.onClaim&&<button onClick={embeddedStage.onClaim}>Save to my dashboard</button>}{embeddedStage.onSignIn&&<button onClick={embeddedStage.onSignIn}>Sign in to keep this layout</button>}{embeddedStage.guest&&<button onClick={async()=>{try{await navigator.clipboard.writeText(window.location.href);flash('Edit link copied')}catch{(await appPrompt('Copy your private edit link',window.location.href))}}}>Copy my edit link</button>}{!embeddedStage.guest&&<button disabled={shapeSaving} onClick={async ()=>{if(projectSnapshot===savedProject.current||(await appConfirm('Leave without saving your latest changes?')))embeddedStage.onBack()}}>{embeddedStage.backLabel||'Back to workspace'}</button>}<SaveStatus busy={shapeSaving} error={saveError} dirty={projectSnapshot!==savedProject.current}/>{!readOnlyStage&&<button onClick={()=>{placement.clear();setStockMode(value=>!value)}}>Available equipment</button>}<button onClick={()=>setHelpOpen(true)}>Help</button>{embeddedStage.onShare&&<button onClick={embeddedStage.onShare}>Share stage</button>}{embeddedStage.onReview&&<button onClick={()=>embeddedStage.onReview({...embeddedStage.data,...stageData,id:embeddedStage.data.id})}>Decide on public stage</button>}{embeddedStage.canSubmit&&<button disabled={shapeSaving} onClick={()=>saveToLibrary(true)}>Submit stage to public library</button>}<button onClick={()=>window.print()}>Export PDF</button><button className="accent" disabled={shapeSaving} onClick={()=>saveToLibrary()}>{readOnlyStage?'Save now':embeddedStage.review?'Save review edits':'Save stage version'}</button>{readOnlyStage&&<button className="accent" disabled={shapeSaving} onClick={()=>saveToLibrary(true)}>Submit for review</button>}</div></header>:embeddedEquipment?<header className="equipment-author-header"><div className="brand"><AppMark/><div>STAGEPLOT<small>{embeddedEquipment.review?'PUBLIC EQUIPMENT REVIEW':'EQUIPMENT DESIGN'}</small></div></div><input className="title" aria-label="Equipment name" value={shapeName} onChange={event=>setShapeName(event.target.value)}/><div className="actions"><button disabled={shapeSaving} onClick={async ()=>{if(projectSnapshot===savedProject.current||(await appConfirm('Leave this editor? Unsaved work will remain recoverable in this browser.')))embeddedEquipment.onBack()}}>Back to library</button><SaveStatus busy={shapeSaving} dirty={projectSnapshot!==savedProject.current}/><button onClick={()=>setHelpOpen(true)}>Help</button><button className="accent" disabled={shapeSaving} onClick={()=>saveToLibrary()}>{embeddedEquipment.review?'Review / save':'Save equipment'}</button></div></header>:<>      <header>
+      {embeddedStage?<header><div className="brand"><AppMark/><div>STAGEPLOT<small>{readOnlyStage?'PERFORMANCE LAYOUT':'STAGE AND EQUIPMENT'}</small></div></div><input className="title" aria-label={readOnlyStage?'Performance name':'Stage name'} readOnly={readOnlyStage} value={readOnlyStage?embeddedStage.layoutName:shapeName} onChange={event=>setShapeName(event.target.value)}/><div className="actions">{embeddedStage.onDashboard&&<button onClick={embeddedStage.onDashboard}>Dashboard</button>}{embeddedStage.onClaim&&<button onClick={embeddedStage.onClaim}>Save to my dashboard</button>}{embeddedStage.onSignIn&&<button onClick={embeddedStage.onSignIn}>Sign in to keep this layout</button>}{embeddedStage.guest&&<button onClick={async()=>{try{await navigator.clipboard.writeText(window.location.href);flash('Edit link copied')}catch{(await appPrompt('Copy your private edit link',window.location.href))}}}>Copy my edit link</button>}{!embeddedStage.guest&&<button disabled={shapeSaving} onClick={async ()=>{if(projectSnapshot===savedProject.current||(await appConfirm('Leave without saving your latest changes?')))embeddedStage.onBack()}}>{embeddedStage.backLabel||'Back to workspace'}</button>}<SaveStatus busy={shapeSaving} error={saveError} dirty={projectSnapshot!==savedProject.current}/>{!readOnlyStage&&<button onClick={()=>{placement.clear();setStockMode(value=>!value)}}>Available equipment</button>}<button onClick={()=>setHelpOpen(true)}>Help</button>{embeddedStage.onShare&&<button onClick={embeddedStage.onShare}>Share stage</button>}{embeddedStage.onReview&&<button onClick={async()=>{try{await embeddedStage.onReview(await prepareStageImages({...embeddedStage.data,...stageData,id:embeddedStage.data.id}))}catch(error){setSaveError(error.message)}}}>Decide on public stage</button>}{embeddedStage.canSubmit&&<button disabled={shapeSaving} onClick={()=>saveToLibrary(true)}>Submit stage to public library</button>}<button onClick={()=>window.print()}>Export PDF</button><button className="accent" disabled={shapeSaving} onClick={()=>saveToLibrary()}>{readOnlyStage?'Save now':embeddedStage.review?'Save review edits':'Save stage version'}</button>{readOnlyStage&&<button className="accent" disabled={shapeSaving} onClick={()=>saveToLibrary(true)}>Submit for review</button>}</div></header>:embeddedEquipment?<header className="equipment-author-header"><div className="brand"><AppMark/><div>STAGEPLOT<small>{embeddedEquipment.review?'PUBLIC EQUIPMENT REVIEW':'EQUIPMENT DESIGN'}</small></div></div><input className="title" aria-label="Equipment name" value={shapeName} onChange={event=>setShapeName(event.target.value)}/><div className="actions"><button disabled={shapeSaving} onClick={async ()=>{if(projectSnapshot===savedProject.current||(await appConfirm('Leave this editor? Unsaved work will remain recoverable in this browser.')))embeddedEquipment.onBack()}}>Back to library</button><SaveStatus busy={shapeSaving} dirty={projectSnapshot!==savedProject.current}/><button onClick={()=>setHelpOpen(true)}>Help</button><button className="accent" disabled={shapeSaving} onClick={()=>saveToLibrary()}>{embeddedEquipment.review?'Review / save':'Save equipment'}</button></div></header>:<>      <header>
         <div className="brand">
           <AppMark studio />
           <div>
@@ -2449,8 +2264,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               <input
                 ref={imageFileRef}
                 type="file"
-                accept="image/*"
-                onChange={loadReferenceImage}
+                accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                onChange={loadArtworkImage}
                 hidden
               />
               <details className="stage-layers" open><summary>Stage layers <small>{orderedAssets.length+1}</small></summary>
@@ -2536,7 +2351,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               <button className="delete" onClick={()=>{checkpoint();setRotationParts(old=>old.filter(value=>value.id!==part.id));setItems(old=>old.map(item=>item.rotationPartId===part.id?{...item,rotationPartId:undefined}:item));}}>Remove control</button>
             </div>)}
           </section>}
-        </div>{readOnlyStage&&<details className="locked-stage-layers"><summary>Stage layers <small>Locked</small></summary><p>{shapeName}</p>{zones.map(zone=><p key={zone.id}>{zone.name}</p>)}{stageLines.filter(line=>line.type==="curtain").map(line=><p key={line.id}>{line.name||"Curtain"}</p>)}{effectiveLayoutStage.fixedEquipment.map(item=>equipmentRotationParts(item).length?<button key={item.id} className="installed-equipment-select" onClick={()=>selectFixed(item)}>{item.label} (installed parts)</button>:<p key={item.id}>{item.label} (installed)</p>)}</details>}{embeddedStage&&placement.layers}</aside>
+        </div>{readOnlyStage&&<details className="locked-stage-layers"><summary>Stage layers <small>Locked</small></summary><p>{shapeName}</p>{zones.map(zone=><p key={zone.id}>{zone.name}</p>)}{referenceImages.map(image=><p key={image.id}>{image.name||"Image"}</p>)}{stageLines.filter(line=>line.type==="curtain").map(line=><p key={line.id}>{line.name||"Curtain"}</p>)}{effectiveLayoutStage.fixedEquipment.map(item=>equipmentRotationParts(item).length?<button key={item.id} className="installed-equipment-select" onClick={()=>selectFixed(item)}>{item.label} (installed parts)</button>:<p key={item.id}>{item.label} (installed)</p>)}</details>}{embeddedStage&&placement.layers}</aside>
         <div className="panel-resizer" role="separator" aria-label="Resize layers panel" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"left",startX:event.clientX,startWidth:currentUi.leftWidth||238});}}/>
         <section className="workbench">
           <div className="toolbar">
@@ -2590,7 +2405,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               <button onClick={addStageText}>Text</button>
               <button onClick={addStageDimension}>Dimension</button>
               <button onClick={addStageCurtain}>Curtain</button>
-              <button onClick={()=>imageFileRef.current?.click()}>Background image</button>
+              <button onClick={()=>imageFileRef.current?.click()}>Image</button>
             </>:<>
               <button onClick={()=>add("drawVector")}><b aria-hidden="true">✎</b><span>Draw Vector</span></button>
               <button onClick={()=>add("text")}>Text</button>
@@ -2704,9 +2519,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   <g className="ordered-stage-assets" pointerEvents={readOnlyStage?"none":undefined}>
                     {[...orderedAssets].reverse().filter(asset=>stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map((asset) =>
                       asset.assetType === "image" ? (
-                        <svg key={asset.id} className={asset.locked ? "ordered-reference locked" : "ordered-reference"} x={asset.x} y={asset.y} width={asset.width} height={asset.height} viewBox={`${asset.crop?.left || 0} ${asset.crop?.top || 0} ${1 - (asset.crop?.left || 0) - (asset.crop?.right || 0)} ${1 - (asset.crop?.top || 0) - (asset.crop?.bottom || 0)}`} preserveAspectRatio="none" opacity={asset.opacity} overflow="hidden" onPointerDown={asset.locked ? undefined : (event) => startAssetMove(event, asset, "image")}>
-                          <image href={asset.dataUrl} x="0" y="0" width="1" height="1" preserveAspectRatio="none" />
-                        </svg>
+                        <g className="ordered-stage-image" key={asset.id}><Shape controlUnit={realWidth/(canvasRef.current?.getBoundingClientRect().width||700)} item={{...asset,type:'image'}} selected={!readOnlyStage&&directlySelectedStageIds.includes(asset.id)} onPointerDown={readOnlyStage||asset.locked?undefined:event=>startAssetMove(event,asset,'image')} onHandlePointerDown={readOnlyStage||asset.locked||stageMulti?undefined:(event,handle)=>startReferenceDrag(event,'image-'+handle,asset)}/></g>
                       ) : asset.assetType === "text" ? (
                         <text key={asset.id} x={asset.x} y={asset.y} fill={asset.color} fillOpacity={asset.opacity} fontSize={asset.fontSize} textAnchor="middle" dominantBaseline="middle" className={asset.locked ? "stage-text locked" : "stage-text"} onPointerDown={(event) => startAssetMove(event, asset, "text")}>{asset.text}</text>
                       ) : asset.assetType === "line" && asset.type==="curtain" ? (
@@ -2733,45 +2546,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 )}
                 {documentMode === "stage" ? (
                   <g className="stage-boundary-editor" style={{display:readOnlyStage||!stageBoundaryVisible&&!selectedZone?"none":undefined}}>
-                    {referenceImage && !stageMoveMode && (
-                      <g
-                        className="reference-image"
-                        onPointerDown={referenceImage.locked ? undefined : (event) => startAssetMove(event, referenceImage, "image")}
-                      >
-                        <image
-                          opacity="0"
-                          href={referenceImage.dataUrl}
-                          x={referenceImage.x}
-                          y={referenceImage.y}
-                          width={referenceImage.width}
-                          height={referenceImage.height}
-                          preserveAspectRatio="none"
-                        />
-                        {referenceSelected && !stageMoveMode && (
-                          <>
-                            <rect
-                              className="reference-image-frame"
-                              x={referenceImage.x}
-                              y={referenceImage.y}
-                              width={referenceImage.width}
-                              height={referenceImage.height}
-                              pointerEvents={referenceImage.locked ? "none" : "stroke"}
-                              onPointerDown={startReferenceCrop}
-                            />
-                            <circle
-                              className="image-resize"
-                              cx={referenceImage.x + referenceImage.width}
-                              cy={referenceImage.y + referenceImage.height}
-                              r=".045"
-                              onPointerDown={(event) =>
-                                startReferenceDrag(event, "image-resize")
-                              }
-                            />
-                          </>
-                        )}
-                      </g>
-                    )}
-                    
                     {zones.map((zone) => (
                       <g key={zone.id} className={zone.locked ? "editable-zone locked" : "editable-zone"}>
                         {!stageMoveMode && <path className="zone-move-hit" d={stagePath(zone.nodes)} onPointerDown={(event) => startAssetMove(event, zone, "zone")} />}
@@ -3131,7 +2905,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               </p>
               {stageMulti&&<SharedInspector items={stageInspectorAssets} context="stage" onChange={changeSharedStage} unit="m"/>}
               {selectedStageAssets.length>1 && !selectedStageGroup.length && <button className="group-button" onClick={groupStageAssets}>Group selected stage assets</button>}
-              {selectedStageGroup.length>0 && <section className="zone-group-settings"><h3>Stage group - {selectedStageGroup.length} assets</h3><label className="field">GROUP NAME<input value={selectedStageGroup[0].editorGroupName || ''} onChange={event=>updateStageGroup({editorGroupName:event.target.value})}/></label><label className="collision-toggle"><input type="checkbox" checked={selectedStageGroup[0].editorGroupToggleable===true} onChange={event=>updateStageGroup({editorGroupToggleable:event.target.checked})}/><span><b>Toggleable in Stageplot</b><small>One toggle controls grouped zones, text and curtains. Studio-only dimensions and background images remain grouped while editing.</small></span></label><button className="ungroup" onClick={()=>updateStageGroup({editorGroupId:undefined,editorGroupName:undefined,editorGroupToggleable:undefined})}>Ungroup stage assets</button></section>}
+              {selectedStageGroup.length>0 && <section className="zone-group-settings"><h3>Stage group - {selectedStageGroup.length} assets</h3><label className="field">GROUP NAME<input value={selectedStageGroup[0].editorGroupName || ''} onChange={event=>updateStageGroup({editorGroupName:event.target.value})}/></label><label className="collision-toggle"><input type="checkbox" checked={selectedStageGroup[0].editorGroupToggleable===true} onChange={event=>updateStageGroup({editorGroupToggleable:event.target.checked})}/><span><b>Toggleable in Stageplot</b><small>One toggle controls grouped zones, text, curtains and images. Dimension lines remain grouped while editing.</small></span></label><button className="ungroup" onClick={()=>updateStageGroup({editorGroupId:undefined,editorGroupName:undefined,editorGroupToggleable:undefined})}>Ungroup stage assets</button></section>}
               {!hasStageInspectorSelection && <>
               <label className="field">
                 STAGE NAME
@@ -3477,7 +3251,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 selection.
               </p>
             </>
-          ) : referenceSelected ? (
+          ) : selected?.type==='image' ? (<><SharedInspector allowSingle items={[selected]} context="artwork" unit="cm" onChange={(field,value)=>update(field.set(selected,value))}/><button className="delete" onClick={remove}>Delete image</button></>) : referenceSelected ? (
             <><p className="inspector-context">Equipment reference image</p><ReferenceInspector referenceImage={referenceImage} setReferenceImage={setReferenceImage}/></>
           ) : !selected ? (
             <>
@@ -3631,7 +3405,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   </label>
                 </div>
               )}
-              {selected.type==='image'&&<><div className="field-row">{['left','right','top','bottom'].map(side=>{const crop=normaliseCrop(selected.crop),opposite={left:'right',right:'left',top:'bottom',bottom:'top'}[side],max=Math.min(95,Math.round((.99-crop[opposite])*100));return <label className="field" key={side}>CROP {side.toUpperCase()} (%)<LiveNumberInput aria-label={`Crop ${side} (%)`} min={0} max={max} step="1" value={Math.round(crop[side]*100)} onChange={percent=>update({crop:normaliseCrop({...crop,[side]:Math.min(max,percent)/100})})}/></label>})}</div><label className="field">IMAGE OPACITY<input type="range" min="0" max="1" step=".01" value={selected.opacity??1} onChange={event=>update({opacity:Number(event.target.value)})}/></label></>}
               {!['vector','image'].includes(selected.type)&&<button className="group-button" onClick={()=>{update(convertToVector(selected));setVectorNodeIndex(null);}}>Convert to editable vector</button>}
               {selected.type === "vector" && <>
                 <p className="handle-help">Drag points to edit the boundary. Shift-click a straight edge to add a point; Ctrl-click an edge for Point on Arc. Select a point to edit its incoming curve.</p>
@@ -3902,7 +3675,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         </section>
       </div>}
       {manageStageplotOpen&&<LibraryManagement {...{libraryError,copyManagedStageLink,draftStatus,editLibraryStage,editManagedItem,editable,editingItemNameId,editingStageNameId,equipmentItems,equipmentOnly,flash,groups,isManager,itemNameDraft,manageStage,managedEquipmentSections,managedItemSearch,managedTab,matchingManagedItems,matchingManagedStages,pendingUpdates,projectSnapshot,removeStageplotItem,removingStageplotId,reviewSubmissions,savedProject,setEditingItemNameId,setEditingStageNameId,setItemNameDraft,setManageStageplotOpen,setManagedItemSearch,setManagedTab,setNewItemOpen,setReviewIds,setStageNameDraft,setSubmissionFeedback,stageLibrary,stageNameDraft,submitAsset,updateManagedItem,user}}/>}
-      {submissionSaveOpen&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Save submission changes"><header><h2>Save submission changes</h2><button disabled={shapeSaving} onClick={()=>setSubmissionSaveOpen(false)}>Close</button></header><p>Updating without approval saves your edits back to the creator's personal copy and keeps the submission pending. The shared library item stays unchanged.</p><label>Message to creator<textarea rows="3" maxLength={2000} value={reviewerMessage} onChange={event=>setReviewerMessage(event.target.value)} placeholder="Explain what you changed or what still needs fixing"/></label>{['new','update','approve'].map(action=><button key={action} disabled={shapeSaving} onClick={async()=>{setShapeSaving(true);try{const result=await accountRequest('/submissions/'+editingSubmission.id+'/edit','POST',{action,note:reviewerMessage,data:{...(documentMode==='stage'?stageData:await prepareEquipmentImages(itemData)),profiles:editingSubmission.snapshot.profiles},submittedAt:editingSubmission.created,snapshotRevision:editingSubmission.snapshot.revision});await refreshLibrary();savedProject.current=projectSnapshot;if(action==='update')setEditingSubmission(result);else{setEditingSubmission(null);setActiveLibraryId(result.id)}setSubmissionSaveOpen(false);flash(action==='approve'?'Changes approved':action==='update'?'Personal copy and submission updated; awaiting approval':'New library item saved')}catch(error){flash(error.message)}finally{setShapeSaving(false)}}}>{action==='new'?'Save new item':action==='update'?'Update submitted item (without approving)':'Approve changes'}</button>)}</section></AccountModal>}
+      {submissionSaveOpen&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Save submission changes"><header><h2>Save submission changes</h2><button disabled={shapeSaving} onClick={()=>setSubmissionSaveOpen(false)}>Close</button></header><p>Updating without approval saves your edits back to the creator's personal copy and keeps the submission pending. The shared library item stays unchanged.</p><label>Message to creator<textarea rows="3" maxLength={2000} value={reviewerMessage} onChange={event=>setReviewerMessage(event.target.value)} placeholder="Explain what you changed or what still needs fixing"/></label>{['new','update','approve'].map(action=><button key={action} disabled={shapeSaving} onClick={async()=>{setShapeSaving(true);try{const result=await accountRequest('/submissions/'+editingSubmission.id+'/edit','POST',{action,note:reviewerMessage,data:{...(documentMode==='stage'?await prepareStageImages(stageData):await prepareEquipmentImages(itemData)),profiles:editingSubmission.snapshot.profiles},submittedAt:editingSubmission.created,snapshotRevision:editingSubmission.snapshot.revision});await refreshLibrary();savedProject.current=projectSnapshot;if(action==='update')setEditingSubmission(result);else{setEditingSubmission(null);setActiveLibraryId(result.id)}setSubmissionSaveOpen(false);flash(action==='approve'?'Changes approved':action==='update'?'Personal copy and submission updated; awaiting approval':'New library item saved')}catch(error){flash(error.message)}finally{setShapeSaving(false)}}}>{action==='new'?'Save new item':action==='update'?'Update submitted item (without approving)':'Approve changes'}</button>)}</section></AccountModal>}
       {submissionFeedback&&<AccountModal><section className="account-dialog" role="dialog" aria-modal="true" aria-label="Submission feedback"><header><h2>{submissionFeedback.name} - {submissionFeedback.label}</h2><button onClick={()=>setSubmissionFeedback(null)}>Close</button></header><p className="submission-feedback">{submissionFeedback.note || 'No reviewer message yet.'}</p></section></AccountModal>}
       {reviewIds&&<SubmissionReview key={reviewIds.join(',')} submissions={submissions.filter(s=>reviewIds.includes(s.id)&&s.status==='pending')} targets={(submissions.find(s=>reviewIds.includes(s.id))?.kind==='items'?library:stageLibrary).filter(a=>!a.ownerId)} renderDesign={(kind,data)=><svg className="submission-artwork" role="img" aria-label={data.label+" design"} viewBox={"0 0 "+data.dimensions.widthMeters+" "+data.dimensions.depthMeters}>{kind==='stages'?<path d={stagePath(data.boundary.nodes)} fill="#e9f5bc" stroke="#71851f" strokeWidth="2" vectorEffect="non-scaling-stroke"/>:(data.shapes || []).map((shape,index)=><Shape key={shape.id || index} item={shape}/>)}</svg>} onChanged={refreshLibrary} onClose={()=>setReviewIds(null)} onPreview={async (kind,data,submission)=>{if(projectSnapshot!==savedProject.current&&!(await appConfirm("Discard unsaved changes and preview this submission?")))return;if(kind==="items")editLibraryItem(data,true);else editLibraryStage(data,true);setShapeName(data.label);setEditingSubmission(submission);setManageStageplotOpen(false);setReviewIds(null);}}/>}
       {manageGroupsOpen && <div className="modal-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget && !groupsSaving)setManageGroupsOpen(false);}}>

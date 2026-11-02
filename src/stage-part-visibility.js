@@ -1,8 +1,9 @@
+import {stageImages} from './image-layer.js'
 import {stageZone,stageText} from './zone-groups.js'
 import {normaliseCurtain} from './stage-curtain.js'
 
 export function stageParts(stage) {
-  return [...(stage.zones||[]).map(stageZone),...(stage.textItems||[]).map(stageText),...(stage.curtains||[]).map(item=>stageText(normaliseCurtain(item)))]
+  return [...(stage.zones||[]).map(stageZone),...(stage.textItems||[]).map(stageText),...stageImages(stage).map(stageText),...(stage.curtains||[]).map(item=>stageText(normaliseCurtain(item)))]
 }
 
 export function normaliseStagePartVisibility(stage,saved={}) {
@@ -17,7 +18,7 @@ export function stagePartVisible(part,visibility={}) {
 // hide optional parts, but never reveal layers hidden by the stage author.
 export function applyStagePartVisibility(stage,visibility={}) {
   const apply=part=>({...part,visible:part.visible!==false&&stagePartVisible(part,visibility)})
-  return {...stage,zones:(stage.zones||[]).map(apply),textItems:(stage.textItems||[]).map(apply),curtains:(stage.curtains||[]).map(apply)}
+  return {...stage,zones:(stage.zones||[]).map(apply),textItems:(stage.textItems||[]).map(apply),images:stageImages(stage).map(apply),curtains:(stage.curtains||[]).map(apply)}
 }
 
 export function stagePartGroups(stage) {

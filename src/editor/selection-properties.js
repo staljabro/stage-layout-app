@@ -1,6 +1,6 @@
 import {wholeDegrees} from '../rotation-angle.js'
 import {equipmentRotationParts} from '../equipment-part-controls.js'
-import {normaliseCrop} from '../image-layer.js'
+import {normaliseCrop,resizeImageDimension} from '../image-layer.js'
 import {customStagingItem,customTextItem} from '../custom-items.js'
 import {boundaryBounds,translateBoundaryNodes,resizeRectangularZone} from './stage-zone.js'
 import {normaliseComponents} from '../equipment-components.js'
@@ -15,6 +15,16 @@ const length=(id,label,scale=1,options={})=>scalar(id,label,0,{scale,step:.01,..
 const rotation=()=>scalar('rotation','Rotation (degrees)',0,{step:1,set:(item,value)=>({...item,rotation:wholeDegrees(value)})})
 const choices=(id,label,options,fallback)=>property(id,label,'select',{options,get:item=>item[id]??fallback})
 
+function imageProperties(fields) {
+  for(const field of fields.filter(field=>['width','height'].includes(field.id)))field.set=(item,value)=>resizeImageDimension(item,field.id,value)
+  fields.push(flag('lockAspect','Lock aspect ratio',true,{set:(item,value)=>({...item,lockAspect:value,aspectRatio:item.width/item.height})}),opacity('opacity'))
+  for(const side of ['left','right','top','bottom'])fields.push(scalar('crop-'+side,`Crop ${side} (%)`,0,{
+    min:0,max:.95,step:.01,scale:100,get:item=>normaliseCrop(item.crop)[side],
+    set:(item,value)=>{const crop=normaliseCrop(item.crop),opposite={left:'right',right:'left',top:'bottom',bottom:'top'}[side];return {...item,crop:normaliseCrop({...crop,[side]:Math.min(value,.99-crop[opposite])})}}
+  }))
+  return fields
+}
+
 export function artworkProperties(item,unit='cm') {
   const scale=unit==='cm'?100:1,suffix=`(${unit})`
   const fields=[property('name','Layer name','text'),length('x',`X ${suffix}`,scale),length('y',`Y ${suffix}`,scale),rotation(),flag('editorVisible','Visible on canvas',true),flag('editorLocked','Locked')]
@@ -28,9 +38,7 @@ export function artworkProperties(item,unit='cm') {
   if(item.type==='polygon')fields.push(scalar('sides','Number of sides',6,{min:3,max:16,step:1}))
   if(item.type==='trapezoid')for(const [id,label] of [['leftInset','Left inset'],['rightInset','Right inset'],['slew','Slew']])fields.push(length(id,`${label} ${suffix}`,scale))
   if(item.type==='text')fields.push(property('text','Text','textarea'),length('fontSize',`Text size ${suffix}`,scale,{min:.01,get:item=>item.fontSize??.2}),flag('bold','Bold'),flag('italic','Italic'),choices('textAlign','Horizontal alignment',[['left','Left'],['center','Centre'],['right','Right']],'left'),scalar('lineSpacing','Line spacing',1.2,{min:.1,step:.1}),colour('fill','Text colour'))
-  if(item.type==='image')fields.push(opacity('opacity'))
-  if(item.type==='image')for(const side of ['left','right','top','bottom'])fields.push(scalar('crop-'+side,`Crop ${side} (%)`,0,{min:0,max:.95,step:.01,scale:100,get:item=>normaliseCrop(item.crop)[side],set:(item,value)=>{const crop=normaliseCrop(item.crop),opposite={left:'right',right:'left',top:'bottom',bottom:'top'}[side];return {...item,crop:normaliseCrop({...crop,[side]:Math.min(value,.99-crop[opposite])})}}}))
-  return fields
+  return item.type==='image'?imageProperties(fields):fields
 }
 
 export function stageProperties(item) {
@@ -39,20 +47,14 @@ export function stageProperties(item) {
   const position=axis=>length(axis,`${axis.toUpperCase()} (m)`,1,geometry?{get:item=>anchor(item)[axis],set:(item,value)=>({...item,nodes:translateBoundaryNodes(item.nodes,axis==='x'?value-anchor(item).x:0,axis==='y'?value-anchor(item).y:0)})}:{})
   const fields=[property('name','Name','text'),position('x'),position('y'),flag('visible','Visible on canvas',true),flag('locked','Locked')]
   if(item.assetType==='boundary')return fields
-  if(item.assetType!=='image'&&!(item.assetType==='line'&&item.type!=='curtain'))fields.push(flag('toggleable','Toggleable in Stageplot'))
+  if(!(item.assetType==='line'&&item.type!=='curtain'))fields.push(flag('toggleable','Toggleable in Stageplot'))
   if(item.assetType==='zone'){
     fields.push(choices('zoneType','Zone type',[['aesthetic','Aesthetic'],['solid','Solid (collision)'],['label','Label']],'aesthetic'),flag('collision','Collision',false,{get:item=>item.solid===true,set:(item,value)=>({...item,solid:value,...(value?{label:false}:{})})}),choices('anchorMode','Position anchor',[['topLeft','Top-left'],['centre','Centre']],'topLeft'),choices('fillMode','Colour mode',[['single','Single colour'],['multicolour','Multicoloured']],'single'),colour('fill','Fill colour','#8eb6d8'),colour('fill2','Second fill colour','#25261f'),length('stripeSpacing','Stripe spacing (m)',1,{min:.05,get:item=>item.stripeSpacing??.5}),colour('stroke','Line colour','#447799'),scalar('strokeWidth','Line thickness (px)',2,{type:'range',min:0,max:10,step:.5}),opacity('fillOpacity','Fill opacity'),opacity('strokeOpacity','Line opacity'))
     const type=fields.find(field=>field.id==='zoneType');type.get=item=>item.label?'label':item.solid?'solid':'aesthetic';type.set=(item,value)=>({...item,solid:value==='solid',label:value==='label'})
     if(item.zoneShape==='rectangle')for(const [id,label] of [['width','Width (m)'],['height','Length (m)']])fields.push(length(id,label,1,{min:.01,get:item=>boundaryBounds(item.nodes)[id],set:(item,value)=>{const bounds=boundaryBounds(item.nodes);return resizeRectangularZone(item,id==='width'?value:bounds.width,id==='height'?value:bounds.height)}}))
   }
   if(item.assetType==='text')fields.push(property('text','Text','textarea'),length('fontSize','Text size (m)',1,{min:.05,get:item=>item.fontSize??.3}),colour('color','Colour'),opacity('opacity'))
-  if(item.assetType==='image'){
-    for(const axis of ['width','height'])fields.push(length(axis,axis==='width'?'Width (m)':'Height (m)',1,{min:.05,set:(item,value)=>{
-      const ratio=item.aspectRatio||item.width/item.height
-      return {...item,[axis]:value,...((item.lockAspect??true)?axis==='width'?{height:value/ratio}:{width:value*ratio}:{})}
-    }}))
-    fields.push(flag('lockAspect','Lock aspect ratio',true,{set:(item,value)=>({...item,lockAspect:value,aspectRatio:item.width/item.height})}),opacity('opacity'))
-  }
+  if(item.assetType==='image'){fields.push(length('width','Width (m)',1,{min:.01}),length('height','Height (m)',1,{min:.01}),rotation());imageProperties(fields)}
   if(item.assetType==='line'){
     fields.push(length('length','Line length (m)',1,{min:.01,max:1000}),rotation(),colour('color','Colour'))
     if(item.type==='curtain')fields.push(flag('collision','Collision',true,{get:item=>item.collisionEnabled!==false,set:(item,value)=>({...item,collisionEnabled:value})}),scalar('thickness','Thickness (mm)',.02,{type:'range',min:.001,max:.2,step:.001,scale:1000}),opacity('opacity'))

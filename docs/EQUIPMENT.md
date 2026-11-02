@@ -20,11 +20,13 @@ Save useful artwork as a custom shape for later reuse.
 
 ## Image layers
 
-Choose **Image** and upload PNG, JPEG, WebP, GIF or AVIF. Equipment images are normal artwork layers; there is no separate equipment reference-image tool. Stage backgrounds remain part of stage authoring.
+Choose **Image** and upload PNG, JPEG, WebP, GIF or AVIF. Equipment images are normal artwork layers; there is no separate equipment reference-image tool. The stage builder offers the same **Image** controls.
 
-Set image position, full width/height, rotation and opacity. Crop Left/Right/Top/Bottom are percentages of the full image. Crop trims the visible edges inward, retaining the image's original scale and position. Selection bounds and resize handles follow the cropped edges. Opposing crop values are limited to keep a visible area.
+New images keep their original aspect ratio and fit within the canvas. **Lock aspect ratio** starts on and applies to size fields and corner handles; turn it off to resize width and height independently. Set position, full width/height, whole-degree rotation and opacity. Images can be moved outside the canvas without boundary or collision blocking.
 
-On save, embedded images are reduced to **one pixel per centimetre of their full placed size**. A 500 × 500 image placed at 1 m × 1 m becomes 100 × 100. Cropping half its width leaves 50 visible pixels at the same scale. Smaller sources are not enlarged; transparency is preserved. Both editor data and exported equipment artwork store the resized image.
+Crop Left/Right/Top/Bottom are percentages of the full image. Crop previews trim the visible edges without stretching or moving the picture. The dashed selection outline and resize handles stay at the full image border until saving. Ctrl-drag a frame edge to crop, or enter crop percentages. Opposing values are limited to retain a visible area.
+
+On save, the crop and any pixels outside the rectangular canvas are trimmed from the stored bitmap, then the result is reduced to **one pixel per centimetre of its remaining placed size**. Rotated images and images inside scaled artwork are clipped in canvas coordinates. A 500 × 500 image placed at 1 m × 1 m becomes 100 × 100. Cropping half its width saves a 50-pixel-wide bitmap at the same scale. Smaller sources are not enlarged; transparency is preserved. Both editor data and exported artwork store the same prepared image. Crop values reset to zero and the editing frame updates to the saved image; Undo can recover the pre-save frame while you remain in the editor. Images entirely outside the canvas are omitted. Keep at least one artwork layer inside when saving equipment.
 
 Images must be smaller than 12 MB on upload. Use a clear static image or vector artwork for the best printed result.
 

@@ -1,5 +1,4 @@
 import {wholeDegrees} from '../rotation-angle.js'
-import {imageBounds} from '../image-layer.js'
 export const objectPivot = (item) => item.type === 'tripod'
   ? { x: Math.sqrt(3) / 2 * (item.legRadius ?? item.width / Math.sqrt(3)), y: item.legRadius ?? item.width / Math.sqrt(3) }
   : { x: item.width / 2, y: item.height / 2 };
@@ -34,7 +33,7 @@ export function rotateObjects(items, center, degrees) {
 export function rotatedBounds(items) {
   const points = items.flatMap(item => {
     const pivot = objectPivot(item), angle = (item.rotation || 0) * Math.PI / 180;
-    const bounds=item.type==='image'?imageBounds(item):{x:0,y:0,width:item.width,height:item.height}
+    const bounds={x:0,y:0,width:item.width,height:item.height}
     return [[bounds.x,bounds.y],[bounds.x+bounds.width,bounds.y],[bounds.x,bounds.y+bounds.height],[bounds.x+bounds.width,bounds.y+bounds.height]].map(([x, y]) => ({
       x: item.x + pivot.x + (x - pivot.x) * Math.cos(angle) - (y - pivot.y) * Math.sin(angle),
       y: item.y + pivot.y + (x - pivot.x) * Math.sin(angle) + (y - pivot.y) * Math.cos(angle),

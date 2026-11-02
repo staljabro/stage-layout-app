@@ -679,3 +679,24 @@ test('client layouts retain independent installed part rotations and decimal dec
   assert.deepEqual((await call('/stages/'+source.id)).data.data.fixedEquipment[0].controls,{arm:{rotation:10}})
   assert.equal((await call('/layout-links/'+second.guestToken,'GET',{},null)).data.data.stage.fixedEquipmentControls,undefined)
 })
+
+
+test('stage image layers survive source versions, previews, client layouts and public approval without exposing editor data',async t=>{
+  const {call,users}=await fixture(t),image={id:'stage-image',type:'image',name:'Floor plan',x:1,y:1,width:2,height:1,rotation:20,lockAspect:true,aspectRatio:2,crop:{left:0,right:0,top:0,bottom:0},dataUrl:'data:image/png;base64,iVBORw0KGgo=',visible:true,toggleable:true}
+  const source=(await call('/stages','POST',{data:{...stage,images:[image]}})).data
+  assert.deepEqual(source.data.images[0],image)
+  assert.equal((await call('/stages')).data.find(row=>row.id===source.id).preview.images[0].dataUrl,image.dataUrl)
+  const invite=(await call('/stages/'+source.id+'/invitation','POST',{})).data
+  const layout=(await call('/stage-invitations/'+invite.token,'POST',{name:'Images',registrationKey:'3'.repeat(32)},null)).data
+  const client=(await call('/layout-links/'+layout.guestToken,'GET',{},null)).data
+  assert.deepEqual(client.data.assetSnapshots.stage.images,[image]);assert.equal(client.data.assetSnapshots.stage.editor,undefined)
+  const changed=structuredClone(client.data);changed.assetSnapshots.stage.images=[]
+  const save=await call('/layout-links/'+layout.guestToken,'PUT',{data:changed,revision:client.revision},null)
+  assert.equal(save.status,200,save.data.error)
+  assert.deepEqual((await call('/layout-links/'+layout.guestToken,'GET',{},null)).data.data.assetSnapshots.stage.images,[image])
+  await call('/stages/'+source.id+'/submit','POST',{version:1})
+  const proposal=(await call('/stage-submissions','GET',{},users.admin)).data[0]
+  assert.equal((await call('/stage-submissions/'+proposal.id,'POST',{revision:proposal.revision,action:'approve'},users.admin)).status,200)
+  assert.deepEqual((await call('/public-stages')).data[0].preview.images,[image])
+  for(const images of ['invalid',[null],[{...image,dataUrl:'data:image/svg+xml;base64,PHN2Zz4='}],[{...image,width:0}]])assert.equal((await call('/stages','POST',{data:{...stage,images}})).status,400)
+})

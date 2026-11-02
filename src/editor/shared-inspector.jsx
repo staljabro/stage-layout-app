@@ -27,8 +27,8 @@ function SharedField({field,onChange,disabled}) {
   return <label className="field shared-field" data-property={field.id}>{label}{field.mixed?<small className="shared-mixed">Mixed</small>:field.type==='range'?<span>{formatted}{field.suffix||''}</span>:null}{control}</label>
 }
 
-export function SharedInspector({items,context,onChange,unit='cm'}) {
-  if(items.length<2)return null
+export function SharedInspector({items,context,onChange,unit='cm',allowSingle=false}) {
+  if(items.length<(allowSingle?1:2))return null
   const fields=sharedProperties(items,context,unit),locked=items.some(item=>item.locked||item.editorLocked),key=items.map(item=>item.id).join(',')
-  return <section className="shared-inspector"><h4>Shared controls</h4><p className="handle-help">Changes apply to every selected item. Mixed means the selected values differ.</p>{locked&&<p className="handle-help">Unlock selected layers to change their shared properties.</p>}{fields.map(field=><SharedField key={key+':'+field.id} field={field} disabled={locked&&!['locked','editorLocked','visible','editorVisible'].includes(field.id)} onChange={value=>onChange(field,value)}/>)}</section>
+  return <section className="shared-inspector"><h4>{allowSingle?'Image':'Shared controls'}</h4><p className="handle-help">{allowSingle?'Crop previews keep the full image frame. Save to trim cropped edges and anything outside the canvas, then scale to 1 pixel per cm. Ctrl-drag a frame edge to crop.':'Changes apply to every selected item. Mixed means the selected values differ.'}</p>{locked&&<p className="handle-help">Unlock selected layers to change their shared properties.</p>}{fields.map(field=><SharedField key={key+':'+field.id} field={field} disabled={locked&&!['locked','editorLocked','visible','editorVisible'].includes(field.id)} onChange={value=>onChange(field,value)}/>)}</section>
 }

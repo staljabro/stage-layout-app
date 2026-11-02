@@ -3,6 +3,7 @@ import {uid,token,fail,manager} from './account-store.mjs'
 import {assetSnapshot,pinProject} from '../src/project-snapshots.js'
 import {stageSpace,projectFile,resolveProject} from '../src/project-file.js'
 import {sampleStageBoundary} from '../src/stage-geometry.js'
+import {stageImages,validImageDataUrl} from '../src/image-layer.js'
 import {normaliseCurtain} from '../src/stage-curtain.js'
 import {validFixedEquipment} from '../src/stage-equipment.js'
 import {isEquipmentItem} from './library-membership.mjs'
@@ -96,11 +97,17 @@ export function createWorkspaceModel(store) {
     if(!Array.isArray(input.boundary?.nodes)||input.boundary.nodes.length<3||input.boundary.nodes.length>5000||input.boundary.nodes.some(node=>!Number.isFinite(node.x)||!Number.isFinite(node.y)))fail(400,'A stage requires a valid boundary')
     if(!validFixedEquipment(input.fixedEquipment))fail(400,'Invalid installed equipment')
     if(input.curtains!=null&&(!Array.isArray(input.curtains)||input.curtains.length>200||input.curtains.some(line=>!line||typeof line.id!=='string'||![line.x,line.y,line.length].every(Number.isFinite)||line.length<=0||line.length>1000)||new Set(input.curtains.map(line=>line.id)).size!==input.curtains.length))fail(400,'Invalid curtains')
+    const imageInput=input.images??input.editor?.referenceImages??[]
+    if(!Array.isArray(imageInput)||imageInput.some(image=>!image||typeof image!=='object'))fail(400,'Invalid stage images')
+    const images=stageImages(input)
+    if(images.length>500||images.some(image=>!image||typeof image.id!=='string'||!validImageDataUrl(image.dataUrl)||!['x','y','width','height'].every(key=>Number.isFinite(image[key]))||image.width<=0||image.height<=0)||new Set(images.map(image=>image.id)).size!==images.length)fail(400,'Invalid stage images')
     const available=input.availableEquipment||[]
     if(!Array.isArray(available)||new Set(available.map(item=>item.assetId)).size!==available.length)fail(400,'Invalid available equipment')
     const previous=get('SELECT data FROM wf_stages WHERE id=?',id),retained=new Map((retainedData?.availableEquipmentSnapshots||(previous?JSON.parse(previous.data).availableEquipmentSnapshots||[]:[])).map(item=>[item.id,item]))
     const snapshots=available.map(entry=>{const row=asset('items',entry.assetId),item=canReadEquipment(row,user)?parsed(row):retained.get(entry.assetId);if(entry.quantity!=null&&(!Number.isSafeInteger(entry.quantity)||entry.quantity<0)||!item||!isEquipmentItem(item))fail(400,'Available stock must use equipment you can access with non-negative whole quantities or blank quantities');return equipmentSnapshot(item)})
     const result={...input,id,label:label(input.label),profiles:[],collisionBoundary:sampleStageBoundary(input.boundary.nodes),availableEquipment:available,availableEquipmentSnapshots:snapshots}
+    if(input.images||images.length)result.images=images
+    if(result.editor){result.editor={...result.editor};delete result.editor.referenceImages;delete result.editor.referenceImage}
     if(input.curtains)result.curtains=input.curtains.map(normaliseCurtain)
     for(const key of ['ownerId','shareToken','shareEquipmentIds','layoutEquipment','organisationIds','visibility','personal'])delete result[key]
     return result

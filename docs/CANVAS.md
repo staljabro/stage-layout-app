@@ -26,9 +26,15 @@ New curtains default to black with **20 mm thickness**. Use **Colour**, the **Th
 
 **Curtain collision** in the inspector starts enabled. Turn it off to keep the artwork visible while letting equipment pass through. Selecting an enabled curtain shows a dotted centre line along its collision boundary. Equipment collides with that straight line, rather than the decorative wave, and can slide along it. Hiding a curtain or its group/folder also removes its collision; opacity alone does not. Global collision checks and per-item collision overrides still apply. The guide and endpoint handles are excluded from PDFs and client editing.
 
-Enable **Toggleable in Stageplot** on a curtain, zone or text label to let layout users show or hide it. A stage group can instead expose one named toggle for its zones, text and curtains. In a layout, these controls appear in the inspector under **Stage parts**, even with no equipment selected. Choices save with that layout, affect previews and PDF exports, and leave the source stage and other layouts unchanged. Hidden zones and curtains stop blocking equipment. Stage-author visibility, group eyes and folder eyes still apply.
+Enable **Toggleable in Stageplot** on a curtain, zone or text label to let layout users show or hide it. A stage group can instead expose one named toggle for its zones, text, curtains and images. In a layout, these controls appear in the inspector under **Stage parts**, even with no equipment selected. Choices save with that layout, affect previews and PDF exports, and leave the source stage and other layouts unchanged. Hidden zones and curtains stop blocking equipment. Stage-author visibility, group eyes and folder eyes still apply.
 
 Curtains belong to the source stage. They appear in stage/layout previews, client layouts and canvas PDF exports. Visitors can use the visibility choices enabled by the stage author; their geometry and styles stay locked. They do not consume equipment stock or add equipment-list rows.
+
+## Stage images
+
+Choose **Image** in the stage toolbar. Images use the same placement, crop, rotation, opacity and default-on aspect lock as equipment images. The dashed frame stays at the full image border while you preview crop changes. Move images outside the canvas freely; they do not participate in collision blocking. Saving trims crop settings and anything outside the rectangular canvas, then scales the remaining bitmap to one pixel per centimetre without enlarging small sources.
+
+Stage images participate in layers, groups, folders, eyes and locks. Mark an image **Toggleable in Stageplot** to offer a per-layout visibility control. Saved stage images appear in library previews, shared/client layouts and PDFs; their geometry stays locked for layout users. Existing stage backgrounds load through the same image controls.
 
 ## Installed and movable equipment
 

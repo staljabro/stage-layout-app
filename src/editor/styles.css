@@ -349,3 +349,6 @@
 .design-editor-scope .canvas-organisation-branding{flex:none;padding:6px 20px;background:#fff;border-bottom:1px solid #dce2d6}.design-editor-scope .canvas-organisation-branding .organisation-branding{margin:0;font-size:12px}.design-editor-scope .canvas-organisation-branding img{max-width:140px;max-height:44px}
 
 .design-editor-scope .canvas-library-section .custom-tool svg { width: 60px; height: 38px; overflow: visible; }
+
+.selection.image-selection { stroke: #3886b8; stroke-width: 1.5px; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
+@media print { .image-selection { display: none !important; } }

@@ -66,7 +66,7 @@ Workbench equipment imports/saves remove legacy `editor.advancedShapeRole` class
 
 Component IDs remain stable on rename/reorder. Components default on; explicit false values and notes survive serialization. Enabled requirements are reported under their parent without consuming separate inventory stock.
 
-Image crops inset visible bounds without stretching. Image save preparation downsizes full images to one pixel per centimetre, including effective compound scaling, and replaces data in both artwork and editor copies.
+Image imports fit both axes proportionally and default to locked aspect ratio. Equipment and stage images share placement, crop, rotation and opacity controls, retaining a dashed full-image editing frame. Images can extend outside the canvas without collision blocking. Save preparation bakes crop settings and clips out-of-canvas pixels (including rotated and nested artwork), then downsizes the remaining bitmap to one pixel per centimetre without upscaling. Geometry is adjusted to preserve visible placement, and editor/runtime copies share the prepared bitmap. Stage images are top-level source artwork preserved in previews, shared layouts and PDFs.
 
 Groups/folders have independent collapse and visibility overrides. Hidden equipment remains in inventory calculations and reports.
 

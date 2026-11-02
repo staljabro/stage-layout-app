@@ -52,9 +52,9 @@ Save a stage version after changing availability. Existing layouts keep their so
 
 Equipment width/height describe the full image. Crop percentages trim edges and do not resize the remaining picture into the full frame.
 
-Changing width and height independently changes the image's proportions. Saving lowers resolution to one pixel per centimetre; very small input images cannot gain detail by being enlarged.
+New images retain their source aspect ratio. Keep **Lock aspect ratio** enabled to preserve proportions when resizing. The dashed frame remains at the full image border during crop previews. Saving bakes crop settings and removes pixels outside the rectangular canvas, then reduces the image to one pixel per centimetre of the remaining size. Crop fields reset to zero. Very small sources are not enlarged.
 
-Use the Image tool for equipment artwork. Background/reference images are stage-authoring tools.
+Use **Image** in either equipment design or stage building. Saved stage images also appear in library previews, shared layouts and PDF exports.
 
 ## Components or notes are missing from a report
 
