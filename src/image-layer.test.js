@@ -10,11 +10,11 @@ test('equipment image layers accept safe raster data and constrain crop edges',(
   assert.equal(crop.left,.8);assert.ok(Math.abs(crop.right-.19)<1e-9);assert.equal(crop.top,0);assert.equal(crop.bottom,.95)
 })
 
-test('saved image resolution follows centimetres and stays constant when edges are cropped',()=>{
-  assert.deepEqual(imagePixelSize({width:1,height:1}),{width:100,height:100})
-  assert.deepEqual(imagePixelSize({width:.07,height:.14}),{width:7,height:14})
-  assert.deepEqual(imagePixelSize({width:1,height:.5,crop:{left:.25,right:.25}}),{width:100,height:50})
-  assert.deepEqual(imagePixelSize({width:2,height:1},{x:.5,y:2}),{width:100,height:200})
+test('saved image resolution targets one pixel per 2 mm before trimming, including scaled artwork',()=>{
+  assert.deepEqual(imagePixelSize({width:1,height:1}),{width:500,height:500})
+  assert.deepEqual(imagePixelSize({width:.07,height:.14}),{width:35,height:70})
+  assert.deepEqual(imagePixelSize({width:1,height:.5,crop:{left:.25,right:.25}}),{width:500,height:250})
+  assert.deepEqual(imagePixelSize({width:2,height:1},{x:.5,y:2}),{width:500,height:1000})
   assert.deepEqual(imagePixelSize({width:.001,height:.001}),{width:1,height:1})
 })
 

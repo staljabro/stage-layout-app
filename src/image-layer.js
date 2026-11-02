@@ -62,9 +62,10 @@ export function imageSavePlan(shape,canvas,parent=identityTransform) {
   return {polygon,bounds:{x,y,width,height},baked,rectangular:Math.abs(area-width*height)<1e-9,trimmed:Math.abs(x)>1e-9||Math.abs(y)>1e-9||Math.abs(width-shape.width)>1e-9||Math.abs(height-shape.height)>1e-9||Math.abs(area-width*height)>1e-9}
 }
 
-// Full-frame target resolution before save-time cropping and canvas clipping.
+// 1 pixel per 2 mm. Full-frame target before cropping and canvas clipping.
+export const IMAGE_PIXELS_PER_METRE=500
 export function imagePixelSize(shape,scale={x:1,y:1}) {
-  return {width:Math.max(1,Math.round(shape.width*scale.x*100)),height:Math.max(1,Math.round(shape.height*scale.y*100))}
+  return {width:Math.max(1,Math.round(shape.width*scale.x*IMAGE_PIXELS_PER_METRE)),height:Math.max(1,Math.round(shape.height*scale.y*IMAGE_PIXELS_PER_METRE))}
 }
 
 export function resizeCroppedImage(shape,handle,dx,dy,snap=value=>value) {

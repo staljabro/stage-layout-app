@@ -38,7 +38,7 @@ Choose **Create equipment** from Equipment or the canvas library drawer. Give it
 
 Choose **Save equipment**. It stays private unless you select organisations or submit it for public review. Return to the stage/layout and restore local work if offered.
 
-Images keep their original aspect ratio, with **Lock aspect ratio** on by default. Crop previews trim edges without stretching and keep the full dashed frame. Images can extend outside the canvas; saving trims cropped/off-canvas pixels and scales the remaining image to one pixel per centimetre. The stage builder uses the same image controls. Components are enabled by default when equipment is placed. [Equipment guide](EQUIPMENT.md).
+Images keep their original aspect ratio, with **Lock aspect ratio** on by default. Crop previews trim edges without stretching and keep the full dashed frame. Images can extend outside the canvas; saving trims cropped/off-canvas pixels and scales the remaining image to one pixel per 2 mm. The stage builder uses the same image controls. Components are enabled by default when equipment is placed. [Equipment guide](EQUIPMENT.md).
 
 ## 5. Create a layout
 

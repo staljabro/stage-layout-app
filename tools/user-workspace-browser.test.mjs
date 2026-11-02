@@ -73,8 +73,8 @@ test('user workspace connects private equipment, public review, stage invitation
     await evaluate("Array.from(document.querySelectorAll('button')).find(button=>button.textContent.startsWith('Shape ')).click()");await evaluate("Array.from(document.querySelectorAll('.creation-popover button')).find(button=>button.textContent.includes('Rectangle')).click()")
     assert.equal(await evaluate("Array.from(document.querySelectorAll('label.collision-toggle')).find(label=>label.textContent.includes('Physical collision shape')).querySelector('input').checked"),false,'new artwork layers default to collision off')
     await evaluate(`(async()=>{
-      const canvas=document.createElement('canvas');canvas.width=500;canvas.height=500;
-      const context=canvas.getContext('2d');context.fillStyle='red';context.fillRect(0,0,250,500);context.fillStyle='blue';context.fillRect(250,0,250,500);context.clearRect(0,0,100,100);
+      const canvas=document.createElement('canvas');canvas.width=1000;canvas.height=1000;
+      const context=canvas.getContext('2d');context.fillStyle='red';context.fillRect(0,0,500,1000);context.fillStyle='blue';context.fillRect(500,0,500,1000);context.clearRect(0,0,200,200);
       const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png')),files=new DataTransfer();files.items.add(new File([blob],'crop-test.png',{type:'image/png'}));
       const input=document.querySelector('input[accept="image/png,image/jpeg,image/webp,image/gif,image/avif"]');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));
     })()`)
@@ -87,7 +87,7 @@ test('user workspace connects private equipment, public review, stage invitation
       const repeat=await prepareEquipmentImages(result);
       return {width:image.naturalWidth,height:image.naturalHeight,alpha:context.getImageData(0,0,1,1).data[3],smaller:result.shapes[0].dataUrl.length<dataUrl.length,sameEditorImage:result.editor.layers[0].dataUrl===result.shapes[0].dataUrl,originalUnchanged:original.shapes[0].dataUrl===dataUrl,repeatUnchanged:repeat.shapes[0].dataUrl===result.shapes[0].dataUrl};
     })()`)
-    assert.deepEqual(resizing,{width:100,height:100,alpha:0,smaller:true,sameEditorImage:true,originalUnchanged:true,repeatUnchanged:true},'500px artwork at 1m saves at 100px, preserving transparency without retaining the original or re-encoding on later saves')
+    assert.deepEqual(resizing,{width:500,height:500,alpha:0,smaller:true,sameEditorImage:true,originalUnchanged:true,repeatUnchanged:true},'1000px artwork at 1m saves at 500px, preserving transparency without retaining the original or re-encoding on later saves')
     const imageTransform=await evaluate("['a','d','e','f'].map(key=>document.querySelector('.shape-layer .shape-artwork image').getScreenCTM()[key])")
     const imageFrame=await evaluate("(()=>{const bounds=document.querySelector('.image-shape-hit').getBoundingClientRect();return {x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height}})()")
     await fill('input[aria-label="Crop left (%)"]','25')
@@ -121,7 +121,7 @@ test('user workspace connects private equipment, public review, stage invitation
     assert.deepEqual(savedImage.crop,{left:0,right:0,top:0,bottom:0},'saving bakes the crop into the image and clears crop percentages')
     assert.deepEqual(JSON.parse(privateAsset.data).editor.layers.find(shape=>shape.type==='image').crop,savedImage.crop)
     const savedResolution=await evaluate(`(async()=>{const image=new Image();image.src=${JSON.stringify(savedImage.dataUrl)};await image.decode();return [image.naturalWidth,image.naturalHeight]})()`)
-    assert.deepEqual(savedResolution,[40,40],'saving crops and scales to 1px per centimetre of the remaining image')
+    assert.deepEqual(savedResolution,[200,200],'saving crops and scales to 1px per 2 mm of the remaining image')
     assert.equal(JSON.parse(privateAsset.data).editor.layers.find(shape=>shape.type==='image').dataUrl,savedImage.dataUrl,'editor layers also store the resized image')
     await reload();await waitFor("document.querySelector('.shape-layer .shape-artwork svg')")
     assert.deepEqual(await evaluate("['x','y','width','height'].map(key=>document.querySelector('.shape-layer .shape-artwork svg').viewBox.baseVal[key])"),[0,0,1,1],'saved equipment uses a fully cropped bitmap after reopening')
@@ -744,7 +744,7 @@ test('user workspace connects private equipment, public review, stage invitation
     assert.deepEqual(stageWithImage.images[0].crop,{left:0,right:0,top:0,bottom:0})
     const rasterCheck=await evaluate(`(async()=>{const item=${JSON.stringify(stageWithImage.images[0])},image=new Image();image.src=item.dataUrl;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;let outside=0,opaque=0;const angle=item.rotation*Math.PI/180;for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){const lx=(x+.5)/canvas.width*item.width-item.width/2,ly=(y+.5)/canvas.height*item.height-item.height/2,wx=item.x+item.width/2+lx*Math.cos(angle)-ly*Math.sin(angle),wy=item.y+item.height/2+lx*Math.sin(angle)+ly*Math.cos(angle);if(wx<-.02||wx>2.02||wy<-.02||wy>1.02){outside++;if(pixels[(y*canvas.width+x)*4+3])opaque++}}return {outside,opaque,width:canvas.width,height:canvas.height}})()`)
     assert.ok(rasterCheck.outside>0);assert.equal(rasterCheck.opaque,0,'rotated image pixels outside the stage canvas are removed')
-    assert.equal(rasterCheck.width,Math.round(stageWithImage.images[0].width*100))
+    assert.equal(rasterCheck.width,Math.round(stageWithImage.images[0].width*500))
     assert.equal(await evaluate(`(async()=>{const {prepareStageImages}=await import('/src/prepare-equipment-images.js');const original=${JSON.stringify(stageWithImage)},again=await prepareStageImages(original);return again.images[0].dataUrl===original.images[0].dataUrl})()`),true,'later saves retain the already-clipped bitmap without re-encoding its edges')
     await reload();await waitFor("document.querySelector('.ordered-stage-image image')")
     const imageInvite=(await workspace('/stages/'+imageStage.id+'/invitation','POST',{},member)).data,imageClient=(await workspace('/stage-invitations/'+imageInvite.token,'POST',{name:'Stage image client',registrationKey:'2'.repeat(32)},null)).data

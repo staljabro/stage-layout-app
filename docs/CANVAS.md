@@ -32,7 +32,7 @@ Curtains belong to the source stage. They appear in stage/layout previews, clien
 
 ## Stage images
 
-Choose **Image** in the stage toolbar. Images use the same placement, crop, rotation, opacity and default-on aspect lock as equipment images. The dashed frame stays at the full image border while you preview crop changes. Move images outside the canvas freely; they do not participate in collision blocking. Saving trims crop settings and anything outside the rectangular canvas, then scales the remaining bitmap to one pixel per centimetre without enlarging small sources.
+Choose **Image** in the stage toolbar. Images use the same placement, crop, rotation, opacity and default-on aspect lock as equipment images. The dashed frame stays at the full image border while you preview crop changes. Move images outside the canvas freely; they do not participate in collision blocking. Saving trims crop settings and anything outside the rectangular canvas, then scales the remaining bitmap to one pixel per 2 mm without enlarging small sources.
 
 Stage images participate in layers, groups, folders, eyes and locks. Mark an image **Toggleable in Stageplot** to offer a per-layout visibility control. Saved stage images appear in library previews, shared/client layouts and PDFs; their geometry stays locked for layout users. Existing stage backgrounds load through the same image controls.
 

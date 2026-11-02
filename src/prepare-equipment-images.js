@@ -1,4 +1,4 @@
-import {validImageDataUrl,imageSavePlan,identityTransform,composeImageTransform,imageTransform,stageImages} from './image-layer.js'
+import {validImageDataUrl,imagePixelSize,imageSavePlan,identityTransform,composeImageTransform,imageTransform,stageImages} from './image-layer.js'
 
 function imagePreparation(canvas) {
   const decoded=new Map(),resized=new Map()
@@ -15,8 +15,9 @@ function imagePreparation(canvas) {
     if(!plan)return null
     const image=await load(shape.dataUrl),{bounds,baked,polygon}=plan
     const scale={x:Math.hypot(parent.a,parent.b),y:Math.hypot(parent.c,parent.d)}
-    const width=Math.max(1,Math.min(Math.round(bounds.width*scale.x*100),Math.round(image.naturalWidth*bounds.width/shape.width)))
-    const height=Math.max(1,Math.min(Math.round(bounds.height*scale.y*100),Math.round(image.naturalHeight*bounds.height/shape.height)))
+    const targetSize=imagePixelSize(bounds,scale)
+    const width=Math.max(1,Math.min(targetSize.width,Math.round(image.naturalWidth*bounds.width/shape.width)))
+    const height=Math.max(1,Math.min(targetSize.height,Math.round(image.naturalHeight*bounds.height/shape.height)))
     if((!plan.trimmed||shape.savedCanvasClip===clipKey(shape,parent))&&width===image.naturalWidth&&height===image.naturalHeight)return shape
     const key=JSON.stringify([shape.dataUrl,shape.width,shape.height,bounds,polygon.map(p=>[p.lx,p.ly]),width,height])
     if(!resized.has(key))resized.set(key,new Promise((resolve,reject)=>{

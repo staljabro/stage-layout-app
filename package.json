@@ -1,7 +1,7 @@
 {
   "name": "stage-layout-app",
   "private": true,
-  "version": "0.4.4-alpha.0",
+  "version": "0.4.5-alpha.0",
   "type": "module",
   "scripts": {
     "setup": "npm install && npm install --prefix tools/svg-shape-studio",
