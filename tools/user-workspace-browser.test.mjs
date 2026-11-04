@@ -721,6 +721,17 @@ test('user workspace connects private equipment, public review, stage invitation
     const imageStage=(await workspace('/stages','POST',{data:{schema:'stageplot-stage@1',label:'Stage image test',dimensions:{widthMeters:2,depthMeters:1},boundary:{nodes:[{x:0,y:0},{x:2,y:0},{x:2,y:1},{x:0,y:1}]},fixedEquipment:[],zones:[]}},member)).data
     await call('Page.navigate',{url:base+'/workspace-fixture?stage='+imageStage.id})
     await waitFor("document.querySelector('.unified-canvas.stage-canvas')")
+    await click('Drapes')
+    await waitFor("document.querySelector('.placed-equipment .drapes-wave')")
+    assert.equal(await evaluate("document.querySelectorAll('.placed-equipment').length"),1,'fixed equipment wider than the stage can be placed with collision checks enabled')
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.placed-equipment .drapes-wave')).vectorEffect"),'none','drape thickness scales from metres with the canvas')
+    for(const end of ['end','start']){
+      const endpoints=await evaluate(`(()=>{const position=end=>{const node=document.querySelector('[aria-label="Drapes '+end+' endpoint"]'),p=new DOMPoint(Number(node.getAttribute('cx')),0).matrixTransform(node.getScreenCTM());return {x:p.x,y:p.y}};return {moving:position('${end}'),fixed:position('${end==='end'?'start':'end'}')}})()`)
+      await dragPointer(endpoints.moving,{x:endpoints.moving.x-37,y:endpoints.moving.y+53})
+      const fixed=await evaluate(`(()=>{const node=document.querySelector('[aria-label="Drapes ${end==='end'?'start':'end'} endpoint"]'),p=new DOMPoint(Number(node.getAttribute('cx')),0).matrixTransform(node.getScreenCTM());return {x:p.x,y:p.y}})()`)
+      assert.ok(Math.hypot(fixed.x-endpoints.fixed.x,fixed.y-endpoints.fixed.y)<.01,'dragging either drape endpoint keeps the opposite endpoint fixed')
+    }
+    await click('Delete equipment')
     await uploadImage(800,200);await waitFor("document.querySelector('.ordered-stage-image .image-selection')")
     assert.equal(await evaluate("document.querySelector('[aria-label=\"Lock aspect ratio\"]').checked"),true)
     assert.ok(Math.abs(Number(await evaluate("document.querySelector('[aria-label=\"Width (m)\"]').value"))/Number(await evaluate("document.querySelector('[aria-label=\"Height (m)\"]').value"))-4)<1e-9)

@@ -78,7 +78,7 @@ export function CustomItemArtwork({ item }) {
     {item.showHeight !== false && <text x={item.widthMeters / 2} y={item.depthMeters / 2} fill={item.textColor} fillOpacity={item.textOpacity??1} stroke="none" fontSize={Math.min(.28, item.depthMeters * .32)} fontWeight="700" textAnchor="middle" dominantBaseline="middle">{item.heightMm}mm</text>}
   </svg>
   if (item.customType === 'text') return <svg style={{width:"100%",height:"100%"}} viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><g transform={`translate(${item.fontSize*.1} ${item.fontSize*.1})`}><TextArtwork item={{ ...item, width: item.widthMeters, height: item.depthMeters }} /></g></svg>
-  if(item.customType==='drapes')return <svg style={{width:'100%',height:'100%'}} viewBox={`0 ${-item.depthMeters/2} ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><path className="drapes-wave" d={curtainPath({length:item.widthMeters})} fill="none" stroke={item.color} strokeWidth={item.thickness} strokeOpacity={item.opacity??1} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/></svg>
+  if(item.customType==='drapes')return <svg style={{width:'100%',height:'100%'}} viewBox={`0 ${-item.depthMeters/2} ${item.widthMeters} ${item.depthMeters}`} aria-hidden="true"><path className="drapes-wave" d={curtainPath({length:item.widthMeters})} fill="none" stroke={item.color} strokeWidth={item.thickness} strokeOpacity={item.opacity??1} strokeLinecap="round" strokeLinejoin="round"/></svg>
   return null
 }
 

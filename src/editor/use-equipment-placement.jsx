@@ -40,7 +40,7 @@ export function useEquipmentPlacement({enabled,value,onChange:onEquipmentChange,
   const boundary=sampleStageBoundary(stage.boundary.nodes)
   const stageObstacles=[...(stage.zones||[]).filter(zone=>zone.solid&&stageAssetVisible(zone,stage.layerFolders||[])).map(zone=>sampleStageBoundary(zone.nodes)),...curtainCollisionLines(stage)]
   const obstacles=others=>[...others,...(visitor?stage.fixedEquipment||[]:[])].filter(equipmentVisible).map(item=>({...item,snapPoints:item.snapPoints||library.find(asset=>asset.id===item.assetId)?.snapPoints||(item.customType==='staging'?stagingSnapPoints(item.widthMeters,item.depthMeters):[])}))
-  const allowed=(candidate,others)=>!equipmentVisible(candidate)||candidate.collisionEnabled===false||!collisions||isItemInsideSpace(candidate,boundary)&&obstacles(others).every(other=>other.collisionEnabled===false||candidate.collisionEnabled===false||!itemsCollide(candidate,other))&&!stageObstacles.some(obstacle=>collisionPolygons(candidate).some(polygon=>polygonsIntersect(polygon,obstacle)))
+  const allowed=(candidate,others)=>!equipmentVisible(candidate)||candidate.collisionEnabled===false||!collisions||(!visitor||isItemInsideSpace(candidate,boundary))&&obstacles(others).every(other=>other.collisionEnabled===false||candidate.collisionEnabled===false||!itemsCollide(candidate,other))&&!stageObstacles.some(obstacle=>collisionPolygons(candidate).some(polygon=>polygonsIntersect(polygon,obstacle)))
   const stock=new Map((stage.availableEquipment||[]).map(item=>[item.assetId,item.quantity]))
   const trackStock=Boolean(organisationId||stock.size)
   const stockLibrary=library.map(item=>({...item,stockQuantity:stock.get(item.id)??(organisationId?item.stockQuantity??null:null)}))
@@ -81,7 +81,7 @@ export function useEquipmentPlacement({enabled,value,onChange:onEquipmentChange,
     if(valid(translate(dx,dy)))return translate(dx,dy)
     if(gridTarget&&valid(gridTarget))return gridTarget
     const rawTarget=translate(raw.dx,raw.dy);if(valid(rawTarget))return rawTarget
-    const polygons=[boundary,...stageObstacles,...obstacles(stationary).filter(item=>item.collisionEnabled!==false).flatMap(collisionPolygons)]
+    const polygons=[...(visitor?[boundary]:[]),...stageObstacles,...obstacles(stationary).filter(item=>item.collisionEnabled!==false).flatMap(collisionPolygons)]
     const directions=polygons.flatMap(polygon=>polygon.map((point,index)=>({x:polygon[(index+1)%polygon.length].x-point.x,y:polygon[(index+1)%polygon.length].y-point.y})))
     return dragPlacement(originals,dx,dy,valid,directions)
   }
@@ -107,7 +107,9 @@ export function useEquipmentPlacement({enabled,value,onChange:onEquipmentChange,
         const item=active.drapes,angle=(item.rotation||0)*Math.PI/180,half=item.widthMeters/2
         const startPoint={x:item.xMeters-Math.cos(angle)*half,y:item.yMeters-Math.sin(angle)*half},endPoint={x:item.xMeters+Math.cos(angle)*half,y:item.yMeters+Math.sin(angle)*half}
         const start=active.mode==='drapes-start'?p:startPoint,end=active.mode==='drapes-end'?p:endPoint,length=Math.max(.1,Math.hypot(end.x-start.x,end.y-start.y))
-        const changed=customDrapesItem({...item,xMeters:(start.x+end.x)/2,yMeters:(start.y+end.y)/2,widthMeters:length,rotation:wholeDegrees(Math.atan2(end.y-start.y,end.x-start.x)*180/Math.PI)})
+        const rotation=wholeDegrees(Math.atan2(end.y-start.y,end.x-start.x)*180/Math.PI),radians=rotation*Math.PI/180
+        const anchor=active.mode==='drapes-start'?endPoint:startPoint,direction=active.mode==='drapes-start'?-1:1
+        const changed=customDrapesItem({...item,xMeters:anchor.x+direction*Math.cos(radians)*length/2,yMeters:anchor.y+direction*Math.sin(radians)*length/2,widthMeters:length,rotation})
         updates=[changed]
       }else if(active.mode==='rotate'){
         const angle=Math.atan2(p.y-active.pivot.y,p.x-active.pivot.x),step=angle-active.angle
