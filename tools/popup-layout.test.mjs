@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {spawn} from 'node:child_process'
+import {launchBrowser} from './browser-launch.mjs'
 import {once} from 'node:events'
 import {existsSync} from 'node:fs'
-import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises'
+import {mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,dirname,resolve,basename} from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -50,16 +50,9 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
   let child,socket
   try {
     await server.listen()
-    child=spawn(browser,['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--remote-debugging-port=0','--user-data-dir='+directory,'about:blank'],{stdio:'ignore',windowsHide:true})
-    let launchError
-    child.on('error',error=>{launchError=error})
-    let port
-    for(let attempt=0;attempt<100;attempt++) {
-      if(launchError)throw launchError
-      if(child.exitCode!==null)throw new Error('Headless browser exited before startup')
-      try{port=(await readFile(join(directory,'DevToolsActivePort'),'utf8')).split('\n')[0];break}catch{await delay(100)}
-    }
-    assert.ok(port,'Headless browser did not start')
+    const launched=await launchBrowser(browser,directory)
+    child=launched.child
+    const port=launched.port
     const target=await (await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'})).json()
     socket=new WebSocket(target.webSocketDebuggerUrl)
     await once(socket,'open')

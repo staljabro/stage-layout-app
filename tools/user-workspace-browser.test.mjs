@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {spawn} from 'node:child_process'
+import {launchBrowser} from './browser-launch.mjs'
 import {once} from 'node:events'
 import {existsSync} from 'node:fs'
-import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises'
+import {mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve,dirname,basename} from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -35,10 +35,9 @@ test('user workspace connects private equipment, public review, stage invitation
   let child,socket
   try{
     await server.listen()
-    child=spawn(browser,['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--remote-debugging-port=0','--user-data-dir='+join(directory,'browser'),'about:blank'],{stdio:'ignore',windowsHide:true})
-    let port
-    for(let attempt=0;attempt<100;attempt++){try{port=(await readFile(join(directory,'browser','DevToolsActivePort'),'utf8')).split('\n')[0];break}catch{await delay(100)}}
-    assert.ok(port,'Headless browser started')
+    const launched=await launchBrowser(browser,join(directory,'browser'))
+    child=launched.child
+    const port=launched.port
     const target=await(await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'})).json()
     socket=new WebSocket(target.webSocketDebuggerUrl);await once(socket,'open')
     const pending=new Map(),browserErrors=[],nativeDialogs=[];let id=0,loadCount=0
