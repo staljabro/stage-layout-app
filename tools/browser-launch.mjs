@@ -1,8 +1,34 @@
 import {spawn} from 'node:child_process'
-import {once} from 'node:events'
 import {readFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import {setTimeout as delay} from 'node:timers/promises'
+
+const running=child=>child?.pid&&child.exitCode===null&&child.signalCode===null
+async function waitForExit(child,timeout) {
+  if(!running(child))return true
+  return new Promise(resolve=>{
+    const done=()=>{clearTimeout(timer);child.removeListener('exit',done);resolve(!running(child))}
+    const timer=setTimeout(done,timeout)
+    child.once('exit',done)
+  })
+}
+
+export async function stopBrowser(child,socket) {
+  try {
+    if(!running(child))return
+    if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:2147483647,method:'Browser.close'}))
+    else child.kill()
+    if(!await waitForExit(child,3000)){
+      child.kill('SIGKILL')
+      if(!await waitForExit(child,3000))throw new Error('Headless browser did not exit after SIGKILL')
+    }
+  }finally{
+    // Chromium descendants can retain stderr after the main process exits.
+    // Waiting for ChildProcess "close" can therefore hang indefinitely.
+    child?.stderr?.destroy()
+    socket?.close()
+  }
+}
 
 export async function launchBrowser(browser,profile,{timeout=30000}={}) {
   const child=spawn(browser,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe'],windowsHide:true})
@@ -22,9 +48,7 @@ export async function launchBrowser(browser,profile,{timeout=30000}={}) {
     }
     throw new Error(`Timed out after ${timeout}ms waiting for DevToolsActivePort`)
   }catch(error){
-    if(child.pid&&child.exitCode===null&&child.signalCode===null){
-      const closed=once(child,'close');child.kill('SIGKILL');await closed
-    }
+    await stopBrowser(child)
     throw new Error(`Could not start headless browser ${browser}: ${error.message}\n${stderr||'(no browser stderr)'}`,{cause:error})
   }
 }

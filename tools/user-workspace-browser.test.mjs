@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {launchBrowser} from './browser-launch.mjs'
+import {launchBrowser,stopBrowser} from './browser-launch.mjs'
 import {once} from 'node:events'
 import {existsSync} from 'node:fs'
 import {mkdtemp,rm,writeFile} from 'node:fs/promises'
@@ -760,8 +760,8 @@ test('user workspace connects private equipment, public review, stage invitation
     assert.deepEqual(nativeDialogs,[],'user workflows use app dialogs rather than browser dialogs')
 
   }finally{
-    if(child&&child.exitCode===null&&child.signalCode===null){const closed=once(child,'close');if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:2147483647,method:'Browser.close'}));else child.kill();const fallback=setTimeout(()=>child.kill('SIGKILL'),3000);try{await closed}finally{clearTimeout(fallback)}}
-    socket?.close();await server.close();store.db.close()
+    await stopBrowser(child,socket)
+    await server.close();store.db.close()
     assert.equal(dirname(resolve(directory)),resolve(tmpdir()));assert.ok(basename(directory).startsWith('stageplot-event-browser-'))
     await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100})
   }

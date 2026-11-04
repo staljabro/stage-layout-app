@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {launchBrowser} from './browser-launch.mjs'
+import {launchBrowser,stopBrowser} from './browser-launch.mjs'
 import {once} from 'node:events'
 import {existsSync} from 'node:fs'
 import {mkdtemp,rm,writeFile} from 'node:fs/promises'
@@ -231,16 +231,7 @@ test('library tabs, compact rows, review dialogs and owner controls work in both
     assert.equal(await evaluate("document.querySelector('#library-tab-reviews')"),null,'review-only navigation is not shown to users')
 
   }finally {
-    if(child&&child.exitCode===null&&child.signalCode===null) {
-      const closed=once(child,'close')
-      // Let Chromium flush and stop its profile writers before deleting files.
-      // Killing only its main process can leave those writers running on Linux.
-      if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({id:2147483647,method:'Browser.close'}))
-      else child.kill()
-      const fallback=setTimeout(()=>child.kill('SIGKILL'),3000)
-      try{await closed}finally{clearTimeout(fallback)}
-    }
-    socket?.close()
+    await stopBrowser(child,socket)
     await server.close()
     assert.equal(dirname(resolve(directory)),resolve(tmpdir()));assert.ok(basename(directory).startsWith('stageplot-popups-'))
     await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100})
