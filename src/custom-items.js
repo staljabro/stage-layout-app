@@ -27,7 +27,7 @@ export function customStagingItem(values = {}) {
     heightMm: Math.max(0, Math.round(finite(values.heightMm, 200))),
     showHeight: values.showHeight !== false,
     fill: values.fill || '#d6d2c5',
-    fillOpacity: finite(values.fillOpacity, .8),
+    fillOpacity: finite(values.fillOpacity, 1),
     line: values.line || '#25261f',
     lineOpacity: finite(values.lineOpacity, 1),
     sublineColor: values.sublineColor || '#85837c',
@@ -37,6 +37,12 @@ export function customStagingItem(values = {}) {
     collisionShapes: [{ type: 'rect', x: 0, y: 0, width: widthMeters, height: depthMeters }],
     snapPoints: stagingSnapPoints(widthMeters, depthMeters),
   }
+}
+
+export function customDrapesItem(values = {}) {
+  const widthMeters=Math.max(.1,finite(values.widthMeters,4)),thickness=Math.max(.001,Math.min(.2,finite(values.thickness,.02)))
+  const depthMeters=Math.max(.2,thickness+.1)
+  return {...values,customType:'drapes',label:values.label||'Drapes',widthMeters,depthMeters,thickness,color:/^#[\da-f]{6}$/i.test(values.color)?values.color:'#000000',opacity:Math.max(0,Math.min(1,finite(values.opacity,1))),collisionEnabled:values.collisionEnabled!==false,collisionShapes:[{type:'rect',x:0,y:(depthMeters-thickness)/2,width:widthMeters,height:thickness}],snapPoints:[{x:0,y:depthMeters/2},{x:widthMeters,y:depthMeters/2}]}
 }
 
 export function customTextItem(values = {}) {
@@ -71,6 +77,7 @@ export function customItemData(item) {
     italic: item.italic === true, fill: item.fill, lineSpacing:item.lineSpacing,
     widthMeters: item.widthMeters, depthMeters: item.depthMeters,
   }
+  if(item.customType==='drapes')return {type:'drapes',widthMeters:item.widthMeters,thickness:item.thickness,color:item.color,opacity:item.opacity}
   return null
 }
 
@@ -85,5 +92,6 @@ export function restoreCustomItem(placement, id) {
   }
   if (placement.custom?.type === 'staging') return customStagingItem({ ...placement.custom, ...common })
   if (placement.custom?.type === 'text') return customTextItem({ ...placement.custom, ...common })
+  if (placement.custom?.type === 'drapes') return customDrapesItem({ ...placement.custom, ...common })
   return null
 }

@@ -7,7 +7,7 @@ import { assetProfiles } from '../tools/library-membership.mjs';
 
 // Store only artwork, geometry and placement data, never library/editor metadata.
 export function fixedEquipmentSnapshot(item,id) {
-  const keys=['supplyOverride','supply','useExternal','snapPoints','equipmentGroup','equipmentFolder','labelOffset','components','componentState','textOpacity','assetId','label','widthMeters','depthMeters','xMeters','yMeters','rotation','shapes','collisionShapes','rotationParts','controls','partVisibility','collisionEnabled','showLabel','visible','customType','heightMm','showHeight','fill','fillOpacity','line','lineOpacity','sublineColor','textColor','text','fontSize','bold','italic'];
+  const keys=['layerStack','supplyOverride','supply','useExternal','snapPoints','equipmentGroup','equipmentFolder','labelOffset','components','componentState','textOpacity','assetId','label','widthMeters','depthMeters','xMeters','yMeters','rotation','shapes','collisionShapes','rotationParts','controls','partVisibility','collisionEnabled','showLabel','visible','customType','heightMm','showHeight','fill','fillOpacity','line','lineOpacity','sublineColor','textColor','text','fontSize','bold','italic','thickness','color','opacity'];
   return structuredClone(Object.fromEntries([['id',id],...keys.filter(key=>item[key]!==undefined).map(key=>[key,key==='rotation'?wholeDegrees(item[key]):key==='controls'?Object.fromEntries(Object.entries(item.controls).map(([id,value])=>[id,{...value,rotation:wholeDegrees(value.rotation)}])):item[key]])]));
 }
 
@@ -27,7 +27,7 @@ export function stageFromLayout(space,items,{id,label,profile='external'}) {
     zones:structuredClone((source?.zones || space.zones || []).filter(zone=>space.partVisibility?.[zone.id]!==false)),
     images:structuredClone(stageImages(source||{}).filter(image=>space.partVisibility?.[image.id]!==false)),
     textItems:structuredClone((source?.textItems || space.textItems || []).filter(item=>space.partVisibility?.[item.id]!==false)),
-    curtains:structuredClone((source?.curtains || space.curtains || []).filter(item=>space.partVisibility?.[item.id]!==false)),
+    curtains:[],
     fixedEquipment:[...existing,...items].map((item,index)=>fixedEquipmentSnapshot(item,`fixed-${index+1}`)),
   };
 }
@@ -42,7 +42,7 @@ export function validFixedEquipment(items) {
     return ['xMeters','yMeters','widthMeters','depthMeters'].every(key=>Number.isFinite(item[key]))
       && item.widthMeters>0 && item.depthMeters>0
       && (item.rotation===undefined||Number.isFinite(item.rotation))
-      && (item.customType==='staging'||item.customType==='text'||Array.isArray(item.shapes))
+      && (item.customType==='staging'||item.customType==='text'||item.customType==='drapes'||Array.isArray(item.shapes))
       && (item.collisionShapes===undefined||Array.isArray(item.collisionShapes));
   });
 }

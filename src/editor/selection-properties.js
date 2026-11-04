@@ -1,7 +1,7 @@
 import {wholeDegrees} from '../rotation-angle.js'
 import {equipmentRotationParts} from '../equipment-part-controls.js'
 import {normaliseCrop,resizeImageDimension} from '../image-layer.js'
-import {customStagingItem,customTextItem} from '../custom-items.js'
+import {customStagingItem,customTextItem,customDrapesItem} from '../custom-items.js'
 import {boundaryBounds,translateBoundaryNodes,resizeRectangularZone} from './stage-zone.js'
 import {normaliseComponents} from '../equipment-components.js'
 import {toggleableParts,setPart} from '../part-toggles.js'
@@ -67,6 +67,7 @@ export function placementProperties(item) {
   const source=fields.find(field=>field.id==='supplyOverride');source.get=item=>item.supplyOverride||(item.useExternal?'client':'auto');source.set=(item,value)=>({...item,supplyOverride:value,useExternal:value==='client'})
   if(item.customType==='staging')fields.push(length('widthMeters','Deck width (m)',1,{min:.1,step:.1}),length('depthMeters','Deck depth (m)',1,{min:.1,step:.1}),scalar('heightMm','Deck height (mm)',200,{min:0,step:1}),flag('showHeight','Show deck height',true),colour('fill','Fill colour','#d6d2c5'),colour('line','Deck line colour'),colour('textColor','Deck text colour'),opacity('fillOpacity','Fill opacity'),opacity('lineOpacity','Line opacity'),opacity('textOpacity','Text opacity'))
   if(item.customType==='text')fields.push(property('text','Text','textarea'),length('fontSize','Text size (m)',1,{min:.01,get:item=>item.fontSize??.3}),colour('fill','Fill colour'),flag('bold','Bold text'),flag('italic','Italic text'),scalar('lineSpacing','Line spacing',1.2,{min:.1,step:.1}))
+  if(item.customType==='drapes')fields.push(length('widthMeters','Drapes length (m)',1,{min:.1,step:.1}),scalar('thickness','Drapes thickness (mm)',.02,{min:.001,max:.2,step:.001,scale:1000}),colour('color','Drapes colour','#000000'),opacity('opacity'))
   for(const part of equipmentRotationParts(item)){
     const name=part.name||part.label||part.id
     fields.push(scalar('rotation-part:'+name,name,0,{
@@ -99,5 +100,5 @@ export function sharedProperties(items,context,unit='cm') {
 }
 
 export function normalisePlacement(item) {
-  return item.customType==='staging'?customStagingItem(item):item.customType==='text'?customTextItem(item):item
+  return item.customType==='staging'?customStagingItem(item):item.customType==='text'?customTextItem(item):item.customType==='drapes'?customDrapesItem(item):item
 }

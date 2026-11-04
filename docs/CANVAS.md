@@ -12,7 +12,7 @@ Select a zone or boundary node to edit it in the inspector. Shift-click an edge 
 
 Use the boundary lock, stage layer locks and eyes to protect or hide stage artwork. The boundary uses the same lock icon as other stage layers.
 
-**Save stage version** records a new source version. Existing layouts keep their previous source version until someone with permission deliberately applies an update.
+**Quicksave** records the current stage without a note. Use **Save version** when a short description such as “Added flown PA” will help collaborators. Existing layouts keep their previous source version until someone with permission deliberately applies an update. Internal version counters prevent conflicting saves but are not shown in normal workspace cards.
 
 The app Owner can choose **Use as template** on an accessible stage card, or restore an archived stage through **Import & restore**, to create an independent editable stage. The source remains unchanged and its sharing is not copied. [Stage templates and JSON imports](IMPORTS.md).
 
@@ -46,7 +46,7 @@ Optional quantities are blank for untracked, zero for none, or positive whole nu
 
 ## Arrange a layout
 
-Open a saved layout or choose **Create layout** on a stage card. Layout editing locks stage geometry and installed equipment. Stage layers starts collapsed; expand it to inspect source contents.
+Open a saved layout or choose **Create layout** on a stage card. Layout editing locks stage geometry and installed equipment. Locked source layers are omitted from the layout layer list. Layout changes autosave once per minute while dirty and make a best-effort final save when the editor closes. Use **Save with note** to create a named checkpoint; the latest useful note appears in the workspace and saved-history views.
 
 Click equipment in the bottom drawer or drag it onto the stage. Drag placed equipment to move it. The inspector provides coordinates, rotation, labels, named parts, components and supply source. Multiple selected items expose compatible shared controls even when their values differ.
 
@@ -78,7 +78,7 @@ Physical collision shapes are separate from visible artwork. Hiding an optional 
 
 ## Layers, groups and folders
 
-Stage layers and Equipment layers collapse independently. Drag rows to reorder the drawing stack. Group equipment that should move together; use folders to organise a larger list.
+Overhead Layers, Stage layers and Equipment layers collapse independently. In stage authoring, drag an image, zone, label, dimension or installed equipment between its normal stack and Overhead Layers. Overhead Layers render above equipment added in layouts, making them suitable for suspended truss, flown speakers and other overhead items. Existing layers remain in their normal stacks. In a layout, the **Overhead Layers** control under Stage parts hides or shows the entire overhead stack without changing the source stage. This choice saves with the layout and applies to previews and PDF exports. Drag rows within a stack to reorder them. Group equipment that should move together; use folders to organise a larger list.
 
 Choose **Add Folder**, type its name and press Enter or click away. Folders can be empty. Drop layers or groups into a folder, or use the outside-folders drop area to move them back to the root.
 
@@ -100,6 +100,7 @@ Individual eyes toggle item visibility. A group/folder eye overrides its content
 | Zoom toward pointer | Mouse wheel |
 | Pan | Middle-drag |
 | Copy / paste | Ctrl/Cmd+C / Ctrl/Cmd+V |
+| Group selected items | Ctrl/Cmd+G |
 | Duplicate placed equipment | Ctrl/Cmd+D |
 | Delete selected items | Delete / Backspace |
 | Nudge placed equipment | Arrow keys: 1 cm; Shift+arrow: 10 cm |

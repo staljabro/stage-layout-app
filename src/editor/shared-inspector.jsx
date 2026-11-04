@@ -1,5 +1,6 @@
 import {useRef,useState} from 'react'
 import {sharedProperties} from './selection-properties.js'
+import {ColourPicker} from './colour-picker.jsx'
 
 function SharedField({field,onChange,disabled}) {
   const [draft,setDraft]=useState(null),cancelled=useRef(false)
@@ -18,7 +19,7 @@ function SharedField({field,onChange,disabled}) {
   if(field.type==='checkbox')return <label className="canvas-checkbox shared-checkbox"><input {...common} type="checkbox" checked={!field.mixed&&Boolean(field.value)} ref={input=>{if(input)input.indeterminate=field.mixed}} onChange={event=>onChange(event.target.checked)}/>{label}{field.mixed&&<small>Mixed</small>}</label>
   let control
   if(field.type==='range')control=<input {...common} type="range" min={(field.min??0)*scale} max={(field.max??1)*scale} step={(field.step??.01)*scale} value={formatted} aria-valuetext={field.mixed?'Mixed values':String(formatted)} onChange={event=>commit(event.target.value)}/>
-  else if(field.type==='color')control=<><input {...common} type="color" value={/^#[\da-f]{6}$/i.test(display)?display:'#000000'} onChange={event=>onChange(event.target.value)}/>{display==='none'&&!field.mixed&&<small>No colour</small>}{field.allowNone&&<button type="button" disabled={common.disabled} onClick={()=>onChange('none')}>No colour</button>}</>
+  else if(field.type==='color')control=<><ColourPicker value={display} disabled={common.disabled} label={label} onChange={event=>onChange(event.target.value)}/>{display==='none'&&!field.mixed&&<small>No colour</small>}{field.allowNone&&<button type="button" disabled={common.disabled} onClick={()=>onChange('none')}>No colour</button>}</>
   else if(field.type==='select')control=<select {...common} value={field.mixed?'':display} onChange={event=>onChange(event.target.value)}>{field.mixed&&<option value="" disabled>Mixed</option>}{field.options.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
   else{
     const props={...common,value:draft??(field.mixed?'':formatted),placeholder:field.mixed?'Mixed':undefined,onChange:event=>setDraft(event.target.value),onBlur:()=>{if(!cancelled.current&&draft!==null)commit(draft);cancelled.current=false;setDraft(null)},onKeyDown:event=>{if(event.key==='Enter'&&field.type!=='textarea'){event.preventDefault();event.currentTarget.blur()}if(event.key==='Escape'){event.preventDefault();cancelled.current=true;event.currentTarget.blur()}}}

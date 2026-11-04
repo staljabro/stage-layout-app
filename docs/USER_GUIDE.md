@@ -26,9 +26,9 @@ Choose **Create stage**, enter its name and dimensions, and optionally share it 
 - Place installed equipment from the library drawer at the bottom.
 - Continue editing the stage and equipment in the same canvas.
 - Use **Available equipment** to choose movable equipment for clients.
-- Choose **Save stage version**.
+- Choose **Quicksave**, or **Save version** to include an optional revision note.
 
-Stage measurements are metres. Equipment design measurements are centimetres. The left sidebar separates stage layers from equipment layers. Curtains default to black with 10 cm peak-to-trough waves and fixed 40 cm spacing; drag their endpoints or use the inspector to change the line, colour, thickness and opacity. A selected curtain's dotted centre line marks its collision boundary. [Stage editor details](CANVAS.md#build-a-stage).
+Stage measurements are metres. Equipment design measurements are centimetres. The left sidebar separates Overhead Layers, Stage layers and Equipment layers. While authoring a stage, drag stage artwork or installed equipment into Overhead Layers when it must remain visible above equipment placed in later layouts. Layout users can show or hide the whole overhead stack through **Overhead Layers** under Stage parts. [Stage editor details](CANVAS.md#build-a-stage).
 
 You can also create a layout on an existing stage shared with your account or organisation, or choose a public stage.
 

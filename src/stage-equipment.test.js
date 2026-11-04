@@ -21,6 +21,13 @@ test('creating a stage embeds selected placements and strips editor and access d
   assert.equal(equipment.shapes[0].width,2);
 });
 
+test('installed equipment keeps its roof stack through stage snapshots',()=>{
+  const stage=stageFromLayout(space,[{...equipment,layerStack:'roof'}],{id:'roof-stage',label:'Roof stage'});
+  assert.equal(stage.fixedEquipment[0].layerStack,'roof');
+  const state=stageSpace(stage),restored=resolveProject(pinProject(projectFile('Roof layout',state,[]),state,[]),[],[]);
+  assert.equal(restored.space.fixedEquipment[0].layerStack,'roof');
+});
+
 test('deriving another stage preserves boundary and existing fixed equipment without source sharing metadata',()=>{
   const original=stageFromLayout(space,[equipment],{id:'original',label:'Original'});
   original.shareToken='secret';original.ownerId='owner';original.revision=5;

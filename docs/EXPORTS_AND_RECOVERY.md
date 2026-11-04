@@ -4,7 +4,7 @@
 
 ## Save indicators
 
-Stage and equipment editors use explicit saves. Layouts autosave and also offer **Save now**. Wait for **Saved** before leaving after important changes.
+Stage and equipment editors use explicit saves. Layouts autosave once per minute while changes are pending, make a best-effort save when the editor closes, and also offer **Save now**. Use **Save with note** for an optional named checkpoint. Wait for **Saved** before leaving after important changes.
 
 **Unsaved changes**, **Saving...** or **Save failed** mean the latest edits are not yet confirmed on the server. Do not assume an open canvas alone means the changes were saved.
 

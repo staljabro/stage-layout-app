@@ -12,6 +12,6 @@ export function Dialog({title,onClose,children}) {
   return <AccountModal><section className="account-dialog event-dialog" role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button type="button" aria-label="Close dialog" onClick={onClose}>Close</button></header>{children}</section></AccountModal>
 }
 
-export function SaveStatus({busy,dirty,error,version,revision}) {
-  return <span className="workspace-save-state" role="status">{busy?'Saving...':error?'Save failed':dirty?'Unsaved changes':version?'Saved - version '+version:revision?'Saved - revision '+revision:'Saved'}</span>
+export function SaveStatus({busy,dirty,error}) {
+  return <span className="workspace-save-state" role="status">{busy?'Saving...':error?'Save failed':dirty?'Unsaved changes':'Saved'}</span>
 }

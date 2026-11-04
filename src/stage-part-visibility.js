@@ -7,22 +7,25 @@ export function stageParts(stage) {
 }
 
 export function normaliseStagePartVisibility(stage,saved={}) {
-  return Object.fromEntries(stageParts(stage).filter(part=>part.toggleable).map(part=>[String(part.id),saved?.[part.id]!==false]))
+  const parts=Object.fromEntries(stageParts(stage).filter(part=>part.toggleable).map(part=>[String(part.id),saved?.[part.id]!==false]))
+  const hasRoof=stageParts(stage).some(part=>part.layerStack==='roof')||(stage.fixedEquipment||[]).some(item=>item.layerStack==='roof')
+  return hasRoof?{roof:saved?.roof!==false,...parts}:parts
 }
 
 export function stagePartVisible(part,visibility={}) {
-  return !stageText(part).toggleable||visibility?.[part.id]!==false
+  return !(part.layerStack==='roof'&&visibility?.roof===false)&&(!stageText(part).toggleable||visibility?.[part.id]!==false)
 }
 
 // Keep source visibility and folder/group overrides intact. Layout choices can
 // hide optional parts, but never reveal layers hidden by the stage author.
 export function applyStagePartVisibility(stage,visibility={}) {
   const apply=part=>({...part,visible:part.visible!==false&&stagePartVisible(part,visibility)})
-  return {...stage,zones:(stage.zones||[]).map(apply),textItems:(stage.textItems||[]).map(apply),images:stageImages(stage).map(apply),curtains:(stage.curtains||[]).map(apply)}
+  return {...stage,zones:(stage.zones||[]).map(apply),textItems:(stage.textItems||[]).map(apply),images:stageImages(stage).map(apply),curtains:(stage.curtains||[]).map(apply),fixedEquipment:(stage.fixedEquipment||[]).map(apply)}
 }
 
 export function stagePartGroups(stage) {
   const groups=new Map()
+  if(stageParts(stage).some(part=>part.layerStack==='roof')||(stage.fixedEquipment||[]).some(item=>item.layerStack==='roof'))groups.set('roof',{id:'roof',name:'Overhead Layers',ids:['roof']})
   for(const part of stageParts(stage).filter(part=>part.toggleable)){
     const grouped=part.editorGroupId&&part.editorGroupToggleable
     const key=grouped?'group:'+part.editorGroupId:'part:'+part.id

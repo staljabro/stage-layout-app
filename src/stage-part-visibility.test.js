@@ -24,3 +24,13 @@ test('per-layout curtain choices survive serialization and are filtered against 
   assert.deepEqual(result.space.partVisibility,{zone:true,text:true,curtain:false,other:false,hidden:true})
   assert.equal(curtainCollisionLines(applyStagePartVisibility(result.space.assetSnapshot,result.space.partVisibility)).length,1)
 })
+test('one layout control hides roof artwork and installed roof equipment',()=>{
+  const roofStage={...stage,images:[{id:'truss-image',layerStack:'roof'}],fixedEquipment:[{id:'flown-speaker',layerStack:'roof',visible:true},{id:'floor-kit',visible:true}]}
+  assert.deepEqual(stagePartGroups(roofStage).map(({name})=>name),['Overhead Layers','Backdrop','Curtain','Curtain'])
+  const visibility=normaliseStagePartVisibility(roofStage,{roof:false})
+  assert.equal(visibility.roof,false)
+  const effective=applyStagePartVisibility(roofStage,visibility)
+  assert.equal(effective.images[0].visible,false)
+  assert.equal(effective.fixedEquipment[0].visible,false)
+  assert.equal(effective.fixedEquipment[1].visible,true)
+})
