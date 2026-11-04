@@ -42,7 +42,7 @@ jobs:
       - run: npm run build
       - name: Run tests
         timeout-minutes: 5
-        run: node --test --test-isolation=none src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
+        run: node --test --test-isolation=none --test-force-exit --test-reporter=tap src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
 
   publish:
     needs: verify
