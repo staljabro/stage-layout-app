@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {stagePartGroups,applyStagePartVisibility,normaliseStagePartVisibility} from './stage-part-visibility.js'
+import {stagePartGroups,stagePartVisible,applyStagePartVisibility,normaliseStagePartVisibility} from './stage-part-visibility.js'
 import {curtainCollisionLines} from './stage-curtain.js'
 import {projectFile,resolveProject,stageSpace} from './project-file.js'
 
@@ -33,4 +33,11 @@ test('one layout control hides roof artwork and installed roof equipment',()=>{
   assert.equal(effective.images[0].visible,false)
   assert.equal(effective.fixedEquipment[0].visible,false)
   assert.equal(effective.fixedEquipment[1].visible,true)
+})
+
+test('clients can hide source dimension lines without changing the stage',()=>{
+  const source={...stage,editor:{dimensionLines:[{id:'width',x:0,y:0,length:4}]}}
+  assert.equal(normaliseStagePartVisibility(source).dimensions,true)
+  assert.equal(stagePartVisible(source.editor.dimensionLines[0],{dimensions:false}),false)
+  assert.ok(stagePartGroups(source).some(group=>group.id==='dimensions'&&group.name==='Dimensions'))
 })

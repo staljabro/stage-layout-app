@@ -4,6 +4,7 @@ import {assetSnapshot,pinProject} from '../src/project-snapshots.js'
 import {stageSpace,projectFile,resolveProject} from '../src/project-file.js'
 import {sampleStageBoundary} from '../src/stage-geometry.js'
 import {validFixedEquipment} from '../src/stage-equipment.js'
+import {validGraphicDataUrl} from '../src/image-layer.js'
 import {isItemInsideSpace,itemsCollide,collisionPolygons,polygonsIntersect} from '../src/geometry.js'
 
 export function createEventRoutes(store) {
@@ -21,11 +22,13 @@ export function createEventRoutes(store) {
   column('events','client',"TEXT NOT NULL DEFAULT ''")
   column('events','end_date',"TEXT NOT NULL DEFAULT ''")
   column('events','invitation_token','TEXT')
+  column('events','allow_graphic_uploads','INTEGER NOT NULL DEFAULT 0')
   column('event_bands','registration_key','TEXT')
   column('event_stages','space_id','TEXT')
   column('event_stages','space_version','INTEGER')
   column('event_bands','sort_order','INTEGER NOT NULL DEFAULT 0')
   column('event_bands','slot',"TEXT NOT NULL DEFAULT ''")
+  column('event_bands','allow_graphic_uploads','INTEGER NOT NULL DEFAULT 0')
   db.exec(`CREATE TABLE IF NOT EXISTS spaces(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,venue TEXT NOT NULL DEFAULT '',profile TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL,updated TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS space_versions(space_id TEXT NOT NULL REFERENCES spaces(id),version INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(space_id,version));
     CREATE INDEX IF NOT EXISTS spaces_owner ON spaces(owner_id);`)
@@ -60,7 +63,7 @@ export function createEventRoutes(store) {
   const initialPlot=(stage,label)=>{const space=stageSpace(stage);return pinProject({...projectFile(label,space,[]),profile:stage.profiles[0]},space,[])}
   const publicBand=(band,owned=false)=>{
     const event=get('SELECT * FROM events WHERE id=?',band.event_id),stage=stageRow(band.stage_id)
-    return {id:band.id,eventId:band.event_id,eventName:event.name,kind:event.kind,client:event.client,slot:band.slot,order:band.sort_order,stageId:band.stage_id,stageName:stage.name,name:band.name,data:JSON.parse(band.data),revision:band.revision,status:band.status,notes:band.notes,reviewNote:band.review_note,updated:band.updated,stageVersion:band.stage_version,latestStageVersion:stage.version,owned,...(owned?{guestToken:band.guest_token}:{}),profile:event.profile}
+    return {id:band.id,eventId:band.event_id,eventName:event.name,kind:event.kind,client:event.client,slot:band.slot,order:band.sort_order,stageId:band.stage_id,stageName:stage.name,name:band.name,data:JSON.parse(band.data),revision:band.revision,status:band.status,notes:band.notes,reviewNote:band.review_note,updated:band.updated,stageVersion:band.stage_version,latestStageVersion:stage.version,allowGraphicUploads:!!band.allow_graphic_uploads,canUploadGraphics:owned||!!band.allow_graphic_uploads,owned,...(owned?{guestToken:band.guest_token}:{}),profile:event.profile}
   }
   const record=(id,actor)=>{const band=bandRow(id);const snapshot={...publicBand(band),submittedRevision:band.submitted_revision};run('INSERT INTO event_band_revisions VALUES(?,?,?,?,?)',id,band.revision,JSON.stringify(snapshot),actor,band.updated)}
   const summary=event=>({...event,endDate:event.end_date,owner_id:undefined,invitation_token:undefined,invitationToken:event.invitation_token||null,stages:all('SELECT * FROM event_stages WHERE event_id=? ORDER BY name',event.id).map(stage=>({id:stage.id,name:stage.name,version:stage.version,spaceId:stage.space_id,spaceVersion:stage.space_version,latestSpaceVersion:stage.space_id?get('SELECT version FROM spaces WHERE id=?',stage.space_id)?.version:null,dimensions:JSON.parse(stage.data).dimensions,equipmentCount:(JSON.parse(stage.data).fixedEquipment||[]).length})),bands:all('SELECT * FROM event_bands WHERE event_id=? ORDER BY sort_order,name',event.id).map(band=>{const value=publicBand(band,true);delete value.data;return value})})
@@ -86,6 +89,8 @@ export function createEventRoutes(store) {
   const canonicalPlot=(data,band,event)=>{
     if(data?.version!==2||!Array.isArray(data.items)||data.items.length>2000)fail(400,'Invalid band plot')
     const previous=JSON.parse(band.data),stage=previous.assetSnapshots.stage
+    const graphics=data.layoutGraphics??[]
+    if(!Array.isArray(graphics)||graphics.length>20||graphics.some(graphic=>!graphic||graphic.type!=='image'||!validGraphicDataUrl(graphic.dataUrl)||!['x','y','width','height'].every(key=>Number.isFinite(graphic[key]))||graphic.width<=0||graphic.height<=0))fail(400,'Invalid layout graphics')
     const assets=new Map(equipment(event).map(item=>[item.id,item]))
     // Keep pinned artwork unless the client explicitly refreshed to a known
     // catalogue revision. Client-supplied geometry is never authoritative.
@@ -98,12 +103,13 @@ export function createEventRoutes(store) {
     const resolved=resolveProject(constrained,[...assets.values()],[stage])
     const venueItems=new Set((stage.availableEquipment||[]).map(item=>item.assetId))
     resolved.items=resolved.items.map(item=>({...item,supply:item.supply==='venue'&&venueItems.has(item.assetId)?'venue':'client'}))
-    return pinProject({...projectFile(band.name,resolved.space,resolved.items,resolved.preset,resolved.collisionSettings,resolved.layerFolders),profile:event.profile},resolved.space,resolved.items)
+    return pinProject({...projectFile(band.name,resolved.space,resolved.items,resolved.preset,resolved.collisionSettings,resolved.layerFolders,graphics),profile:event.profile},resolved.space,resolved.items)
   }
   const saveBand=(id,input,actor,guest=false,guestToken=null)=>transaction(()=>{
     const band=bandRow(id),event=get('SELECT * FROM events WHERE id=?',band.event_id)
     if(guest&&band.guest_token!==guestToken)fail(404,'This band link has been revoked. Ask the organiser for a new link.')
     if(input.revision!==band.revision)fail(409,'This plot was updated in another window. Reload the latest version before saving; your local work has been kept.')
+    if(guest&&!band.allow_graphic_uploads){const before=new Map((JSON.parse(band.data).layoutGraphics||[]).map(graphic=>[graphic.id,graphic.dataUrl]));if((input.data?.layoutGraphics||[]).some(graphic=>!before.has(graphic.id)||before.get(graphic.id)!==graphic.dataUrl))fail(403,'This layout link does not allow image or SVG uploads')}
     const data=canonicalPlot(input.data,band,event),revision=band.revision+1,status=input.submit?'submitted':band.submitted_revision?'changed':'in_progress'
     run('UPDATE event_bands SET data=?,notes=?,revision=?,status=?,updated=?,submitted_revision=? WHERE id=?',JSON.stringify(data),input.notes===undefined?band.notes:note(input.notes),revision,status,now(),input.submit?revision:band.submitted_revision,id)
     record(id,actor);return publicBand(bandRow(id),!guest)
@@ -134,7 +140,7 @@ export function createEventRoutes(store) {
           const existing=get('SELECT * FROM event_bands WHERE event_id=? AND registration_key=?',event.id,input.registrationKey)
           if(existing){if(!existing.guest_token)fail(404,'This edit link is no longer available');return {name:existing.name,guestToken:existing.guest_token}}
           const created=createLayouts(event,{name:input.name,stageId:input.stageId})[0]
-          run('UPDATE event_bands SET registration_key=? WHERE id=?',input.registrationKey,created.id);run('UPDATE events SET updated=? WHERE id=?',now(),event.id)
+          run('UPDATE event_bands SET registration_key=?,allow_graphic_uploads=? WHERE id=?',input.registrationKey,event.allow_graphic_uploads?1:0,created.id);run('UPDATE events SET updated=? WHERE id=?',now(),event.id)
           return {name:created.name,guestToken:created.guestToken}
         });return reply(201,result)
       }
@@ -218,7 +224,7 @@ export function createEventRoutes(store) {
       if(!collection&&method==='PUT'){const input=await body();const result=transaction(()=>{const current=ownerEvent(id,user);if(input.revision!==current.revision)fail(409,'Event details changed. Refresh before saving');run('UPDATE events SET name=?,date=?,notes=?,client=?,end_date=?,revision=revision+1,updated=? WHERE id=?',name(input.name),String(input.date||'').slice(0,30),note(input.notes||''),String(input.client??current.client).slice(0,200),String(input.endDate??current.end_date).slice(0,30),now(),id);return summary(ownerEvent(id,user))});return reply(200,result)}
       if(collection==='invitation'&&method==='POST'){
         if(event.kind==='production')fail(400,'Productions use their individual client link')
-        const input=await body();const result=transaction(()=>{const current=ownerEvent(id,user);if(input.revision!==current.revision)fail(409,'Event changed. Refresh before changing its invitation');run('UPDATE events SET invitation_token=?,revision=revision+1,updated=? WHERE id=?',input.disable?null:token(),now(),id);return summary(ownerEvent(id,user))});return reply(200,result)
+        const input=await body();const result=transaction(()=>{const current=ownerEvent(id,user);if(input.revision!==current.revision)fail(409,'Event changed. Refresh before changing its invitation');run('UPDATE events SET invitation_token=?,allow_graphic_uploads=?,revision=revision+1,updated=? WHERE id=?',input.disable?null:token(),input.allowGraphicUploads===true?1:0,now(),id);return summary(ownerEvent(id,user))});return reply(200,result)
       }
       if(collection==='order'&&method==='POST'){
         const input=await body();const result=transaction(()=>{
@@ -279,7 +285,7 @@ export function createEventRoutes(store) {
       if(method==='POST'&&action){
         const input=await body();const result=transaction(()=>{
           const current=bandRow(id);if(input.revision!==current.revision)fail(409,'This band plot changed. Refresh before continuing')
-          if(action==='link'){run('UPDATE event_bands SET guest_token=?,registration_key=NULL WHERE id=?',input.disable?null:token(),id);return publicBand(bandRow(id),true)}
+          if(action==='link'){run('UPDATE event_bands SET guest_token=?,registration_key=NULL,allow_graphic_uploads=? WHERE id=?',input.disable?null:token(),input.allowGraphicUploads===true?1:0,id);return publicBand(bandRow(id),true)}
           if(action==='rename'){const label=name(input.name),data=JSON.parse(current.data);data.project=label;run('UPDATE event_bands SET name=?,data=?,slot=? WHERE id=?',label,JSON.stringify(data),String(input.slot??current.slot).slice(0,200),id)}
           else if(action==='review'){if(!['approved','changes_requested'].includes(input.status))fail(400,'Choose approve or request changes');run('UPDATE event_bands SET status=?,review_note=?,submitted_revision=COALESCE(submitted_revision,revision) WHERE id=?',input.status,note(input.note||''),id)}
           else if(action==='apply-stage'){

@@ -82,8 +82,11 @@ export function CustomItemArtwork({ item }) {
   return null
 }
 
-export function EquipmentArtwork({item}) {
-  return item.customType ? <CustomItemArtwork item={item}/> : <VectorArtwork shapes={item.shapes} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility}/>;
+export function EquipmentArtwork({item,depth=0}) {
+  if(item.customType)return <CustomItemArtwork item={item}/>
+  const components=depth<8?(item.components||[]).filter(component=>component.assetId&&component.equipment&&item.componentState?.[component.id]?.enabled!==false).sort((a,b)=>(a.zOrder??0)-(b.zOrder??0)):[]
+  const layers=[...(item.shapes||[]).map((shape,index)=>({kind:'shape',key:`shape:${shape.id??index}`,order:Number.isFinite(shape.stackOrder)?shape.stackOrder:index,shape})),...components.map((component,index)=>({kind:'component',key:`component:${component.id}`,order:Number.isFinite(component.stackOrder)?component.stackOrder:-1000+index,component}))].sort((a,b)=>a.order-b.order)
+  return <svg style={{width:'100%',height:'100%'}} viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} overflow="visible">{layers.map(layer=>{if(layer.kind==='shape')return <VectorArtwork key={layer.key} shapes={[layer.shape]} width={item.widthMeters} depth={item.depthMeters} rotationParts={item.rotationParts} controls={item.controls} partVisibility={item.partVisibility}/>;const component=layer.component,equipment=component.equipment,width=equipment.dimensions?.widthMeters||0,componentDepth=equipment.dimensions?.depthMeters||0;return <g key={layer.key} transform={`translate(${(item.widthMeters-width)/2+(component.x||0)} ${(item.depthMeters-componentDepth)/2+(component.y||0)})`}><svg width={width} height={componentDepth} viewBox={`0 0 ${width} ${componentDepth}`} overflow="visible"><EquipmentArtwork item={{...equipment,widthMeters:width,depthMeters:componentDepth}} depth={depth+1}/></svg></g>})}</svg>;
 }
 export function FixedEquipmentArtwork({items=[]}) {
   return items.filter(equipmentVisible).map(item=><g key={item.id} transform={`translate(${item.xMeters} ${item.yMeters}) rotate(${item.rotation||0})`}>

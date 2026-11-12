@@ -1,4 +1,4 @@
-import {validImageDataUrl,imagePixelSize,imageSavePlan,identityTransform,composeImageTransform,imageTransform,stageImages} from './image-layer.js'
+import {validGraphicDataUrl,imagePixelSize,imageSavePlan,identityTransform,composeImageTransform,imageTransform,stageImages} from './image-layer.js'
 
 function imagePreparation(canvas) {
   const decoded=new Map(),resized=new Map()
@@ -10,7 +10,7 @@ function imagePreparation(canvas) {
     return decoded.get(dataUrl)
   }
   const prepare=async(shape,parent=identityTransform)=>{
-    if(!validImageDataUrl(shape.dataUrl))return shape
+    if(!validGraphicDataUrl(shape.dataUrl))return shape
     const plan=imageSavePlan(shape,canvas,parent)
     if(!plan)return null
     const image=await load(shape.dataUrl),{bounds,baked,polygon}=plan

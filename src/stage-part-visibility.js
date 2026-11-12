@@ -9,11 +9,12 @@ export function stageParts(stage) {
 export function normaliseStagePartVisibility(stage,saved={}) {
   const parts=Object.fromEntries(stageParts(stage).filter(part=>part.toggleable).map(part=>[String(part.id),saved?.[part.id]!==false]))
   const hasRoof=stageParts(stage).some(part=>part.layerStack==='roof')||(stage.fixedEquipment||[]).some(item=>item.layerStack==='roof')
-  return hasRoof?{roof:saved?.roof!==false,...parts}:parts
+  const dimensions=(stage.editor?.dimensionLines||[]).length?{dimensions:saved?.dimensions!==false}:{}
+  return hasRoof?{roof:saved?.roof!==false,...dimensions,...parts}:{...dimensions,...parts}
 }
 
 export function stagePartVisible(part,visibility={}) {
-  return !(part.layerStack==='roof'&&visibility?.roof===false)&&(!stageText(part).toggleable||visibility?.[part.id]!==false)
+  return !(part.layerStack==='roof'&&visibility?.roof===false)&&!((part.type!=='curtain'&&Number.isFinite(part.length))&&visibility?.dimensions===false)&&(!stageText(part).toggleable||visibility?.[part.id]!==false)
 }
 
 // Keep source visibility and folder/group overrides intact. Layout choices can
@@ -26,6 +27,7 @@ export function applyStagePartVisibility(stage,visibility={}) {
 export function stagePartGroups(stage) {
   const groups=new Map()
   if(stageParts(stage).some(part=>part.layerStack==='roof')||(stage.fixedEquipment||[]).some(item=>item.layerStack==='roof'))groups.set('roof',{id:'roof',name:'Overhead Layers',ids:['roof']})
+  if((stage.editor?.dimensionLines||[]).length)groups.set('dimensions',{id:'dimensions',name:'Dimensions',ids:['dimensions']})
   for(const part of stageParts(stage).filter(part=>part.toggleable)){
     const grouped=part.editorGroupId&&part.editorGroupToggleable
     const key=grouped?'group:'+part.editorGroupId:'part:'+part.id

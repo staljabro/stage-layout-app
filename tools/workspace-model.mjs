@@ -3,7 +3,7 @@ import {uid,token,fail,manager} from './account-store.mjs'
 import {assetSnapshot,pinProject} from '../src/project-snapshots.js'
 import {stageSpace,projectFile,resolveProject} from '../src/project-file.js'
 import {sampleStageBoundary} from '../src/stage-geometry.js'
-import {stageImages,validImageDataUrl} from '../src/image-layer.js'
+import {stageImages,validGraphicDataUrl} from '../src/image-layer.js'
 import {normaliseCurtain} from '../src/stage-curtain.js'
 import {validFixedEquipment} from '../src/stage-equipment.js'
 import {isEquipmentItem} from './library-membership.mjs'
@@ -39,7 +39,9 @@ export function createWorkspaceModel(store) {
   for(const [name,type] of [['public_id','TEXT'],['public_revision','INTEGER']])if(!submissionColumns.has(name))db.exec('ALTER TABLE wf_submissions ADD COLUMN '+name+' '+type)
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS wf_returned_public_equipment ON wf_submissions(public_id) WHERE public_id IS NOT NULL')
   const layoutColumns=new Set(all('PRAGMA table_info(wf_layouts)').map(column=>column.name))
-  for(const [name,definition] of [['creation_mode',"TEXT NOT NULL DEFAULT 'legacy'"],['share_stage_owner','INTEGER NOT NULL DEFAULT 0'],['deleted','INTEGER NOT NULL DEFAULT 0']])if(!layoutColumns.has(name))db.exec('ALTER TABLE wf_layouts ADD COLUMN '+name+' '+definition)
+  for(const [name,definition] of [['creation_mode',"TEXT NOT NULL DEFAULT 'legacy'"],['share_stage_owner','INTEGER NOT NULL DEFAULT 0'],['deleted','INTEGER NOT NULL DEFAULT 0'],['allow_graphic_uploads','INTEGER NOT NULL DEFAULT 0']])if(!layoutColumns.has(name))db.exec('ALTER TABLE wf_layouts ADD COLUMN '+name+' '+definition)
+  const stageLinkColumns=new Set(all('PRAGMA table_info(wf_stage_links)').map(column=>column.name))
+  if(!stageLinkColumns.has('allow_graphic_uploads'))db.exec('ALTER TABLE wf_stage_links ADD COLUMN allow_graphic_uploads INTEGER NOT NULL DEFAULT 0')
   const now=()=>new Date().toISOString()
   const requireUser=user=>{if(!user)fail(401,'Sign in to continue')}
   const requireAdmin=user=>{requireUser(user);if(!manager(user))fail(403,'An app Admin or Owner must review public equipment')}
@@ -72,19 +74,21 @@ export function createWorkspaceModel(store) {
     if(!input||input.schema!=='stageplot-item@3'||!Array.isArray(input.shapes)||!Array.isArray(input.collisionShapes)||input.shapes.length>5000||input.collisionShapes.length>5000)fail(400,'Equipment must use the stageplot-item@3 artwork format')
     if(!input.dimensions||![input.dimensions.widthMeters,input.dimensions.depthMeters].every(n=>Number.isFinite(n)&&n>0&&n<=1000))fail(400,'Equipment dimensions must be positive metres')
     const components=input.components??[]
-    if(!Array.isArray(components)||components.length>100||new Set(components.map(component=>component?.id)).size!==components.length||components.some(component=>typeof component?.id!=='string'||!component.id||typeof component.label!=='string'||!component.label.trim()||component.label.length>200))fail(400,'Equipment components are invalid')
-    const validShape=shape=>shape&&typeof shape==='object'&&(shape.type!=='image'||typeof shape.dataUrl==='string'&&shape.dataUrl.length<=16_000_000&&/^data:image\/(?:png|jpeg|webp|gif|avif);base64,[a-z0-9+/=\r\n]+$/i.test(shape.dataUrl)&&['x','y','width','height'].every(key=>Number.isFinite(shape[key]))&&shape.width>0&&shape.height>0)&&(shape.type!=='compound'||Array.isArray(shape.children)&&shape.children.every(validShape))
+    if(input.showAsComponent!=null&&typeof input.showAsComponent!=='boolean')fail(400,'Equipment component-list setting is invalid')
+    if(!Array.isArray(components)||components.length>100||new Set(components.map(component=>component?.id)).size!==components.length||components.some(component=>typeof component?.id!=='string'||!component.id||typeof component.label!=='string'||!component.label.trim()||component.label.length>200||component.category!=null&&(typeof component.category!=='string'||component.category.length>100)||component.quantity!=null&&(!Number.isSafeInteger(component.quantity)||component.quantity<1||component.quantity>100)||['x','y','zOrder','stackOrder'].some(key=>component[key]!=null&&!Number.isFinite(component[key]))||component.assetId!=null&&(typeof component.assetId!=='string'||component.assetId===input.id||!asset('items',component.assetId))))fail(400,'Equipment components are invalid')
+    const validShape=shape=>shape&&typeof shape==='object'&&(shape.type!=='image'||typeof shape.dataUrl==='string'&&shape.dataUrl.length<=16_000_000&&/^data:image\/(?:png|jpeg|webp|gif|avif|svg\+xml);base64,[a-z0-9+/=\r\n]+$/i.test(shape.dataUrl)&&['x','y','width','height'].every(key=>Number.isFinite(shape[key]))&&shape.width>0&&shape.height>0)&&(shape.type!=='compound'||Array.isArray(shape.children)&&shape.children.every(validShape))
     if(!input.shapes.every(validShape)||input.editor?.layers&&!Array.isArray(input.editor.layers)||Array.isArray(input.editor?.layers)&&!input.editor.layers.every(validShape))fail(400,'Equipment artwork contains an invalid image')
-    const data={...input,label:label(input.label),profiles:[]}
+    const data={...input,label:label(input.label),profiles:[],components:components.map(component=>{if(!component.assetId)return component;const target=parsed(asset('items',component.assetId));return {...component,label:target.label,equipment:equipmentSnapshot(target)}})}
     // Workbench equipment saves/imports produce placeable equipment. Reusable
     // artwork is saved separately through the custom-shape routes.
     if(input.editor){data.editor={...input.editor};delete data.editor.advancedShapeRole}
     for(const key of ['hiddenFromPublicLibrary','libraryRevision','ownerId','deleted','canEdit','canShare','organisationIds','public','builtin','submission','workflowStatus','unsentChanges','shareToken','shareEquipmentIds','personal'])delete data[key]
     return data
   }
-  const equipmentSnapshot=item=>{const clean=assetSnapshot(item);for(const key of ['canEdit','canShare','organisationIds','submission','builtin','public','profiles','stockQuantity'])delete clean[key];return clean}
+  const hydrateStoredEquipment=(item,trail=new Set())=>{if(!item||trail.has(item.id))return item;const next=new Set(trail);next.add(item.id);return {...item,components:(item.components||[]).map(component=>{if(!component.assetId)return component;const row=asset('items',component.assetId),target=row&&!row.deleted?parsed(row):component.equipment;return target?{...component,label:target.label,equipment:hydrateStoredEquipment(target,next)}:component})}}
+  const equipmentSnapshot=item=>{const clean=assetSnapshot(hydrateStoredEquipment(item));for(const key of ['canEdit','canShare','organisationIds','submission','builtin','public','profiles','stockQuantity'])delete clean[key];return clean}
   const decorateEquipment=(row,user)=>{
-    const value=parsed(row),proposal=user&&row.owner_id===user.id?get('SELECT id,status,feedback,source_revision FROM wf_submissions WHERE asset_id=? ORDER BY updated DESC LIMIT 1',row.id):null
+    const value=hydrateStoredEquipment(parsed(row)),proposal=user&&row.owner_id===user.id?get('SELECT id,status,feedback,source_revision FROM wf_submissions WHERE asset_id=? ORDER BY updated DESC LIMIT 1',row.id):null
     return {...value,...publicLibraryMetadata('equipment',row.id),editor:isPublic(row)&&value.editor?{...value.editor,referenceImages:[]}:value.editor,profiles:undefined,public:isPublic(row),builtin:!!get('SELECT asset_id FROM wf_builtin_equipment WHERE asset_id=?',row.id),canEdit:canEditEquipment(row,user),canShare:row.owner_id===user?.id,organisationIds:shares('equipment',row.id).filter(id=>row.owner_id===user?.id||member(id,user)),submission:proposal||null}
   }
   const catalogue=(user,includeHidden=false)=>all("SELECT * FROM assets WHERE kind='items' AND deleted=0 ORDER BY id").filter(row=>canReadEquipment(row,user)&&(!isPublic(row)||!publicLibraryState('equipment',row.id).hidden||includeHidden&&manager(user))).map(row=>decorateEquipment(row,user))
@@ -102,7 +106,7 @@ export function createWorkspaceModel(store) {
     const imageInput=input.images??input.editor?.referenceImages??[]
     if(!Array.isArray(imageInput)||imageInput.some(image=>!image||typeof image!=='object'))fail(400,'Invalid stage images')
     const images=stageImages(input)
-    if(images.length>500||images.some(image=>!image||typeof image.id!=='string'||!validImageDataUrl(image.dataUrl)||!['x','y','width','height'].every(key=>Number.isFinite(image[key]))||image.width<=0||image.height<=0)||new Set(images.map(image=>image.id)).size!==images.length)fail(400,'Invalid stage images')
+    if(images.length>500||images.some(image=>!image||typeof image.id!=='string'||!validGraphicDataUrl(image.dataUrl)||!['x','y','width','height'].every(key=>Number.isFinite(image[key]))||image.width<=0||image.height<=0)||new Set(images.map(image=>image.id)).size!==images.length)fail(400,'Invalid stage images')
     const available=input.availableEquipment||[]
     if(!Array.isArray(available)||new Set(available.map(item=>item.assetId)).size!==available.length)fail(400,'Invalid available equipment')
     const previous=get('SELECT data FROM wf_stages WHERE id=?',id),retained=new Map((retainedData?.availableEquipmentSnapshots||(previous?JSON.parse(previous.data).availableEquipmentSnapshots||[]:[])).map(item=>[item.id,item]))
@@ -127,7 +131,7 @@ export function createWorkspaceModel(store) {
     return [...map.values()].map(item=>({...item,public:isPublic(asset('items',item.id))}))
   }
   const layoutSummary=(layout,user,full=false)=>{
-    const stage=stageRow(layout.stage_id),stageOwnerAccess=!!user&&!!layout.share_stage_owner&&stage.owner_id===user.id,result={...libraryState('layout',layout.id,layout.owner_id,user),id:layout.id,name:layout.name,stageId:stage.id,stageName:stage.name,stageVersion:layout.stage_version,latestStageVersion:stage.version,latestStageRevisionNote:latestStageRevisionNote(stage.id),revisionNote:latestLayoutRevisionNote(layout.id),ownerId:layout.owner_id,stageOwnerId:stage.owner_id,stageOwnerName:get('SELECT name FROM users WHERE id=?',stage.owner_id)?.name||null,creationMode:layout.creation_mode,sharedWithStageOwner:!!layout.share_stage_owner,canShareWithStageOwner:!!user&&layout.owner_id===user.id&&!!stage.owner_id&&stage.owner_id!==user.id,canDelete:!!user&&layout.owner_id===user.id,canManageLink:!!user&&(layout.owner_id===user.id||['owner','admin'].includes(member(layout.organisation_id,user))),creatorId:layout.creator_id,organisationId:layout.organisation_id,revision:layout.revision,status:layout.status,notes:layout.notes,reviewNote:layout.review_note,updated:layout.updated,canReview:!!user&&(layout.owner_id===user.id||stageOwnerAccess||['owner','admin'].includes(member(layout.organisation_id,user))),canUpdateStage:!!stagePermission(stage,user),canClaim:!!user&&!layout.creator_id}
+    const stage=stageRow(layout.stage_id),stageOwnerAccess=!!user&&!!layout.share_stage_owner&&stage.owner_id===user.id,result={...libraryState('layout',layout.id,layout.owner_id,user),id:layout.id,name:layout.name,stageId:stage.id,stageName:stage.name,stageVersion:layout.stage_version,latestStageVersion:stage.version,latestStageRevisionNote:latestStageRevisionNote(stage.id),revisionNote:latestLayoutRevisionNote(layout.id),ownerId:layout.owner_id,stageOwnerId:stage.owner_id,stageOwnerName:get('SELECT name FROM users WHERE id=?',stage.owner_id)?.name||null,creationMode:layout.creation_mode,allowGraphicUploads:!!layout.allow_graphic_uploads,canUploadGraphics:full&&layoutAccess(layout,user)?true:!!layout.allow_graphic_uploads,sharedWithStageOwner:!!layout.share_stage_owner,canShareWithStageOwner:!!user&&layout.owner_id===user.id&&!!stage.owner_id&&stage.owner_id!==user.id,canDelete:!!user&&layout.owner_id===user.id,canManageLink:!!user&&(layout.owner_id===user.id||['owner','admin'].includes(member(layout.organisation_id,user))),creatorId:layout.creator_id,organisationId:layout.organisation_id,revision:layout.revision,status:layout.status,notes:layout.notes,reviewNote:layout.review_note,updated:layout.updated,canReview:!!user&&(layout.owner_id===user.id||stageOwnerAccess||['owner','admin'].includes(member(layout.organisation_id,user))),canUpdateStage:!!stagePermission(stage,user),canClaim:!!user&&!layout.creator_id}
     result.organisation=organisationBranding(layout.organisation_id)
     if(result.canManageLink||user&&layout.creator_id===user.id)result.guestToken=layout.guest_token
     result.preview={stage:stagePreview(stageVersion(layout.stage_id,layout.stage_version)),data:JSON.parse(layout.data)}
@@ -139,14 +143,18 @@ export function createWorkspaceModel(store) {
     if(organisationId&&!stage.generic&&!publicStage(stage)&&!shares('stage',stage.id).includes(organisationId))fail(400,'The stage is not shared with that organisation')
     if(organisationId&&!trustedInvitation)org(organisationId,user)
     if(input.shareWithStageOwner!==undefined&&typeof input.shareWithStageOwner!=='boolean')fail(400,'Choose whether to share with the stage owner')
-    const id=uid(),space=stageSpace(JSON.parse(stage.data)),data=projectFile(label(input.name),space,[]),mode=trustedInvitation?'invitation':user?'direct':'generic_guest',ownerId=trustedInvitation?stage.owner_id||user?.id||null:user?.id||null,share=mode==='direct'&&input.shareWithStageOwner&&stage.owner_id&&stage.owner_id!==ownerId?1:0
-    run('INSERT INTO wf_layouts(id,stage_id,stage_version,owner_id,creator_id,organisation_id,name,data,notes,revision,status,review_note,guest_token,registration_key,created,updated,creation_mode,share_stage_owner) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',id,stage.id,stage.version,ownerId,user?.id||null,organisationId,data.project,JSON.stringify(data),'',1,'in_progress','',token(),trustedInvitation?input.registrationKey||null:null,now(),now(),mode,share)
+    const id=uid(),space=stageSpace(JSON.parse(stage.data)),data=projectFile(label(input.name),space,[]),mode=trustedInvitation?'invitation':user?'direct':'generic_guest',ownerId=trustedInvitation?stage.owner_id||user?.id||null:user?.id||null,share=mode==='direct'&&input.shareWithStageOwner&&stage.owner_id&&stage.owner_id!==ownerId?1:0,allowUploads=input.allowGraphicUploads===true?1:0
+    run('INSERT INTO wf_layouts(id,stage_id,stage_version,owner_id,creator_id,organisation_id,name,data,notes,revision,status,review_note,guest_token,registration_key,created,updated,creation_mode,share_stage_owner,allow_graphic_uploads) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',id,stage.id,stage.version,ownerId,user?.id||null,organisationId,data.project,JSON.stringify(data),'',1,'in_progress','',token(),trustedInvitation?input.registrationKey||null:null,now(),now(),mode,share,allowUploads)
     const layout=get('SELECT * FROM wf_layouts WHERE id=?',id);recordLayout(layout);return layout
   }
-  const saveLayout=(row,input,user)=>{
+  const saveLayout=(row,input,user,allowGraphicUploads=true)=>{
     if(input.revision!==row.revision)fail(409,'This layout changed in another window. Reload the saved version; your local work is kept.')
     const data=input.data,stage=stageVersion(row.stage_id,row.stage_version),previous=JSON.parse(row.data)
     if(data?.version!==2||!Array.isArray(data.items)||data.items.length>2000)fail(400,'Invalid layout')
+    const graphics=data.layoutGraphics??[],oldGraphics=previous.layoutGraphics??[]
+    if(!Array.isArray(graphics)||graphics.length>20||graphics.some(graphic=>!graphic||graphic.type!=='image'||!validGraphicDataUrl(graphic.dataUrl)||!['x','y','width','height'].every(key=>Number.isFinite(graphic[key]))||graphic.width<=0||graphic.height<=0))fail(400,'Invalid layout graphics')
+    const oldContent=new Map(oldGraphics.map(graphic=>[graphic.id,graphic.dataUrl]))
+    if(!allowGraphicUploads&&graphics.some(graphic=>!oldContent.has(graphic.id)||oldContent.get(graphic.id)!==graphic.dataUrl))fail(403,'This layout link does not allow image or SVG uploads')
     const map=new Map(layoutEquipment(row,user).map(item=>[item.id,item]))
     for(const pinned of previous.assetSnapshots?.equipment||[]){const requested=data.assetSnapshots?.equipment?.find(item=>item.id===pinned.id),current=map.get(pinned.id);if(!current||requested?.revision!==current.revision)map.set(pinned.id,pinned)}
     if(data.items.some(item=>!item||!Number.isFinite(item.xMeters)||!Number.isFinite(item.yMeters)||!Number.isFinite(item.rotation??0)||item.custom&&!['staging','text'].includes(item.custom.type)||!item.custom&&!map.has(item.assetId)))fail(400,'Unavailable or invalid equipment in this layout')
@@ -155,7 +163,7 @@ export function createWorkspaceModel(store) {
     const stockLibrary=[...map.values()].map(item=>({...item,stockQuantity:quantities.get(item.id)??organisationQuantities.get(item.id)??null}))
     resolved.items=assignEquipmentSources(resolved.items,stockLibrary,Boolean(row.organisation_id||quantities.size),stage.fixedEquipment||[])
 
-    const pinned=pinProject(projectFile(row.name,resolved.space,resolved.items,resolved.preset,resolved.collisionSettings,resolved.layerFolders),resolved.space,resolved.items);delete pinned.assetSnapshots.stage;pinned.revisionNote=text(input.revisionNote||'')
+    const pinned=pinProject(projectFile(row.name,resolved.space,resolved.items,resolved.preset,resolved.collisionSettings,resolved.layerFolders,graphics),resolved.space,resolved.items);delete pinned.assetSnapshots.stage;pinned.revisionNote=text(input.revisionNote||'')
     run('UPDATE wf_layouts SET data=?,notes=?,revision=revision+1,status=?,updated=? WHERE id=?',JSON.stringify(pinned),text(input.notes??row.notes),input.submit?'submitted':['submitted','approved','changes_requested','changed'].includes(row.status)?'changed':'in_progress',now(),row.id)
     const saved=get('SELECT * FROM wf_layouts WHERE id=?',row.id);recordLayout(saved);return saved
   }

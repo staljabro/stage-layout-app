@@ -1,5 +1,11 @@
 const imagePattern=/^data:image\/(?:png|jpeg|webp|gif|avif);base64,[a-z0-9+/=\r\n]+$/i
+const graphicPattern=/^data:image\/(?:png|jpeg|webp|gif|avif|svg\+xml);base64,[a-z0-9+/=\r\n]+$/i
 export const validImageDataUrl=value=>typeof value==='string'&&value.length<=16_000_000&&imagePattern.test(value)
+export const validGraphicDataUrl=value=>{
+  if(typeof value!=='string'||value.length>16_000_000||!graphicPattern.test(value))return false
+  if(!value.startsWith('data:image/svg+xml;'))return true
+  try{const source=globalThis.atob(value.slice(value.indexOf(',')+1));return /^\s*<svg[\s>]/i.test(source)&&!/<\s*(?:script|foreignObject|iframe|object|embed)\b|\son[a-z]+\s*=|(?:href|xlink:href)\s*=\s*["'](?!#|data:image\/(?:png|jpeg|webp|gif|avif);base64,)/i.test(source)}catch{return false}
+}
 export function normaliseCrop(value={}) {
   const crop=Object.fromEntries(['left','right','top','bottom'].map(key=>[key,Math.max(0,Math.min(.95,Number(value?.[key])||0))]))
   if(crop.left+crop.right>=.99)crop.right=Math.max(0,.99-crop.left)

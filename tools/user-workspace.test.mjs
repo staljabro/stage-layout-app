@@ -698,5 +698,6 @@ test('stage image layers survive source versions, previews, client layouts and p
   const proposal=(await call('/stage-submissions','GET',{},users.admin)).data[0]
   assert.equal((await call('/stage-submissions/'+proposal.id,'POST',{revision:proposal.revision,action:'approve'},users.admin)).status,200)
   assert.deepEqual((await call('/public-stages')).data[0].preview.images,[image])
-  for(const images of ['invalid',[null],[{...image,dataUrl:'data:image/svg+xml;base64,PHN2Zz4='}],[{...image,width:0}]])assert.equal((await call('/stages','POST',{data:{...stage,images}})).status,400)
+  assert.equal((await call('/stages','POST',{data:{...stage,images:[{...image,dataUrl:'data:image/svg+xml;base64,PHN2Zz4='}]}})).status,201)
+  for(const images of ['invalid',[null],[{...image,width:0}]])assert.equal((await call('/stages','POST',{data:{...stage,images}})).status,400)
 })

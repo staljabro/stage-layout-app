@@ -21,7 +21,7 @@ import {StockInspector} from './stock-inspector.jsx'
 import {Shape} from './artwork.jsx'
 import {polygonPoints,hexagonPoints,trapezoidPoints,pointsAttribute,tripodGeometry} from './artwork-geometry.js'
 import {LibraryManagement} from './library-management.jsx'
-import { FixedEquipmentArtwork } from '../equipment-artwork.jsx';
+import { EquipmentArtwork,FixedEquipmentArtwork } from '../equipment-artwork.jsx';
 import {AccountModal} from '../account-modal.jsx'
 import { SubmissionReview } from '../studio-workflow.jsx'
 import { accountRequest } from '../account-api.js'
@@ -48,12 +48,14 @@ import { APP_VERSION } from "../version.js";
 import { AppMark } from "../app-mark.jsx";
 import { normalizeZoneFolders, putZonesInFolder, removeZonesFromFolders } from "./stage-zone-folders.js";
 import {normaliseComponents} from '../equipment-components.js'
-import {validImageDataUrl,resizeCroppedImage,fittedImageSize,resizeImageDimension,cropImageEdge,stageImages} from '../image-layer.js'
+import {resizeCroppedImage,resizeImageDimension,cropImageEdge,stageImages} from '../image-layer.js'
 import {prepareEquipmentImages,prepareStageImages} from '../prepare-equipment-images.js'
 import {OrganisationBranding} from '../organisation-branding.jsx'
 import {StageplotPrintHeading} from './stageplot-print.jsx'
 import {useStageplotPrint} from './stageplot-print.js'
 import {ColourPicker} from './colour-picker.jsx'
+import {GRAPHIC_ACCEPT,hasGraphicFiles,importGraphic} from '../graphic-import.js'
+import {assetSnapshot} from '../project-snapshots.js'
 
 const LIBRARY_API = `${API_BASE}/items`;
 const STAGES_API = `${API_BASE}/stages`;
@@ -71,15 +73,22 @@ function MultiCollisionControl({ layers, onChange }) {
   return <button type="button" className="studio-tri-state" role="checkbox" aria-checked={value==="mixed"?"mixed":value} onClick={()=>onChange(value!==true)}><span className={`studio-tri-box ${value==="mixed"?"mixed":value?"checked":""}`}>{value==="mixed"?"×":value?"✓":""}</span><span><b>Physical collision shape</b><small>{value==="mixed"?"Mixed values — click to enable collision for every selected layer.":value?"All selected layers contribute to collision.":"Selected layers do not contribute to collision."}</small></span></button>;
 }
 
-function ComponentsEditor({value,onChange}) {
+function ComponentsEditor({value,onChange,showBase=false,onShowBaseChange,library=[],groups=[],currentId}) {
   const components=Array.isArray(value)?value:[]
-  const move=(index,offset)=>{const next=[...components],target=index+offset;if(target<0||target>=next.length)return;[next[index],next[target]]=[next[target],next[index]];onChange(next)}
+  const [pickerOpen,setPickerOpen]=useState(false)
+  const [search,setSearch]=useState('')
+  const draggedRequirement=useRef(null)
+  const requirements=components.filter(component=>!component.assetId)
+  const available=library.filter(item=>item.id!==currentId&&!item.editor?.advancedShapeRole&&!components.some(component=>component.assetId===item.id)&&(!search||`${item.label} ${groups.find(group=>group.id===item.groupId)?.label||''}`.toLowerCase().includes(search.toLowerCase())))
+  const dropRequirement=target=>{const sourceId=draggedRequirement.current;draggedRequirement.current=null;if(!sourceId||sourceId===target.id)return;const sourceIndex=components.findIndex(entry=>entry.id===sourceId),targetIndex=components.findIndex(entry=>entry.id===target.id);if(sourceIndex<0||targetIndex<0)return;const next=[...components],[source]=next.splice(sourceIndex,1);next.splice(targetIndex,0,source);onChange(next)}
+  const addEquipment=equipment=>{const category=groups.find(group=>group.id===equipment.groupId)?.label||'Equipment',zOrder=Math.max(-1,...components.filter(component=>component.assetId).map(component=>component.zOrder??0))+1;let id=`component-${components.length+1}`;while(components.some(component=>component.id===id))id+='-copy';onChange([...components,{id,label:equipment.label,category,assetId:equipment.id,equipment:assetSnapshot(equipment),quantity:1,x:0,y:0,zOrder}]);setPickerOpen(false);setSearch('')}
   return <section className="equipment-components-editor">
-    <h4>Components</h4><p className="component-description">Requirements included with this item. Each placement can turn them off or add notes.</p>
-    <div className="component-definitions">{components.map((component,index)=><div className="component-definition" key={component.id}>
-      <span className="component-number">{index+1}</span><input aria-label={`Component ${index+1}`} maxLength="200" value={component.label} onChange={event=>onChange(components.map(entry=>entry.id===component.id?{...entry,label:event.target.value}:entry))}/>
-      <div className="component-actions"><button type="button" aria-label={`Move ${component.label} up`} disabled={!index} onClick={()=>move(index,-1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 6-6 6 6M12 6v12"/></svg></button><button type="button" aria-label={`Move ${component.label} down`} disabled={index===components.length-1} onClick={()=>move(index,1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 6 6 6-6M12 6v12"/></svg></button><button type="button" className="component-remove" aria-label={`Delete ${component.label}`} onClick={()=>onChange(components.filter(entry=>entry.id!==component.id))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div>
-    </div>)}</div><button className="component-add" disabled={components.length>=100} onClick={()=>onChange([...components,{id:`component-${Date.now()}`,label:'New component'}])}>+ Add component</button>
+    <h4>Components</h4><p className="component-description">Add a text requirement or reference another equipment item. Referenced equipment uses the latest saved artwork and can count against stock.</p><label className="canvas-checkbox component-base-toggle"><input type="checkbox" checked={showBase} onChange={event=>onShowBaseChange?.(event.target.checked)}/>Show this equipment item in the Components list</label>
+    <div className="component-definitions">{requirements.map((component,index)=><div className="component-definition" key={component.id} draggable title="Drag to reorder" onDragStart={event=>{draggedRequirement.current=component.id;event.dataTransfer.effectAllowed='move'}} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect='move'}} onDrop={event=>{event.preventDefault();dropRequirement(component)}} onDragEnd={()=>{draggedRequirement.current=null}}>
+      <div className="component-fields"><label>Item<input aria-label={`Component ${index+1}`} maxLength="200" value={component.label} onChange={event=>onChange(components.map(entry=>entry.id===component.id?{...entry,label:event.target.value}:entry))}/></label><label>Category<input value={component.category||'General'} maxLength="100" onChange={event=>onChange(components.map(entry=>entry.id===component.id?{...entry,category:event.target.value}:entry))}/></label></div>
+      <div className="component-actions"><button type="button" className="component-remove" aria-label={`Delete ${component.label}`} onClick={()=>onChange(components.filter(entry=>entry.id!==component.id))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div>
+    </div>)}{components.filter(component=>component.assetId).map(component=><div className="component-definition equipment-component-definition" key={component.id}><span title={component.label}>{component.label}</span><div className="component-actions"><button type="button" className="component-remove" aria-label={`Delete ${component.label}`} onClick={()=>onChange(components.filter(entry=>entry.id!==component.id))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div></div>)}</div><div className="component-create-actions"><button className="component-add" disabled={components.length>=100} onClick={()=>onChange([...components,{id:`component-${Date.now()}`,label:'New requirement',category:'General',quantity:1}])}>+ Add text requirement</button><button type="button" className="component-add" disabled={components.length>=100} onClick={()=>setPickerOpen(true)}>+ Add equipment component</button></div>
+    {pickerOpen&&<AccountModal><section className="account-dialog equipment-component-picker" role="dialog" aria-modal="true" aria-label="Add equipment component"><header><h2>Add equipment component</h2><button onClick={()=>setPickerOpen(false)}>Close</button></header><input className="component-library-search" autoFocus aria-label="Search equipment library" placeholder="Search equipment…" value={search} onChange={event=>setSearch(event.target.value)}/><div className="component-library-grid">{available.map(equipment=>{const width=equipment.dimensions?.widthMeters||1,depth=equipment.dimensions?.depthMeters||1;return <button type="button" key={equipment.id} onClick={()=>addEquipment(equipment)}><svg viewBox={`0 0 ${width} ${depth}`} aria-hidden="true"><EquipmentArtwork item={{...equipment,widthMeters:width,depthMeters:depth}}/></svg><span>{equipment.label}</span><small>{groups.find(group=>group.id===equipment.groupId)?.label||'Equipment'}</small></button>})}</div>{!available.length&&<p className="handle-help">No matching equipment is available.</p>}</section></AccountModal>}
   </section>
 }
 
@@ -428,7 +437,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const submitAsset=async(kind,asset)=>{try{await accountRequest("/submissions","POST",{kind,assetId:asset.id});await refreshLibrary();flash("Proposal submitted or updated. Your personal draft is still usable.")}catch(error){flash(error.message)}};
   const sessionKey=embeddedEquipment?'equipment-canvas:'+embeddedEquipment.data.id:embeddedStage?'canvas:'+(embeddedStage.sessionId||embeddedStage.data.id):'shape-studio:'+user?.id+':draft';
   const [recovery,setRecovery]=useState(()=>embeddedStage||embeddedEquipment?readSessionDraft(sessionKey):null);
-  const [session] = useState(() => embeddedEquipment?equipmentSession(embeddedEquipment.data):embeddedStage ? {documentMode:'stage',shapeName:embeddedStage.data.label,realWidth:embeddedStage.data.dimensions.widthMeters,realDepth:embeddedStage.data.dimensions.depthMeters,stageNodes:embeddedStage.data.boundary.nodes,zones:embeddedStage.data.zones||[],fixedEquipment:syncEquipmentFolders(embeddedStage.data.fixedEquipment||[],normaliseEquipmentFolders(embeddedStage.data.fixedEquipment||[],embeddedStage.data.equipmentFolders||[])),textItems:embeddedStage.data.textItems||[],referenceImages:stageImages(embeddedStage.data),stageLines:stageLineAssets(embeddedStage.data).filter(line=>line.type!=="curtain"),zoneFolders:normalizeZoneFolders(embeddedStage.data.editor?.assetFolders||embeddedStage.data.layerFolders,[...(embeddedStage.data.zones||[]),...(embeddedStage.data.textItems||[]),...(stageImages(embeddedStage.data)),...stageLineAssets(embeddedStage.data).filter(line=>line.type!=="curtain")]),stageBoundaryLocked:readOnlyStage||embeddedStage.data.editor?.stageBoundaryLocked||false,items:[]} : (()=>{const stored=readSessionDraft(sessionKey);return equipmentOnly&&stored.documentMode==='stage'?{}:stored;})());
+  const [session] = useState(() => embeddedEquipment?equipmentSession(embeddedEquipment.data):embeddedStage ? {documentMode:'stage',shapeName:embeddedStage.data.label,realWidth:embeddedStage.data.dimensions.widthMeters,realDepth:embeddedStage.data.dimensions.depthMeters,stageNodes:embeddedStage.data.boundary.nodes,zones:embeddedStage.data.zones||[],fixedEquipment:syncEquipmentFolders(embeddedStage.data.fixedEquipment||[],normaliseEquipmentFolders(embeddedStage.data.fixedEquipment||[],embeddedStage.data.equipmentFolders||[])),textItems:embeddedStage.data.textItems||[],referenceImages:[...stageImages(embeddedStage.data),...(embeddedStage.layoutGraphics||[]).map(image=>({...image,layoutGraphic:true}))],stageLines:stageLineAssets(embeddedStage.data).filter(line=>line.type!=="curtain"),zoneFolders:normalizeZoneFolders(embeddedStage.data.editor?.assetFolders||embeddedStage.data.layerFolders,[...(embeddedStage.data.zones||[]),...(embeddedStage.data.textItems||[]),...(stageImages(embeddedStage.data)),...((embeddedStage.layoutGraphics||[]).map(image=>({...image,layoutGraphic:true}))),...stageLineAssets(embeddedStage.data).filter(line=>line.type!=="curtain")]),stageBoundaryLocked:readOnlyStage||embeddedStage.data.editor?.stageBoundaryLocked||false,items:[]} : (()=>{const stored=readSessionDraft(sessionKey);return equipmentOnly&&stored.documentMode==='stage'?{}:stored;})());
   const [equipmentFolders,setEquipmentFolders]=useState(()=>session.equipmentFolders||embeddedStage?.layerFolders||embeddedStage?.data.equipmentFolders||[]);
   const [documentMode, setDocumentMode] = useState(session.documentMode ?? "item");
   const [shapeName, setShapeName] = useState(session.shapeName ?? "Untitled Item");
@@ -439,6 +448,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const [itemFolders,setItemFolders]=useState(()=>normalizeZoneFolders(session.itemFolders,session.items??[]));
   const [rotationParts, setRotationParts] = useState(session.rotationParts ?? []);
   const [components,setComponents]=useState(()=>normaliseComponents(session.components));
+  const [showAsComponent,setShowAsComponent]=useState(()=>session.showAsComponent===true);
+  const [selectedComponentId,setSelectedComponentId]=useState(null);
   const [cornerSnapping, setCornerSnapping] = useState(session.cornerSnapping ?? false);
   const [selectedId, setSelectedId] = useState(null);
   const [vectorNodeIndex, setVectorNodeIndex] = useState(null);
@@ -526,13 +537,14 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const marqueeRef = useRef(null);
   const [marquee, setMarquee] = useState(null);
   const stageDragRef = useRef(null);
+  const componentDragRef = useRef(null);
   const imageFileRef = useRef(null);
   const artworkImageFileRef=useRef(null);
   const assetDragRef = useRef(null);
   const clipboardRef = useRef(null);
   const clipboardId = useRef(1);
   const projectSnapshot = JSON.stringify(documentMode === "item"
-    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,itemFolders,rotationParts,components,cornerSnapping,referenceImages,advancedShapeRole}
+    ? {documentMode,shapeName,realWidth,realDepth,groupId,items,itemFolders,rotationParts,components,showAsComponent,cornerSnapping,referenceImages,advancedShapeRole}
     : {documentMode,shapeName,realWidth,realDepth,stageNodes,stageBoundaryLocked,stageBoundaryVisible,fixedEquipment,layoutEquipment,stagePartVisibility,layoutFixedControls,equipmentFolders,layoutNotes,availableEquipment,zones,zoneFolders,textItems,stageLines,referenceImages});
   const liveProjectSnapshot=useRef(projectSnapshot);
   useEffect(()=>{liveProjectSnapshot.current=projectSnapshot},[projectSnapshot]);
@@ -545,7 +557,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const onNavigationStateChange=embeddedStage?.onNavigationStateChange;
   useEffect(()=>{onNavigationStateChange?.({dirty:projectSnapshot!==savedProject.current,busy:shapeSaving})},[onNavigationStateChange,projectSnapshot,shapeSaving]);
   const sessionError = useSessionDraft(sessionKey, {
-    documentMode, shapeName, realWidth, realDepth, groupId, items, itemFolders, rotationParts, components, cornerSnapping, referenceImages,layoutEquipment,stagePartVisibility,layoutFixedControls,equipmentFolders,layoutNotes,availableEquipment,projectSnapshot,
+    documentMode, shapeName, realWidth, realDepth, groupId, items, itemFolders, rotationParts, components, showAsComponent, cornerSnapping, referenceImages,layoutEquipment,stagePartVisibility,layoutFixedControls,equipmentFolders,layoutNotes,availableEquipment,projectSnapshot,
     advancedShapeRole, stageNodes, fixedEquipment, zones, zoneFolders, textItems, stageLines, stageBoundaryLocked, stageBoundaryVisible, activeLibraryId, draftAssetId, snapMode, grid,studioUi,
     zoom, pan, canvasResizeEnabled, canvasResizeView, vectorDrawing,
     savedProject: savedProject.current ?? projectSnapshot, nextId: nextId.current, nextGroupId: nextGroupId.current,
@@ -666,6 +678,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       snapPoints: cornerSnapping ? [{x:0,y:0},{x:realWidth,y:0},{x:realWidth,y:realDepth},{x:0,y:realDepth}] : [],
       rotationParts: effectiveRotationParts,
       components:normaliseComponents(components),
+      showAsComponent,
       editor: { layers: items, layerFolders:itemFolders.map(folder=>({...folder,assetIds:folder.zoneIds,zoneIds:undefined})), referenceImages:[], ...(advancedShapeRole ? {advancedShapeRole} : {}), ...(library.find(item=>item.id===activeLibraryId)?.editor?.placementMode ? {placementMode:library.find(item=>item.id===activeLibraryId).editor.placementMode} : {}) },
     }),
     [
@@ -680,6 +693,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       cornerSnapping,
       effectiveRotationParts,
       components,
+      showAsComponent,
       items,
       itemFolders,
       advancedShapeRole,
@@ -770,6 +784,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         itemFolders: structuredClone(itemFolders),
         rotationParts: structuredClone(rotationParts),
         components:structuredClone(components),
+        showAsComponent,
         cornerSnapping,
         referenceImages: structuredClone(referenceImages),
         stageNodes: structuredClone(stageNodes),
@@ -790,6 +805,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setItems(previous.items);setItemFolders(previous.itemFolders||[]);
     setRotationParts(previous.rotationParts || []);
     setComponents(normaliseComponents(previous.components));
+    setShowAsComponent(previous.showAsComponent===true);
     setCornerSnapping(previous.cornerSnapping ?? false);
     setReferenceImages(documentMode==='stage'?previous.referenceImages||[]:[]);
     if(previous.stageBoundaryVisible!==undefined)setStageBoundaryVisible(previous.stageBoundaryVisible);
@@ -923,6 +939,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     if (event.button !== 0) return;
     if (item.editorLocked || item.editorVisible === false) return;
     if (item.type === "text") event.preventDefault();
+    setSelectedComponentId(null);
     setSelectedReferenceId(null);
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -993,6 +1010,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     }
   };
   const selectLayer = (event, item) => {
+    setSelectedComponentId(null);
     setSelectedReferenceId(null);
     if(item.folderIds){const members=items.filter(layer=>item.folderIds.includes(layer.id));return selectLayer(event,members)}
     if(Array.isArray(item)){
@@ -1237,6 +1255,18 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       y: snap(clamp ? Math.max(0, Math.min(realDepth, y)) : y),
     };
   };
+  const startComponentDrag=(event,component)=>{
+    if(event.button!==0)return;
+    event.preventDefault();event.stopPropagation();checkpoint();
+    setSelectedComponentId(component.id);setSelectedId(null);setSelectedGroupId(null);setMultiSelectedIds([]);setVectorNodeIndex(null);
+    componentDragRef.current={id:component.id,start:stagePointer(event,false),x:component.x||0,y:component.y||0};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveComponent=event=>{
+    const drag=componentDragRef.current;if(!drag)return;
+    const point=stagePointer(event,false),dx=point.x-drag.start.x,dy=point.y-drag.start.y;
+    setComponents(old=>old.map(component=>component.id===drag.id?{...component,x:roundDimension(drag.x+dx),y:roundDimension(drag.y+dy)}:component));
+  };
   const stageSegmentClick = (event, index, zoneId = null) => {
     if ((!zoneId && stageBoundaryLocked) || (zoneId && zones.find(zone => zone.id === zoneId)?.locked)) return;
     event.stopPropagation();
@@ -1415,20 +1445,15 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       }),
     );
   };
-  const loadArtworkImage=event=>{
-    const file=event.target.files?.[0];event.target.value='';if(!file)return
-    if(file.size>12_000_000){flash('Images must be smaller than 12 MB.');return}
-    const reader=new FileReader();reader.onload=()=>{
-      if(!validImageDataUrl(reader.result)){flash('Choose a PNG, JPEG, WebP, GIF or AVIF image.');return}
-      const image=new Image();image.onload=()=>{
-        const {width,height}=fittedImageSize(image.naturalWidth,image.naturalHeight,realWidth,realDepth),id=documentMode==='stage'?'image-'+Date.now():nextId.current++
-        const layer={id,type:'image',name:file.name||'Image',dataUrl:reader.result,x:(realWidth-width)/2,y:(realDepth-height)/2,width,height,aspectRatio:image.naturalWidth/image.naturalHeight,lockAspect:true,rotation:0,opacity:1,crop:{left:0,right:0,top:0,bottom:0},collision:false,editorVisible:true,zOrder:orderedAssets.length}
-        checkpoint();setSelectedGroupId(null);setMultiSelectedIds([]);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null)
-        if(documentMode==='stage'){setReferenceImages(old=>[...old,layer]);setSelectedId(null);setSelectedReferenceId(id);setSelectedStageAssetIds([id])}
-        else{setItems(old=>[...old,layer]);setSelectedId(id);setSelectedReferenceId(null)}
-      };image.onerror=()=>flash('The image could not be read.');image.src=reader.result
-    };reader.readAsDataURL(file)
-  }
+  const addGraphicFiles=async(files,point)=>{let offset=0;for(const file of files)try{
+    if(readOnlyStage&&!embeddedStage?.canUploadGraphics)throw new Error('This layout link does not allow graphic uploads.')
+    const id=documentMode==='stage'?`image-${Date.now()}-${offset}`:nextId.current++,layer=await importGraphic(file,{canvasWidth:realWidth,canvasHeight:realDepth,point:point&&{x:point.x+offset*.08,y:point.y+offset*.08},id,zOrder:orderedAssets.length+offset})
+    if(readOnlyStage)layer.layoutGraphic=true
+    checkpoint();setSelectedGroupId(null);setMultiSelectedIds([]);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null)
+    if(documentMode==='stage'){setReferenceImages(old=>[...old,layer]);setSelectedId(null);setSelectedReferenceId(id);setSelectedStageAssetIds([id])}else{setItems(old=>[...old,layer]);setSelectedId(id);setSelectedReferenceId(null)}offset++
+  }catch(error){flash(error.message)}}
+  const loadArtworkImage=event=>{const files=[...(event.target.files||[])];event.target.value='';if(files.length)addGraphicFiles(files)}
+  const dropOnCanvas=event=>{if(hasGraphicFiles(event.dataTransfer)){event.preventDefault();event.stopPropagation();const matrix=canvasRef.current.getScreenCTM()?.inverse(),point=matrix?new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix):null;addGraphicFiles([...event.dataTransfer.files],point);return}placement.drop(event)}
   const startReferenceDrag = (event, handle, imageOverride = referenceImage) => {
     if (event.button !== 0) return;
     event.stopPropagation();
@@ -1631,8 +1656,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     savedProject.current=JSON.stringify(state)
   }
   const saveToLibrary = async (submit=false,revisionNote='') => {
-    if(embeddedEquipment){if(!items.length)return flash('Add artwork before saving');setSaveError('');setEquipmentSaveOpen(true);return;}
-    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{const design={...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility,layoutFixedControls}:{}),layoutFolders:equipmentFolders,notes:layoutNotes};const prepared=readOnlyStage?design:await prepareStageImages(design);await embeddedStage.onSave(prepared,submit===true,revisionNote);if(readOnlyStage)savedProject.current=projectSnapshot;else applySavedImages(prepared);flash(revisionNote?'Saved with revision note':readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
+    if(embeddedEquipment){if(!items.length)return flash('Add artwork before saving');const dependants=library.filter(item=>item.id!==activeLibraryId&&normaliseComponents(item.components).some(component=>component.assetId===activeLibraryId));if(activeLibraryId&&dependants.length&&!(await appConfirm(`Updating ${shapeName} will update its appearance in ${dependants.length} referenced equipment item${dependants.length===1?'':'s'} (${dependants.slice(0,4).map(item=>item.label).join(', ')}${dependants.length>4?', …':''}). Continue?`)))return;setSaveError('');setEquipmentSaveOpen(true);return;}
+    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{const design={...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility,layoutFixedControls,layoutGraphics:referenceImages.filter(image=>image.layoutGraphic).map(({layoutGraphic,...image})=>image)}:{}),layoutFolders:equipmentFolders,notes:layoutNotes};const prepared=readOnlyStage?design:await prepareStageImages(design);await embeddedStage.onSave(prepared,submit===true,revisionNote);if(readOnlyStage)savedProject.current=projectSnapshot;else applySavedImages(prepared);flash(revisionNote?'Saved with revision note':readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
     if (shapeSaving) return;
     if(editingSubmission){setReviewerMessage(editingSubmission.review_note || '');setSubmissionSaveOpen(true);return;}
     if(personalSource){
@@ -1774,6 +1799,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setItemFolders(normalizeZoneFolders(item.editor?.layerFolders, item.editor?.layers || []));
     setRotationParts(item.rotationParts || []);
     setComponents(normaliseComponents(item.components));
+    setShowAsComponent(item.showAsComponent===true);
     setCornerSnapping(Boolean(item.snapPoints?.length));
     setReferenceImages([]);
     setSelectedReferenceId(null);
@@ -1874,6 +1900,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setItemFolders([]);
     setRotationParts([]);
     setComponents([]);
+    setShowAsComponent(false);
     setCornerSnapping(false);
     setSelectedId(null);
     setMultiSelectedIds([]);
@@ -2200,7 +2227,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const beginStageLayerDrag=id=>{const folderId=id?.folderId,source=folderId?id.ids:id,ids=Array.isArray(source)?source:stageGroupIds(orderedAssets,source);assetDragRef.current={kind:'stage',ids,folderId}}
   const dropInStageStack=(stack,target=null,folderId=null)=>{const dragged=assetDragRef.current;if(!dragged)return;checkpoint();if(dragged.kind==='equipment')placement.moveToBand(dragged.ids,stack);else{reorderAsset(dragged.ids,target,stack);if(!dragged.folderId)setZoneFolders(old=>folderId&&stack==='stage'?putZonesInFolder(old,dragged.ids,folderId):removeZonesFromFolders(old,dragged.ids))}assetDragRef.current=null}
   const renderStageAsset=asset=>asset.assetType === "image" ? (
-    <g className="ordered-stage-image" key={asset.id}><Shape controlUnit={realWidth/(canvasRef.current?.getBoundingClientRect().width||700)} item={{...asset,type:'image'}} selected={!readOnlyStage&&!stageMulti&&directlySelectedStageIds.includes(asset.id)} onPointerDown={readOnlyStage||asset.locked?undefined:event=>startAssetMove(event,asset,'image')} onHandlePointerDown={readOnlyStage||asset.locked||stageMulti?undefined:(event,handle)=>startReferenceDrag(event,'image-'+handle,asset)}/></g>
+    <g className="ordered-stage-image" key={asset.id}><Shape controlUnit={realWidth/(canvasRef.current?.getBoundingClientRect().width||700)} item={{...asset,type:'image'}} selected={(!readOnlyStage||asset.layoutGraphic)&&!stageMulti&&directlySelectedStageIds.includes(asset.id)} onPointerDown={(readOnlyStage&&!asset.layoutGraphic)||asset.locked?undefined:event=>startAssetMove(event,asset,'image')} onHandlePointerDown={(readOnlyStage&&!asset.layoutGraphic)||asset.locked||stageMulti?undefined:(event,handle)=>startReferenceDrag(event,'image-'+handle,asset)}/></g>
   ) : asset.assetType === "text" ? (
     <text key={asset.id} x={asset.x} y={asset.y} fill={asset.color} fillOpacity={asset.opacity} fontSize={asset.fontSize} textAnchor="middle" dominantBaseline="middle" className={asset.locked ? "stage-text locked" : "stage-text"} onPointerDown={(event) => startAssetMove(event, asset, "text")}>{asset.text}</text>
   ) : asset.assetType === "line" && asset.type==="curtain" ? (
@@ -2208,6 +2235,10 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   ) : asset.assetType === "line" ? (
     <g key={asset.id} className={`stage-dimension${asset.locked?" locked":""}${selectedStageLineId===asset.id?" selected":""}`} transform={`rotate(${asset.rotation||0} ${asset.x} ${asset.y})`} onPointerDown={asset.locked?undefined:event=>startAssetMove(event,asset,"line")}><line className="dimension-hit" x1={asset.x} y1={asset.y} x2={asset.x+asset.length} y2={asset.y}/><path d={`M ${asset.x} ${asset.y-.08} V ${asset.y+.08} M ${asset.x} ${asset.y} H ${asset.x+asset.length} M ${asset.x+asset.length} ${asset.y-.08} V ${asset.y+.08}`} fill="none" stroke={asset.color||"#287aa5"} vectorEffect="non-scaling-stroke"/><text x={asset.x+asset.length/2} y={asset.y-.11} fill={asset.color||"#287aa5"} fontSize=".16" textAnchor="middle">{asset.length.toFixed(2)} m</text>{selectedStageLineId===asset.id&&<circle className="dimension-anchor" cx={asset.x} cy={asset.y} r=".055"/>}</g>
   ) : <path pointerEvents={stageMoveMode&&!asset.locked?"all":"none"} className={stageMoveMode?"move-tool-target":undefined} onPointerDown={stageMoveMode&&!asset.locked?(event)=>startAssetMove(event,asset,"zone"):undefined} key={asset.id} d={stagePath(asset.nodes)} fill={asset.fillMode === "multicolour" ? `url(#zone-stripes-${asset.id})` : asset.fill || "#f7f6ef"} fillOpacity={asset.fillOpacity ?? 1} stroke={asset.stroke || "#71851f"} strokeOpacity={asset.strokeOpacity ?? 1} strokeWidth={asset.strokeWidth ?? 2} vectorEffect="non-scaling-stroke"/>;
+
+  const equipmentStack=[...items.map((item,index)=>({kind:'artwork',key:`artwork:${item.id}`,order:Number.isFinite(item.stackOrder)?item.stackOrder:index,item})),...normaliseComponents(components).filter(component=>component.assetId).map((component,index)=>({kind:'component',key:`component:${component.id}`,order:Number.isFinite(component.stackOrder)?component.stackOrder:-1000+index,component}))].sort((a,b)=>a.order-b.order)
+  const equipmentLayerAssets=[...equipmentStack].reverse().map(entry=>entry.kind==='component'?{id:entry.key,name:entry.component.label,componentLayer:true,visible:true,locked:false}:{...entry.item,id:entry.item.id,visible:entry.item.editorVisible,locked:entry.item.editorLocked,stackKey:entry.key})
+  const reorderEquipmentStack=(dragged,target)=>{const sourceIds=(Array.isArray(dragged)?dragged:[dragged]).map(id=>String(id).startsWith('component:')?String(id):`artwork:${id}`),targetKey=String(target).startsWith('component:')?String(target):`artwork:${target}`,top=[...equipmentStack].reverse(),moving=top.filter(entry=>sourceIds.includes(entry.key)),remaining=top.filter(entry=>!sourceIds.includes(entry.key)),targetIndex=remaining.findIndex(entry=>entry.key===targetKey);if(!moving.length||targetIndex<0)return;remaining.splice(targetIndex,0,...moving);const ranks=new Map([...remaining].reverse().map((entry,index)=>[entry.key,index]));setItems(old=>old.map(item=>({...item,stackOrder:ranks.get(`artwork:${item.id}`)??item.stackOrder})));setComponents(old=>old.map(component=>ranks.has(`component:${component.id}`)?{...component,stackOrder:ranks.get(`component:${component.id}`)}:component))}
 
   const autosaveCurrent=useEffectEvent(()=>{if(!shapeSaving&&projectSnapshot!==savedProject.current&&!saveError)saveToLibrary()});
   useEffect(()=>{if(!embeddedStage?.autosave)return;const timer=setInterval(()=>autosaveCurrent(),60000),flush=()=>autosaveCurrent();window.addEventListener('pagehide',flush);return()=>{clearInterval(timer);window.removeEventListener('pagehide',flush);flush()}},[embeddedStage?.autosave]);
@@ -2256,7 +2287,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 className="group-button palette-create-control"
                 onClick={() => imageFileRef.current?.click()}
               >
-                Add background image
+                Add image or SVG
               </button>
               <button
                 className="group-button palette-create-control"
@@ -2279,7 +2310,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               <input
                 ref={imageFileRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                accept={GRAPHIC_ACCEPT}
+                multiple
                 onChange={loadArtworkImage}
                 hidden
               />
@@ -2320,7 +2352,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               </p>
               <div className="studio-layer-tools"><input aria-label="Search layers" placeholder="Search layers" value={currentUi.search||""} onChange={event=>updateCurrentUi({search:event.target.value})}/><select aria-label="Filter layers" value={currentUi.filter||"all"} onChange={event=>updateCurrentUi({filter:event.target.value})}><option value="all">All layers</option><option value="grouped">Grouped</option><option value="locked">Locked</option><option value="hidden">Hidden</option></select></div>
               <p className="handle-help">Folders organise layers. Groups move and transform together.</p>
-              <StageLayerList folderName="Equipment folder" assets={[...items].reverse().filter(item=>{const query=(currentUi.search||'').toLowerCase(),filter=currentUi.filter||'all';return (!query||String(item.name||item.type).toLowerCase().includes(query))&&(filter!=='hidden'||item.editorVisible===false)&&(filter!=='locked'||item.editorLocked)&&(filter!=='grouped'||item.editorGroupId)}).map(item=>({...item,visible:item.editorVisible,locked:item.editorLocked}))} folders={itemFolders} selected={selectedGroupId?selectedGroupItems.map(item=>item.id):multiSelectedIds.length?multiSelectedIds:selectedId?[selectedId]:[]} select={(event,item)=>{setVectorNodeIndex(null);selectLayer(event,item)}} onLock={item=>{checkpoint();setItems(old=>old.map(layer=>layer.id===item.id?{...layer,editorLocked:!layer.editorLocked}:layer))}} changeAssets={(ids,changes)=>{checkpoint();setItems(old=>changes.__delete?old.filter(item=>!ids.includes(item.id)):old.map(item=>ids.includes(item.id)?{...item,...changes,...(changes.visible!==undefined?{editorVisible:changes.visible}:{})}:item));setSelectedId(null);setMultiSelectedIds([]);setSelectedGroupId(null)}} changeFolders={next=>{checkpoint();setItemFolders(next);setSelectedId(null);setMultiSelectedIds([]);setSelectedGroupId(null)}} onDrag={id=>{assetDragRef.current=id}} onDrop={(target,folderId)=>{const drag=assetDragRef.current;if(drag==null)return;checkpoint();const source=drag?.ids||drag,memberIds=Array.isArray(source)?source:multiSelectedIds.includes(source)?multiSelectedIds:items.find(item=>item.id===source)?.editorGroupId?items.filter(item=>item.editorGroupId===items.find(layer=>layer.id===source).editorGroupId).map(item=>item.id):[source];if(folderId)setItemFolders(old=>putZonesInFolder(old,memberIds,folderId));else{const moving=items.filter(item=>memberIds.includes(item.id)),copy=items.filter(item=>!memberIds.includes(item.id)),to=copy.findIndex(item=>item.id===target);if(to>=0){copy.splice(to,0,...moving);setItems(copy)}if(!drag?.folderId)setItemFolders(old=>removeZonesFromFolders(old,memberIds))}assetDragRef.current=null}}/>
+              <StageLayerList folderName="Equipment folder" assets={equipmentLayerAssets.filter(item=>{const query=(currentUi.search||'').toLowerCase(),filter=currentUi.filter||'all';return (!query||String(item.name||item.type).toLowerCase().includes(query))&&(item.componentLayer||filter!=='hidden'||item.editorVisible===false)&&(item.componentLayer||filter!=='locked'||item.editorLocked)&&(item.componentLayer||filter!=='grouped'||item.editorGroupId)})} folders={itemFolders} selected={selectedComponentId?[`component:${selectedComponentId}`]:selectedGroupId?selectedGroupItems.map(item=>item.id):multiSelectedIds.length?multiSelectedIds:selectedId?[selectedId]:[]} select={(event,item)=>{setVectorNodeIndex(null);if(item.componentLayer){setSelectedComponentId(item.id.slice('component:'.length));setSelectedId(null);setSelectedGroupId(null);setMultiSelectedIds([])}else{setSelectedComponentId(null);selectLayer(event,item)}}} onLock={item=>{checkpoint();setItems(old=>old.map(layer=>layer.id===item.id?{...layer,editorLocked:!layer.editorLocked}:layer))}} changeAssets={(ids,changes)=>{checkpoint();setItems(old=>changes.__delete?old.filter(item=>!ids.includes(item.id)):old.map(item=>ids.includes(item.id)?{...item,...changes,...(changes.visible!==undefined?{editorVisible:changes.visible}:{})}:item));setSelectedId(null);setMultiSelectedIds([]);setSelectedGroupId(null)}} changeFolders={next=>{checkpoint();setItemFolders(next);setSelectedId(null);setMultiSelectedIds([]);setSelectedGroupId(null)}} onDrag={id=>{assetDragRef.current=id}} onDrop={(target,folderId)=>{const drag=assetDragRef.current;if(drag==null)return;checkpoint();const source=drag?.ids||drag,memberIds=Array.isArray(source)?source:multiSelectedIds.includes(source)?multiSelectedIds:items.find(item=>item.id===source)?.editorGroupId?items.filter(item=>item.editorGroupId===items.find(layer=>layer.id===source).editorGroupId).map(item=>item.id):[source];if(folderId&&!memberIds.some(id=>String(id).startsWith('component:')))setItemFolders(old=>putZonesInFolder(old,memberIds,folderId));else{reorderEquipmentStack(memberIds,target);if(!drag?.folderId)setItemFolders(old=>removeZonesFromFolders(old,memberIds))}assetDragRef.current=null}}/>
               <div className="palette-create-control"><button className="group-button" disabled={!selectedId && !selectedGroupId && !multiSelectedIds.length} onClick={createRotationPart}>+ Rotation control from selection</button>
               {effectiveRotationParts.length > 0 && <><p className="eyebrow advanced-title">ROTATION CONTROLS</p>{effectiveRotationParts.map(part=><div className="rotation-part-card" key={part.id}>
                 <input aria-label="Rotation part name" value={part.name} onChange={event=>setRotationParts(old=>old.map(value=>value.id===part.id?{...value,name:event.target.value}:value))}/>
@@ -2348,6 +2380,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         <section className="workbench">
           <div className="toolbar">
             <button title="Show or hide layers" onClick={()=>updateCurrentUi({leftOpen:currentUi.leftOpen===false})}>Layers</button>
+            {readOnlyStage&&embeddedStage.canUploadGraphics&&<button onClick={()=>imageFileRef.current?.click()}>Add image or SVG</button>}
+            {readOnlyStage&&<><button onClick={placement.addDeck}>Stage deck</button><button onClick={placement.addText}>Text</button><button onClick={placement.addDrapes}>Drapes</button></>}
             <span>
               CANVAS {realWidth} × {realDepth} M · GRID 0.1 M
             </span>
@@ -2441,17 +2475,19 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 viewBox={`0 0 ${realWidth} ${realDepth}`}
                 preserveAspectRatio="xMidYMid meet"
                 onPointerDownCapture={event=>{if(embeddedStage&&event.target.closest?.('.placed-equipment, .equipment-controls'))return;if(readOnlyStage)return;placement.clear();if(vectorDrawing)drawVectorPoint(event);else if(!stageMoveMode)captureStageControl(event);}}
-                onDragOver={event=>{if(embeddedStage)event.preventDefault()}} onDrop={placement.drop}
+                onDragOver={event=>{if(hasGraphicFiles(event.dataTransfer)||embeddedStage)event.preventDefault()}} onDrop={dropOnCanvas}
                 onPointerMove={
-                  (event) => { if(vectorDrawing){setVectorPreview(stagePointer(event,false));return;} if (stageDragRef.current || documentMode === "stage") moveStageNode(event); else pointerMove(event); }
+                  (event) => { if(vectorDrawing){setVectorPreview(stagePointer(event,false));return;} if(componentDragRef.current)moveComponent(event);else if (stageDragRef.current || documentMode === "stage") moveStageNode(event); else pointerMove(event); }
                 }
                 onPointerUp={() => {
+                  componentDragRef.current = null;
                   dragRef.current = null;
                   handleRef.current = null;
                   rotationDragRef.current = null;setRotationReadout(null);
                   stageDragRef.current = null;
                 }}
                 onPointerCancel={() => {
+                  componentDragRef.current = null;
                   dragRef.current = null;
                   handleRef.current = null;
                   rotationDragRef.current = null;setRotationReadout(null);
@@ -2459,6 +2495,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 }}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
+                  setSelectedComponentId(null);
                   setSelectedId(null);
                   setSelectedReferenceId(null);
                   if (documentMode === "stage") {
@@ -2509,9 +2546,10 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 )}
                 {documentMode === "stage" && (
                   <g className="ordered-stage-assets" pointerEvents={readOnlyStage?"none":undefined}>
-                    {[...stageAssets].reverse().filter(asset=>stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map(renderStageAsset)}
+                    {[...stageAssets].reverse().filter(asset=>!asset.layoutGraphic&&stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map(renderStageAsset)}
                   </g>
                 )}
+                {readOnlyStage&&<g className="layout-graphics">{[...stageAssets,...roofAssets].filter(asset=>asset.layoutGraphic).map(renderStageAsset)}</g>}
                 {documentMode === "stage" ? (
                   <g className="stage-boundary-editor" style={{display:readOnlyStage||!stageBoundaryVisible&&!selectedZone?"none":undefined}}>
                     {zones.map((zone) => (
@@ -2777,16 +2815,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   </g>
                 ) : (
                   <>
-                    {items.filter(item=>stageAssetVisible({...item,visible:item.editorVisible},itemFolders)).map((item) => (
-                      <Shape
-                        key={item.id}
-                        item={item}
-                        selected={!vectorDrawing && item.id === selectedId}
-                        onPointerDown={(e) => pointerDown(e, item)}
-                        onHandlePointerDown={item.id === selectedId ? startHandleDrag : undefined}
-                        vectorEditor={item.id === selectedId && item.type === "vector" ? <VectorEditor item={item} index={vectorNodeIndex} onSelect={setVectorNodeIndex} onDrag={startHandleDrag} onCurve={(index)=>update({nodes:item.nodes.map((node,i)=>i===index?{...node,curveMode:"pointArc",arcDepth:0}:node)})} onInsert={(index)=>{const nodes=[...item.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index);}} /> : null}
-                      />
-                    ))}
+                    {equipmentStack.map(entry=>{if(entry.kind==='component'){const component=entry.component,equipment=library.find(item=>item.id===component.assetId)||component.equipment;if(!equipment)return null;const width=equipment.dimensions.widthMeters,depth=equipment.dimensions.depthMeters,x=(realWidth-width)/2+(component.x||0),y=(realDepth-depth)/2+(component.y||0),selected=selectedComponentId===component.id;return <g key={entry.key} className={`equipment-component-artwork${selected?' selected':''}`} transform={`translate(${x} ${y})`} onPointerDown={event=>startComponentDrag(event,component)}><svg width={width} height={depth} viewBox={`0 0 ${width} ${depth}`} overflow="visible"><EquipmentArtwork item={{...equipment,widthMeters:width,depthMeters:depth}}/><rect className="component-hit-area" x="0" y="0" width={width} height={depth}/>{selected&&<rect className="component-selection" x="0" y="0" width={width} height={depth}/>}</svg></g>}const item=entry.item;if(!stageAssetVisible({...item,visible:item.editorVisible},itemFolders))return null;return <Shape key={entry.key} item={item} selected={!vectorDrawing&&item.id===selectedId} onPointerDown={event=>pointerDown(event,item)} onHandlePointerDown={item.id===selectedId?startHandleDrag:undefined} vectorEditor={item.id===selectedId&&item.type==="vector"?<VectorEditor item={item} index={vectorNodeIndex} onSelect={setVectorNodeIndex} onDrag={startHandleDrag} onCurve={(index)=>update({nodes:item.nodes.map((node,i)=>i===index?{...node,curveMode:"pointArc",arcDepth:0}:node)})} onInsert={(index)=>{const nodes=[...item.nodes];nodes.splice(index,0,{...segmentMidpoint(nodes[(index-1+nodes.length)%nodes.length],nodes[index]),curveMode:"line"});update({nodes});setVectorNodeIndex(index)}}/>:null}/>})}
                     {cornerSnapping && [{x:0,y:0},{x:realWidth,y:0},{x:realWidth,y:realDepth},{x:0,y:realDepth}].map((point,index)=><circle key={`snap-${index}`} className="snap-point-guide" cx={point.x} cy={point.y} r=".025" pointerEvents="none"><title>Stageplot snap point</title></circle>)}
                     {items
                       .filter((item) => item.collision && !item.collisionOnly)
@@ -2848,7 +2877,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   {drawnVector?.nodes.map((node,index)=><circle key={index} cx={drawnVector.x+node.x} cy={drawnVector.y+node.y} r=".012" fill={index===0 ? "#d6ff46" : index===drawnVector.nodes.length-1 ? "#ffbf3f" : "white"} stroke="#35400f" strokeWidth="1.5" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
                 </g>}
               {embeddedStage&&<>{readOnlyStage&&<g className="installed-equipment-artwork">{effectiveLayoutStage.fixedEquipment.filter(item=>item.layerStack!=='roof').map(item=><g key={item.id} className={equipmentRotationParts(item).length?"installed-equipment adjustable":"installed-equipment"} data-fixed-id={item.id} onPointerDown={equipmentRotationParts(item).length?event=>{event.stopPropagation();selectFixed(item)}:undefined}><FixedEquipmentArtwork items={[item]}/></g>)}</g>}{placement.svg}</>}
-              {documentMode==="stage"&&<g className="ordered-roof-assets" pointerEvents={readOnlyStage?"none":undefined}>{[...roofAssets].reverse().filter(asset=>stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map(renderStageAsset)}</g>}
+              {documentMode==="stage"&&<g className="ordered-roof-assets" pointerEvents={readOnlyStage?"none":undefined}>{[...roofAssets].reverse().filter(asset=>!asset.layoutGraphic&&stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map(renderStageAsset)}</g>}
               {embeddedStage&&<>{readOnlyStage&&<g className="installed-roof-equipment-artwork">{effectiveLayoutStage.fixedEquipment.filter(item=>item.layerStack==='roof'&&item.visible!==false).map(item=><g key={item.id} className={equipmentRotationParts(item).length?"installed-equipment adjustable":"installed-equipment"} data-fixed-id={item.id} onPointerDown={equipmentRotationParts(item).length?event=>{event.stopPropagation();selectFixed(item)}:undefined}><FixedEquipmentArtwork items={[item]}/></g>)}</g>}{!readOnlyStage&&placement.roofSvg}</>}
               {!readOnlyStage&&stageMultiBounds&&<rect className="group-selection" x={stageMultiBounds.x-.03} y={stageMultiBounds.y-.03} width={stageMultiBounds.right-stageMultiBounds.x+.06} height={stageMultiBounds.bottom-stageMultiBounds.y+.06} pointerEvents="none"/>}
               </svg>
@@ -3286,10 +3315,11 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                 aspect ratio. Existing layer coordinates and sizes remain
                 unchanged.
               </p>
-              <ComponentsEditor value={components} onChange={next=>{checkpoint();setComponents(next)}}/>
+              <ComponentsEditor value={components} showBase={showAsComponent} onShowBaseChange={next=>{checkpoint();setShowAsComponent(next)}} library={library} groups={groups} currentId={activeLibraryId} onChange={next=>{checkpoint();setComponents(next)}}/>
             </>
           ) : (
             <>
+              {documentMode==='item'&&<button className="group-button" onClick={()=>{setSelectedId(null);setSelectedGroupId(null);setMultiSelectedIds([])}}>Edit equipment components</button>}
               <p className="inspector-context">{selected.collisionOnly ? "Collision-only vector layer" : selected.type === "compound" ? "Custom shape · artwork is not editable" : "Selected vector layer"}</p>
               <label className="field">
                 LAYER NAME

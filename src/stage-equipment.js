@@ -7,7 +7,7 @@ import { assetProfiles } from '../tools/library-membership.mjs';
 
 // Store only artwork, geometry and placement data, never library/editor metadata.
 export function fixedEquipmentSnapshot(item,id) {
-  const keys=['layerStack','supplyOverride','supply','useExternal','snapPoints','equipmentGroup','equipmentFolder','labelOffset','components','componentState','textOpacity','assetId','label','widthMeters','depthMeters','xMeters','yMeters','rotation','shapes','collisionShapes','rotationParts','controls','partVisibility','collisionEnabled','showLabel','visible','customType','heightMm','showHeight','fill','fillOpacity','line','lineOpacity','sublineColor','textColor','text','fontSize','bold','italic','thickness','color','opacity'];
+  const keys=['layerStack','supplyOverride','supply','useExternal','snapPoints','equipmentGroup','equipmentFolder','labelOffset','components','componentState','baseComponentEnabled','textOpacity','assetId','label','widthMeters','depthMeters','xMeters','yMeters','rotation','shapes','collisionShapes','rotationParts','controls','partVisibility','collisionEnabled','showLabel','visible','customType','heightMm','showHeight','fill','fillOpacity','line','lineOpacity','sublineColor','textColor','text','fontSize','bold','italic','thickness','color','opacity'];
   return structuredClone(Object.fromEntries([['id',id],...keys.filter(key=>item[key]!==undefined).map(key=>[key,key==='rotation'?wholeDegrees(item[key]):key==='controls'?Object.fromEntries(Object.entries(item.controls).map(([id,value])=>[id,{...value,rotation:wholeDegrees(value.rotation)}])):item[key]])]));
 }
 

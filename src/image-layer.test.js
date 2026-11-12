@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {normaliseCrop,validImageDataUrl,imagePixelSize,imageBounds,resizeCroppedImage,fittedImageSize,resizeImageDimension,imageSavePlan,composeImageTransform,imageTransform,identityTransform} from './image-layer.js'
+import {normaliseCrop,validImageDataUrl,validGraphicDataUrl,imagePixelSize,imageBounds,resizeCroppedImage,fittedImageSize,resizeImageDimension,imageSavePlan,composeImageTransform,imageTransform,identityTransform} from './image-layer.js'
 import {rotatedBounds} from './editor/rotation.js'
 
 test('equipment image layers accept safe raster data and constrain crop edges',()=>{
   assert.equal(validImageDataUrl('data:image/png;base64,iVBORw0KGgo='),true)
   assert.equal(validImageDataUrl('data:image/svg+xml;base64,PHN2Zz4='),false)
+  assert.equal(validGraphicDataUrl('data:image/svg+xml;base64,PHN2Zz4='),true)
   const crop=normaliseCrop({left:.8,right:.8,top:-1,bottom:2})
   assert.equal(crop.left,.8);assert.ok(Math.abs(crop.right-.19)<1e-9);assert.equal(crop.top,0);assert.equal(crop.bottom,.95)
 })

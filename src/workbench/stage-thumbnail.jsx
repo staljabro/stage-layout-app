@@ -13,7 +13,7 @@ export function StageThumbnail({stage:sourceStage,layout}) {
   if(!sourceStage)return null
   const stage=layout?applyFixedEquipmentControls(applyStagePartVisibility(sourceStage,layout.stage?.partVisibility),layout.stage?.fixedEquipmentControls):sourceStage
   const equipment=layout?resolveProject({...layout,assetSnapshots:{...layout.assetSnapshots,stage}},layout.assetSnapshots?.equipment||[],[stage]).items:[]
-  const images=stageImages(stage).filter(image=>stageAssetVisible(image,stage.layerFolders))
+  const images=[...stageImages(stage).filter(image=>stageAssetVisible(image,stage.layerFolders)),...(layout?.layoutGraphics||[])]
   const placements=[...(stage.fixedEquipment||[]),...equipment].filter(equipmentVisible),boundary=sampleStageBoundary(stage.boundary.nodes)
   const xs=[0,stage.dimensions.widthMeters,...boundary.map(point=>point.x),...placements.flatMap(item=>[item.xMeters-item.widthMeters,item.xMeters+item.widthMeters])],ys=[0,stage.dimensions.depthMeters,...boundary.map(point=>point.y),...placements.flatMap(item=>[item.yMeters-item.depthMeters,item.yMeters+item.depthMeters])]
   for(const curtain of stage.curtains||[]){const bounds=stageLineBounds(curtain);xs.push(bounds.x,bounds.right);ys.push(bounds.y,bounds.bottom)}
