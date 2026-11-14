@@ -29,6 +29,7 @@ import { API_BASE, apiFetch } from '../account-api.js'
 import { AccountButton, AppNavigation, useAccount } from '../accounts.jsx'
 import { stageGroupIds, copyStageGroups } from "../zone-groups.js";
 import { createContext, useContext, useEffect, useEffectEvent, useCallback, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { segmentMode, segmentMidpoint, smoothControl, arcOffset, pointOnArc, bezierGeometry, stageSegmentPath, stagePath, sampleStageBoundary } from "../stage-geometry.js";
 import { isPublishedItem, isEquipmentItem, assetProfiles } from "../../tools/library-membership.mjs";
 import { objectPivot, normalizeRotation, rotateObjects, rotatedBounds, lockTripodPartPivots } from "./rotation.js";
@@ -43,7 +44,7 @@ import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { subtractLayers, unionLayers, vectorFromCutRing } from "./shape-cut.js";
 import { boundaryBounds, translateBoundaryNodes, resizeRectangularZone, rectangularZoneNodes } from "./stage-zone.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
-import { EventHelp,StudioHelp,EquipmentHelp,ShortcutHelp } from "../help-dialog.jsx";
+import { ShortcutHelp } from "../help-dialog.jsx";
 import { APP_VERSION } from "../version.js";
 import { AppMark } from "../app-mark.jsx";
 import { normalizeZoneFolders, putZonesInFolder, removeZonesFromFolders } from "./stage-zone-folders.js";
@@ -70,7 +71,35 @@ function ToolbarIcon({name}) {
   return <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">{path}</svg>;
 }
 
-function EditableStageAssetLayers({items,controls,selection,onSelect}) {
+function LayoutStatusContent({issues,changes}) {
+  return <div className="layout-status-content"><section><h3>Layout checks</h3>{issues.length?<ul>{issues.map(issue=><li key={issue.code}>{issue.message}</li>)}</ul>:<p>No layout warnings detected.</p>}</section><section><h3>Since last save</h3>{changes.length?<ul>{changes.map(change=><li key={change.code}>{change.message}</li>)}</ul>:<p>No unsaved layout changes.</p>}</section></div>
+}
+
+function LayoutHeaderActions({busy,error,issues,changes,onVersion,onSubmit}) {
+  const [open,setOpen]=useState(false)
+  const [detailsOpen,setDetailsOpen]=useState(false)
+  const [target,setTarget]=useState(null)
+  const root=useRef(null)
+  useEffect(()=>{const frame=requestAnimationFrame(()=>setTarget(document.querySelector('.design-editor-scope .app>header .actions')));return()=>cancelAnimationFrame(frame)},[])
+  useEffect(()=>{if(!open)return;const close=event=>{if(!root.current?.contains(event.target))setOpen(false)};window.addEventListener('pointerdown',close);return()=>window.removeEventListener('pointerdown',close)},[open])
+  const state=error||issues.length?'warning':busy||changes.length?'changed':'clean'
+  const label=busy?'Saving…':error?'Save failed':issues.length?`${issues.length} layout warning${issues.length===1?'':'s'}`:changes.length?`${changes.length} unsaved change${changes.length===1?'':'s'}`:'Saved'
+  const saveActions=<div className="layout-save-actions header-layout-save-actions" ref={root}><button className="layout-save-menu-toggle" aria-label="More save options" aria-expanded={open} disabled={busy} onClick={()=>setOpen(value=>!value)}>▾</button>{open&&<div className="layout-save-menu">
+      <button onClick={()=>{setOpen(false);onVersion()}}><b>Save version</b><small>Add a labelled milestone to layout history.</small></button>
+      <button onClick={()=>{setOpen(false);onSubmit()}}><b>Submit for review</b><small>Save the layout and send it for approval.</small></button>
+    </div>}</div>
+  const status=<div className={`layout-status-menu ${state}`}><button aria-haspopup="dialog" onClick={()=>setDetailsOpen(true)}><span className="layout-status-dot"/>{label}</button><div className="layout-status-hover" role="tooltip"><LayoutStatusContent issues={issues} changes={changes}/><small>Click to keep this summary open.</small></div></div>
+  return <>{target&&createPortal(<>{status}{saveActions}</>,target)}{detailsOpen&&<AccountModal><section className="account-dialog layout-status-dialog" role="dialog" aria-modal="true" aria-label="Layout checks and changes"><header><h2>Layout checks and changes</h2><button onClick={()=>setDetailsOpen(false)}>Close</button></header><LayoutStatusContent issues={issues} changes={changes}/></section></AccountModal>}</>
+}
+
+function HeaderBackAction({label,busy,onBack}) {
+  const [target,setTarget]=useState(null)
+  useEffect(()=>{const frame=requestAnimationFrame(()=>setTarget(document.querySelector('.design-editor-scope .app>header .brand')));return()=>cancelAnimationFrame(frame)},[])
+  useEffect(()=>{if(!target)return;const original=[...document.querySelectorAll('.design-editor-scope .app>header .actions button')].find(button=>button.textContent.trim()===label);if(!original)return;original.hidden=true;return()=>{original.hidden=false}},[label,target])
+  return target&&createPortal(<button className="header-back-action" disabled={busy} onClick={onBack}>{label}</button>,target)
+}
+
+function EditableStageAssetLayers({items,controls,selection,editing,onToggleEdit,onResetSelected,onResetAll,onSelect}) {
   const section=(band,title)=>{
     const matching=items.filter(item=>item.editable&&(item.layerStack==='roof'?'roof':'stage')===band),seen=new Set(),entries=[]
     for(const item of matching){
@@ -81,13 +110,11 @@ function EditableStageAssetLayers({items,controls,selection,onSelect}) {
       entries.push({item,members,label:groupId?(item.equipmentGroup.name||'Equipment group'):(item.label||'Installed asset')})
     }
     if(!entries.length)return null
-    return <details className="editable-stage-layers" open><summary>{title} <small>{matching.length}</small></summary>{entries.map(entry=>{const selected=entry.members.every(item=>selection.includes(item.id)),moved=entry.members.some(item=>controls[item.id]?.$placement),hidden=entry.members.every(item=>item.visible===false);return <div className="canvas-layer-row" key={entry.item.equipmentGroup?.id||entry.item.id}><button className={`equipment-layer-name${selected?' active':''}`} onClick={event=>onSelect(entry.item,event.shiftKey)}><span>{entry.label}</span><small>{entry.members.length>1?`${entry.members.length} grouped · `:''}{hidden?'Hidden':moved?'Moved':'Default'}</small></button></div>})}</details>
+    return <details className="editable-stage-layers" open><summary>{title} <small>{matching.length}</small></summary>{entries.map(entry=>{const selected=entry.members.every(item=>selection.includes(item.id)),moved=entry.members.some(item=>controls[item.id]?.$placement),hidden=entry.members.every(item=>item.visible===false);return <div className="canvas-layer-row" key={entry.item.equipmentGroup?.id||entry.item.id}><button disabled={!editing} className={`equipment-layer-name${selected?' active':''}`} onClick={event=>onSelect(entry.item,event.shiftKey)}><span>{entry.label}</span><small>{entry.members.length>1?`${entry.members.length} grouped · `:''}{hidden?'Hidden':moved?'Moved':'Default'}</small></button></div>})}</details>
   }
-  return <>{section('roof','Overhead assets')}{section('stage','Stage assets')}</>
-}
-
-function LayoutValidation({issues,changes}) {
-  return <section className={`layout-validation${issues.length?' has-warnings':' ready'}`}><div className="layout-validation-group"><h3>Layout checks</h3>{issues.length?<ul>{issues.map(issue=><li key={issue.code}>{issue.message}</li>)}</ul>:<p>No layout warnings detected.</p>}</div><div className="layout-validation-group layout-change-summary"><h3>Since last save</h3>{changes.length?<ul>{changes.map(change=><li key={change.code}>{change.message}</li>)}</ul>:<p>No unsaved layout changes.</p>}</div></section>
+  const moved=items.some(item=>item.editable&&controls[item.id]?.$placement)
+  const selectedMoved=selection.some(id=>controls[id]?.$placement)
+  return <section className="editable-stage-assets"><div className="editable-stage-actions"><button className={editing?'active-tool':''} aria-pressed={editing} onClick={onToggleEdit}>{editing?'Finish editing stage assets':'Edit stage assets'}</button><button disabled={!selectedMoved} onClick={onResetSelected}>Reset selected</button><button disabled={!moved} onClick={onResetAll}>Reset all</button></div><p>{editing?'Select or drag around editable assets to move them. Groups stay together.':'Stage assets are locked until editing is enabled.'}</p>{section('roof','Overhead assets')}{section('stage','Stage assets')}</section>
 }
 
 function MultiCollisionControl({ layers, onChange }) {
@@ -488,7 +515,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const [grid, setGrid] = useState(session.grid ?? true);
   const [toast, setToast] = useState("");
   const [helpOpen,setHelpOpen]=useState(false);
-  const [shortcutsOpen,setShortcutsOpen]=useState(false);
   const [library, setLibrary] = useState(()=>embeddedEquipment?[...embeddedEquipment.library.filter(item=>item.id!==embeddedEquipment.data.id),embeddedEquipment.data]:[]);
   const [advancedShapeRole, setAdvancedShapeRole] = useState(session.advancedShapeRole ?? null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -2218,7 +2244,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)
       )
         return;
-      if(event.key==='?'){event.preventDefault();setShortcutsOpen(true);return}
+      if(event.key==='?'){event.preventDefault();setHelpOpen(true);return}
       if(readOnlyStage&&stageAssetEditMode&&selectedFixedIds.length&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)){
         event.preventDefault();const amount=event.shiftKey?.1:.01,dx=event.key==='ArrowLeft'?-amount:event.key==='ArrowRight'?amount:0,dy=event.key==='ArrowUp'?-amount:event.key==='ArrowDown'?amount:0
         checkpoint();setLayoutFixedControls(old=>translateFixedEquipmentPlacements(stageData,old,selectedFixedIds,dx,dy));return
@@ -2440,7 +2466,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               <button className="delete" onClick={()=>{checkpoint();setRotationParts(old=>old.filter(value=>value.id!==part.id));setItems(old=>old.map(item=>item.rotationPartId===part.id?{...item,rotationPartId:undefined}:item));}}>Remove control</button>
             </div>)}
           </section>}
-        </div>{embeddedStage&&readOnlyStage&&<EditableStageAssetLayers items={effectiveLayoutStage.fixedEquipment} controls={layoutFixedControls} selection={selectedFixedIds} onSelect={(item,additive)=>{setStageAssetEditMode(true);selectFixed(item,additive)}}/>}{embeddedStage&&readOnlyStage&&placement.layers}</aside>
+        </div>{embeddedStage&&readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<EditableStageAssetLayers items={effectiveLayoutStage.fixedEquipment} controls={layoutFixedControls} selection={selectedFixedIds} editing={stageAssetEditMode} onToggleEdit={()=>setStageAssetEditMode(value=>{if(value)setSelectedFixedIds([]);return !value})} onResetSelected={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,selectedFixedIds))}} onResetAll={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,effectiveLayoutStage.fixedEquipment.filter(item=>item.editable).map(item=>item.id)))}} onSelect={selectFixed}/>}{embeddedStage&&readOnlyStage&&placement.layers}</aside>
         <div className="panel-resizer" role="separator" aria-label="Resize layers panel" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"left",startX:event.clientX,startWidth:currentUi.leftWidth||238});}}/>
         <section className="workbench">
           <div className="toolbar" role="toolbar" aria-label={readOnlyStage?'Layout editing tools':documentMode==='stage'?'Stage editing tools':'Equipment editing tools'}>
@@ -2450,7 +2476,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
             <span>
               CANVAS {realWidth} × {realDepth} M · GRID 0.1 M
             </span>
-            {readOnlyStage&&<button disabled={shapeSaving} title="Save a labelled milestone to layout history" onClick={async()=>{const note=await appPrompt('Version note (optional)','');if(note!==null)saveToLibrary(false,note.trim())}}>Save version</button>}
             <button title="Undo" aria-label="Undo" onClick={undo} disabled={!history.length}><ToolbarIcon name="undo" /></button>
             <button title="Redo" aria-label="Redo" onClick={redo} disabled={!future.length}><ToolbarIcon name="redo" /></button>
             <button
@@ -2467,10 +2492,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               +
             </button>
             <button onClick={resetView}>Fit</button>
-            <button title="Keyboard shortcuts (?)" onClick={()=>setShortcutsOpen(true)}>Shortcuts <kbd>?</kbd></button>
-            {readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<button className={stageAssetEditMode?"active-tool":""} aria-pressed={stageAssetEditMode} title="Select and move editable installed stage assets" onClick={()=>{setStageAssetEditMode(value=>{if(value)setSelectedFixedIds([]);return !value})}}>Edit stage assets</button>}
-            {readOnlyStage&&selectedFixedIds.some(id=>layoutFixedControls[id]?.$placement)&&<button title="Restore the selected installed stage assets to their source-stage positions" onClick={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,selectedFixedIds))}}>Reset selected</button>}
-            {readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<button disabled={!effectiveLayoutStage.fixedEquipment.some(item=>item.editable&&layoutFixedControls[item.id]?.$placement)} title="Restore editable installed stage assets to their source-stage positions" onClick={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,effectiveLayoutStage.fixedEquipment.filter(item=>item.editable).map(item=>item.id)))}}>Reset stage assets</button>}
             {documentMode === "stage" && !readOnlyStage && <button className={stageMoveMode?"active-tool":""} aria-pressed={stageMoveMode} title="Move whole stage assets (M)" onClick={()=>{setStageMoveMode(value=>!value);setSelectedStageNode(null);}}>Move (M)</button>}
             {documentMode === "item" && <button disabled={!items.length} onClick={()=>{setPresetName(shapeName);setPresetDialogOpen(true);}}>Save as custom shape</button>}
             <label hidden={readOnlyStage}><input type="checkbox" checked={!canvasResizeEnabled} onChange={(event)=>setCanvasResizeEnabled(!event.target.checked)} /> Lock canvas size</label>
@@ -2496,7 +2517,6 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
             {embeddedStage&&<button title="Show or hide equipment library" onClick={()=>updateCurrentUi({equipmentOpen:currentUi.equipmentOpen===false})}>Equipment</button>}
             <button title="Show or hide inspector" onClick={()=>updateCurrentUi({rightOpen:currentUi.rightOpen===false})}>Inspector</button>
           </div>
-          {readOnlyStage&&<LayoutValidation issues={layoutValidation} changes={layoutChanges}/>}
           <div className="creation-toolbar" hidden={readOnlyStage}>
             <span className="creation-label">INSERT</span>
             {documentMode==="stage"?<>
@@ -3769,10 +3789,12 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
           </div>
         </section>
       </div>}
+      {embeddedStage&&(!readOnlyStage||!embeddedStage.guest)&&<HeaderBackAction label={embeddedStage.backLabel||(readOnlyStage?'Back to workspace':'Back to stages')} busy={shapeSaving} onBack={async()=>{if(projectSnapshot===savedProject.current||(await appConfirm('Leave without saving your latest changes?')))embeddedStage.onBack()}}/>}
+      {embeddedEquipment&&<HeaderBackAction label="Back to library" busy={shapeSaving} onBack={async()=>{if(projectSnapshot===savedProject.current||(await appConfirm('Leave this editor? Unsaved work will remain recoverable in this browser.')))embeddedEquipment.onBack()}}/>}
+      {readOnlyStage&&<LayoutHeaderActions busy={shapeSaving} error={saveError} issues={layoutValidation} changes={layoutChanges} onVersion={async()=>{const note=await appPrompt('Version note (optional)','');if(note!==null)saveToLibrary(false,note.trim())}} onSubmit={()=>saveToLibrary(true)}/>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
-      {helpOpen&&(embeddedStage?<EventHelp onClose={()=>setHelpOpen(false)}/>:embeddedEquipment?<EquipmentHelp onClose={()=>setHelpOpen(false)}/>:<StudioHelp equipmentOnly={equipmentOnly} onClose={()=>setHelpOpen(false)}/>)}
-      {shortcutsOpen&&<ShortcutHelp mode={readOnlyStage?'layout':documentMode==='stage'?'stage':'equipment'} onClose={()=>setShortcutsOpen(false)}/>}
+      {helpOpen&&<ShortcutHelp mode={readOnlyStage?'layout':documentMode==='stage'?'stage':'equipment'} onClose={()=>setHelpOpen(false)}/>}
     </div>
     </MeasurementUnit.Provider>
   );

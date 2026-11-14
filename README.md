@@ -2,7 +2,7 @@
 
 Build a stage, create your equipment, arrange a layout and share it with a client or a whole festival. Stageplot combines stage design and equipment placement in one canvas, with private libraries, organisation stock, reusable stages and PDF exports.
 
-**[Open the Stageplot user guide](docs/README.md)** · [First layout](docs/USER_GUIDE.md) · [Accounts and roles](docs/ACCOUNTS.md) · [Deployment and updates](docs/DEPLOYMENT.md)
+**[Open the Stageplot user guide](docs/README.md)** · [Changelog](CHANGELOG.md) · [First layout](docs/USER_GUIDE.md) · [Accounts and roles](docs/ACCOUNTS.md) · [Deployment and updates](docs/DEPLOYMENT.md)
 
 ## How it works
 
