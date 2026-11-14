@@ -58,7 +58,7 @@ Stock/source columns reflect the current layout's allocations. Untracked quantit
 
 ## History and stage versions
 
-Details & sharing shows saved layout revisions. Restoring one creates another current revision rather than deleting history.
+Details & sharing shows saved layout revisions, their notes and a concise list of equipment, installed-asset, visibility, notes and source-stage changes. Choose **Preview restore** to compare the selected revision with the current layout. Restoring creates another current revision rather than deleting history, so the previous state remains recoverable.
 
 A source-stage update changes which stage version the layout references. It does not replace the layout's equipment positions. Review fit after applying an update.
 

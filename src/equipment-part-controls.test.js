@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {equipmentRotationParts,applyFixedEquipmentControls,resetFixedEquipmentPlacements} from './equipment-part-controls.js'
+import {equipmentRotationParts,applyFixedEquipmentControls,resetFixedEquipmentPlacements,translateFixedEquipmentPlacements} from './equipment-part-controls.js'
 import {stageSpace,projectFile,resolveProject} from './project-file.js'
 import {pinProject} from './project-snapshots.js'
 import {customStagingItem,stagingSnapPoints} from './custom-items.js'
@@ -25,6 +25,12 @@ test('editable installed equipment accepts layout positions while locked equipme
 test('resetting installed positions preserves layout part rotations and unrelated overrides',()=>{
   const saved={installed:{$placement:{xMeters:7,yMeters:4},arm:{rotation:30}},other:{$placement:{xMeters:1,yMeters:1}}}
   assert.deepEqual(resetFixedEquipmentPlacements(saved,['installed']),{installed:{arm:{rotation:30}},other:{$placement:{xMeters:1,yMeters:1}}})
+})
+test('keyboard-style translations move only selected editable installed equipment',()=>{
+  const editableStage={...stage,fixedEquipment:[{...stage.fixedEquipment[0],editable:true},{...stage.fixedEquipment[0],id:'other',editable:true,xMeters:5}]}
+  const moved=translateFixedEquipmentPlacements(editableStage,{installed:{arm:{rotation:30}}},['installed'],.1,-.2)
+  assert.deepEqual(moved,{installed:{arm:{rotation:30},$placement:{xMeters:2.1,yMeters:2.8}}})
+  assert.deepEqual(applyFixedEquipmentControls(editableStage,moved).fixedEquipment.map(item=>[item.xMeters,item.yMeters]),[[2.1,2.8],[5,3]])
 })
 test('older snapshots recover missing part definitions from compatible equipment without replacing pinned artwork',()=>{
   const old={...item,rotationParts:undefined,shapes:[{...item.shapes[0],fill:'#123456'}]}

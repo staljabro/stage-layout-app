@@ -6,7 +6,7 @@ import {equipmentFolders as normaliseEquipmentFolders,syncEquipmentFolders} from
 import {SharedInspector} from './shared-inspector.jsx'
 import {StagePartsInspector} from './stage-parts-inspector.jsx'
 import {PartRotationInspector} from './part-rotation-inspector.jsx'
-import {fixedEquipmentControls as normaliseFixedControls,applyFixedEquipmentControls,equipmentRotationParts,resetFixedEquipmentPlacements} from '../equipment-part-controls.js'
+import {fixedEquipmentControls as normaliseFixedControls,applyFixedEquipmentControls,equipmentRotationParts,resetFixedEquipmentPlacements,translateFixedEquipmentPlacements} from '../equipment-part-controls.js'
 import {normaliseStagePartVisibility,stagePartVisible,applyStagePartVisibility} from '../stage-part-visibility.js'
 import {StageLayerList} from './stage-layer-list.jsx'
 import {LayerLock} from './layer-lock.jsx'
@@ -43,7 +43,7 @@ import { drawingEndpoint, finishDrawnVector } from "./vector-drawing.js";
 import { subtractLayers, unionLayers, vectorFromCutRing } from "./shape-cut.js";
 import { boundaryBounds, translateBoundaryNodes, resizeRectangularZone, rectangularZoneNodes } from "./stage-zone.js";
 import { advancedPresetId, instantiateAdvancedShape, removeCustomShapeMembership } from "./advanced-shapes.js";
-import { EventHelp,StudioHelp,EquipmentHelp } from "../help-dialog.jsx";
+import { EventHelp,StudioHelp,EquipmentHelp,ShortcutHelp } from "../help-dialog.jsx";
 import { APP_VERSION } from "../version.js";
 import { AppMark } from "../app-mark.jsx";
 import { normalizeZoneFolders, putZonesInFolder, removeZonesFromFolders } from "./stage-zone-folders.js";
@@ -57,6 +57,8 @@ import {ColourPicker} from './colour-picker.jsx'
 import {GRAPHIC_ACCEPT,hasGraphicFiles,importGraphic} from '../graphic-import.js'
 import {assetSnapshot} from '../project-snapshots.js'
 import {placementBounds} from '../layout-tools.js'
+import {validateLayout} from '../layout-validation.js'
+import {summariseLayoutChanges} from '../layout-changes.js'
 
 const LIBRARY_API = `${API_BASE}/items`;
 const STAGES_API = `${API_BASE}/stages`;
@@ -82,6 +84,10 @@ function EditableStageAssetLayers({items,controls,selection,onSelect}) {
     return <details className="editable-stage-layers" open><summary>{title} <small>{matching.length}</small></summary>{entries.map(entry=>{const selected=entry.members.every(item=>selection.includes(item.id)),moved=entry.members.some(item=>controls[item.id]?.$placement),hidden=entry.members.every(item=>item.visible===false);return <div className="canvas-layer-row" key={entry.item.equipmentGroup?.id||entry.item.id}><button className={`equipment-layer-name${selected?' active':''}`} onClick={event=>onSelect(entry.item,event.shiftKey)}><span>{entry.label}</span><small>{entry.members.length>1?`${entry.members.length} grouped · `:''}{hidden?'Hidden':moved?'Moved':'Default'}</small></button></div>})}</details>
   }
   return <>{section('roof','Overhead assets')}{section('stage','Stage assets')}</>
+}
+
+function LayoutValidation({issues,changes}) {
+  return <section className={`layout-validation${issues.length?' has-warnings':' ready'}`}><div className="layout-validation-group"><h3>Layout checks</h3>{issues.length?<ul>{issues.map(issue=><li key={issue.code}>{issue.message}</li>)}</ul>:<p>No layout warnings detected.</p>}</div><div className="layout-validation-group layout-change-summary"><h3>Since last save</h3>{changes.length?<ul>{changes.map(change=><li key={change.code}>{change.message}</li>)}</ul>:<p>No unsaved layout changes.</p>}</div></section>
 }
 
 function MultiCollisionControl({ layers, onChange }) {
@@ -482,6 +488,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const [grid, setGrid] = useState(session.grid ?? true);
   const [toast, setToast] = useState("");
   const [helpOpen,setHelpOpen]=useState(false);
+  const [shortcutsOpen,setShortcutsOpen]=useState(false);
   const [library, setLibrary] = useState(()=>embeddedEquipment?[...embeddedEquipment.library.filter(item=>item.id!==embeddedEquipment.data.id),embeddedEquipment.data]:[]);
   const [advancedShapeRole, setAdvancedShapeRole] = useState(session.advancedShapeRole ?? null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -950,6 +957,9 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setSelectedGroupId(null);
   };
   const effectiveLayoutStage=useMemo(()=>readOnlyStage?applyFixedEquipmentControls(applyStagePartVisibility(stageData,stagePartVisibility),layoutFixedControls):stageData,[readOnlyStage,stageData,stagePartVisibility,layoutFixedControls]);
+  const layoutValidation=useMemo(()=>readOnlyStage?validateLayout({stage:embeddedStage.data,items:layoutEquipment,fixedControls:layoutFixedControls,partVisibility:stagePartVisibility,library:embeddedStage.equipment||[],organisationId:embeddedStage.organisationId,stageVersion:embeddedStage.stageVersion,latestStageVersion:embeddedStage.latestStageVersion}):[],[readOnlyStage,embeddedStage,layoutEquipment,layoutFixedControls,stagePartVisibility]);
+  const savedLayout=(()=>{try{return JSON.parse(savedProject.current??projectSnapshot)}catch{return {}}})()
+  const layoutChanges=readOnlyStage?summariseLayoutChanges(savedLayout,{layoutEquipment,layoutFixedControls,stagePartVisibility,layoutNotes}):[]
   const selectedFixedItems=readOnlyStage?effectiveLayoutStage.fixedEquipment.filter(item=>selectedFixedIds.includes(item.id)):[];
   const selectedFixed=selectedFixedItems.length===1?selectedFixedItems[0]:null;
   const fixedSelectionIds=item=>editableFixedGroupIds(effectiveLayoutStage.fixedEquipment,item);
@@ -1697,7 +1707,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   }
   const saveToLibrary = async (submit=false,revisionNote='') => {
     if(embeddedEquipment){if(!items.length)return flash('Add artwork before saving');const dependants=library.filter(item=>item.id!==activeLibraryId&&normaliseComponents(item.components).some(component=>component.assetId===activeLibraryId));if(activeLibraryId&&dependants.length&&!(await appConfirm(`Updating ${shapeName} will update its appearance in ${dependants.length} referenced equipment item${dependants.length===1?'':'s'} (${dependants.slice(0,4).map(item=>item.label).join(', ')}${dependants.length>4?', …':''}). Continue?`)))return;setSaveError('');setEquipmentSaveOpen(true);return;}
-    if(embeddedStage){if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{const design={...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility,layoutFixedControls,layoutGraphics:referenceImages.filter(image=>image.layoutGraphic).map(({layoutGraphic,...image})=>image)}:{}),layoutFolders:equipmentFolders,notes:layoutNotes};const prepared=readOnlyStage?design:await prepareStageImages(design);await embeddedStage.onSave(prepared,submit===true,revisionNote);if(readOnlyStage)savedProject.current=projectSnapshot;else applySavedImages(prepared);flash(revisionNote?'Saved with revision note':readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
+    if(embeddedStage){if(readOnlyStage&&submit===true&&layoutValidation.length&&!(await appConfirm(`Submit with ${layoutValidation.length} layout warning${layoutValidation.length===1?'':'s'}?\n\n${layoutValidation.map(issue=>'• '+issue.message).join('\n')}`)))return;if(saveLock.current)return;saveLock.current=true;setShapeSaving(true);setSaveError('');try{const design={...embeddedStage.data,...stageData,id:embeddedStage.data.id,layoutEquipment,...(readOnlyStage?{stagePartVisibility,layoutFixedControls,layoutGraphics:referenceImages.filter(image=>image.layoutGraphic).map(({layoutGraphic,...image})=>image)}:{}),layoutFolders:equipmentFolders,notes:layoutNotes};const prepared=readOnlyStage?design:await prepareStageImages(design);await embeddedStage.onSave(prepared,submit===true,revisionNote);if(readOnlyStage)savedProject.current=projectSnapshot;else applySavedImages(prepared);flash(revisionNote?'Saved with revision note':readOnlyStage?(submit===true?'Submitted for review':'Layout saved'):'Stage saved');}catch(error){setSaveError(error.message);flash(error.message);}finally{saveLock.current=false;setShapeSaving(false);}return;}
     if (shapeSaving) return;
     if(editingSubmission){setReviewerMessage(editingSubmission.review_note || '');setSubmissionSaveOpen(true);return;}
     if(personalSource){
@@ -2208,6 +2218,12 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)
       )
         return;
+      if(event.key==='?'){event.preventDefault();setShortcutsOpen(true);return}
+      if(readOnlyStage&&stageAssetEditMode&&selectedFixedIds.length&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)){
+        event.preventDefault();const amount=event.shiftKey?.1:.01,dx=event.key==='ArrowLeft'?-amount:event.key==='ArrowRight'?amount:0,dy=event.key==='ArrowUp'?-amount:event.key==='ArrowDown'?amount:0
+        checkpoint();setLayoutFixedControls(old=>translateFixedEquipmentPlacements(stageData,old,selectedFixedIds,dx,dy));return
+      }
+      if(readOnlyStage&&event.key==='Escape'&&stageAssetEditMode){event.preventDefault();setStageAssetEditMode(false);setSelectedFixedIds([]);return}
       if (!readOnlyStage && documentMode === "stage" && event.key.toLowerCase() === "m" && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();setStageMoveMode(true);setSelectedStageNode(null);flash("Move tool active · drag whole stage assets · Esc to exit");return;
       }
@@ -2427,28 +2443,33 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         </div>{embeddedStage&&readOnlyStage&&<EditableStageAssetLayers items={effectiveLayoutStage.fixedEquipment} controls={layoutFixedControls} selection={selectedFixedIds} onSelect={(item,additive)=>{setStageAssetEditMode(true);selectFixed(item,additive)}}/>}{embeddedStage&&readOnlyStage&&placement.layers}</aside>
         <div className="panel-resizer" role="separator" aria-label="Resize layers panel" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"left",startX:event.clientX,startWidth:currentUi.leftWidth||238});}}/>
         <section className="workbench">
-          <div className="toolbar">
+          <div className="toolbar" role="toolbar" aria-label={readOnlyStage?'Layout editing tools':documentMode==='stage'?'Stage editing tools':'Equipment editing tools'}>
             <button title="Show or hide layers" onClick={()=>updateCurrentUi({leftOpen:currentUi.leftOpen===false})}>Layers</button>
             {readOnlyStage&&embeddedStage.canUploadGraphics&&<button onClick={()=>imageFileRef.current?.click()}>Add image or SVG</button>}
             {readOnlyStage&&<><button onClick={placement.addDeck}>Stage deck</button><button onClick={placement.addText}>Text</button><button onClick={placement.addDrapes}>Drapes</button></>}
             <span>
               CANVAS {realWidth} × {realDepth} M · GRID 0.1 M
             </span>
+            {readOnlyStage&&<button disabled={shapeSaving} title="Save a labelled milestone to layout history" onClick={async()=>{const note=await appPrompt('Version note (optional)','');if(note!==null)saveToLibrary(false,note.trim())}}>Save version</button>}
             <button title="Undo" aria-label="Undo" onClick={undo} disabled={!history.length}><ToolbarIcon name="undo" /></button>
             <button title="Redo" aria-label="Redo" onClick={redo} disabled={!future.length}><ToolbarIcon name="redo" /></button>
             <button
+              aria-label="Zoom out"
               onClick={() => setZoom((value) => Math.max(0.25, value / 1.2))}
             >
               −
             </button>
             <b>{Math.round(zoom * 100)}%</b>
             <button
+              aria-label="Zoom in"
               onClick={() => setZoom((value) => Math.min(6, value * 1.2))}
             >
               +
             </button>
             <button onClick={resetView}>Fit</button>
+            <button title="Keyboard shortcuts (?)" onClick={()=>setShortcutsOpen(true)}>Shortcuts <kbd>?</kbd></button>
             {readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<button className={stageAssetEditMode?"active-tool":""} aria-pressed={stageAssetEditMode} title="Select and move editable installed stage assets" onClick={()=>{setStageAssetEditMode(value=>{if(value)setSelectedFixedIds([]);return !value})}}>Edit stage assets</button>}
+            {readOnlyStage&&selectedFixedIds.some(id=>layoutFixedControls[id]?.$placement)&&<button title="Restore the selected installed stage assets to their source-stage positions" onClick={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,selectedFixedIds))}}>Reset selected</button>}
             {readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<button disabled={!effectiveLayoutStage.fixedEquipment.some(item=>item.editable&&layoutFixedControls[item.id]?.$placement)} title="Restore editable installed stage assets to their source-stage positions" onClick={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,effectiveLayoutStage.fixedEquipment.filter(item=>item.editable).map(item=>item.id)))}}>Reset stage assets</button>}
             {documentMode === "stage" && !readOnlyStage && <button className={stageMoveMode?"active-tool":""} aria-pressed={stageMoveMode} title="Move whole stage assets (M)" onClick={()=>{setStageMoveMode(value=>!value);setSelectedStageNode(null);}}>Move (M)</button>}
             {documentMode === "item" && <button disabled={!items.length} onClick={()=>{setPresetName(shapeName);setPresetDialogOpen(true);}}>Save as custom shape</button>}
@@ -2475,6 +2496,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
             {embeddedStage&&<button title="Show or hide equipment library" onClick={()=>updateCurrentUi({equipmentOpen:currentUi.equipmentOpen===false})}>Equipment</button>}
             <button title="Show or hide inspector" onClick={()=>updateCurrentUi({rightOpen:currentUi.rightOpen===false})}>Inspector</button>
           </div>
+          {readOnlyStage&&<LayoutValidation issues={layoutValidation} changes={layoutChanges}/>}
           <div className="creation-toolbar" hidden={readOnlyStage}>
             <span className="creation-label">INSERT</span>
             {documentMode==="stage"?<>
@@ -2943,7 +2965,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
           </div>
         </section>
         <div className="panel-resizer" role="separator" aria-label="Resize inspector" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"right",startX:event.clientX,startWidth:currentUi.rightWidth||250});}}/>
-        <aside className={`inspector${currentUi.rightOpen===false?" panel-collapsed":""}`}>{readOnlyStage&&!placement.selected&&!selectedFixedIds.length&&<StagePartsInspector stage={stageData} visibility={stagePartVisibility} onChange={value=>{checkpoint();setStagePartVisibility(value)}}/>}{selectedFixed&&<section className="installed-equipment-inspector"><h3>{selectedFixed.label||'Installed equipment'}</h3>{selectedFixed.editable&&<p className="handle-help">Drag this installed item to move it for this layout. It cannot be deleted.</p>}<PartRotationInspector item={selectedFixed} installed onChange={controls=>{checkpoint();setLayoutFixedControls(old=>({...old,[selectedFixed.id]:{...old[selectedFixed.id],...controls}}))}}/></section>}{selectedFixedItems.length>1&&<section className="installed-equipment-inspector"><h3>{selectedFixedItems.length} installed stage assets</h3><p className="handle-help">Drag any selected item to move this selection together. Installed stage assets cannot be deleted.</p></section>}{embeddedStage&&!placement.selected&&!selectedFixedIds.length&&placement.notesPanel}{stockMode&&!readOnlyStage?<StockInspector value={availableEquipment} groups={embeddedStage?.groups||[]} library={embeddedStage?.equipment||[]} onChange={next=>{checkpoint();setAvailableEquipment(next)}}/>:embeddedStage&&placement.selected?placement.inspector:null}<div hidden={Boolean(embeddedStage&&(readOnlyStage||placement.selected||stockMode))}>
+        <aside className={`inspector${currentUi.rightOpen===false?" panel-collapsed":""}`}>{readOnlyStage&&!placement.selected&&!selectedFixedIds.length&&<StagePartsInspector stage={stageData} visibility={stagePartVisibility} onChange={value=>{checkpoint();setStagePartVisibility(value)}}/>}{selectedFixed&&<section className="installed-equipment-inspector"><h3>{selectedFixed.label||'Installed equipment'}</h3>{selectedFixed.editable&&<p className="handle-help">Drag or use the arrow keys to move this item. Hold Shift for 10 cm steps. It cannot be deleted.</p>}<PartRotationInspector item={selectedFixed} installed onChange={controls=>{checkpoint();setLayoutFixedControls(old=>({...old,[selectedFixed.id]:{...old[selectedFixed.id],...controls}}))}}/></section>}{selectedFixedItems.length>1&&<section className="installed-equipment-inspector"><h3>{selectedFixedItems.length} installed stage assets</h3><p className="handle-help">Drag any selected item or use the arrow keys to move the selection together. Hold Shift for 10 cm steps. Installed stage assets cannot be deleted.</p></section>}{embeddedStage&&!placement.selected&&!selectedFixedIds.length&&placement.notesPanel}{stockMode&&!readOnlyStage?<StockInspector value={availableEquipment} groups={embeddedStage?.groups||[]} library={embeddedStage?.equipment||[]} onChange={next=>{checkpoint();setAvailableEquipment(next)}}/>:embeddedStage&&placement.selected?placement.inspector:null}<div hidden={Boolean(embeddedStage&&(readOnlyStage||placement.selected||stockMode))}>
           {documentMode === "stage" ? (
             <>
               {stageMulti&&<SharedInspector items={stageInspectorAssets} context="stage" onChange={changeSharedStage} unit="m"/>}
@@ -3748,8 +3770,9 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
         </section>
       </div>}
       {sessionError && <div className="session-warning" role="alert">{sessionError}</div>}
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
       {helpOpen&&(embeddedStage?<EventHelp onClose={()=>setHelpOpen(false)}/>:embeddedEquipment?<EquipmentHelp onClose={()=>setHelpOpen(false)}/>:<StudioHelp equipmentOnly={equipmentOnly} onClose={()=>setHelpOpen(false)}/>)}
+      {shortcutsOpen&&<ShortcutHelp mode={readOnlyStage?'layout':documentMode==='stage'?'stage':'equipment'} onClose={()=>setShortcutsOpen(false)}/>}
     </div>
     </MeasurementUnit.Provider>
   );

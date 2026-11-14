@@ -46,9 +46,32 @@ jobs:
         run: |
           mapfile -d '' tests < <(find tools -maxdepth 1 -name '*.test.mjs' ! -name '*browser.test.mjs' ! -name 'popup-layout.test.mjs' -print0)
           node --test --test-isolation=none --test-reporter=tap src/*.test.js "${tests[@]}"
+      - name: Smoke-test API container runtime
+        timeout-minutes: 5
+        run: |
+          docker build --target library-api --tag stageplot-library-api:verify .
+          docker run --rm stageplot-library-api:verify node --input-type=module -e "await import('./tools/user-workspace.mjs'); await import('./tools/workspace-model.mjs')"
+
+  browser:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run workspace browser regression
+        env:
+          STAGEPLOT_TEST_BROWSER: /usr/bin/google-chrome
+        run: node --test --test-isolation=none --test-reporter=tap tools/user-workspace-browser.test.mjs
 
   publish:
-    needs: verify
+    needs: [verify, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

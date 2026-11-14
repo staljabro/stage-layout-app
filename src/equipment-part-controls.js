@@ -45,3 +45,9 @@ export function resetFixedEquipmentPlacements(saved={},ids=[]) {
   }
   return next
 }
+
+export function translateFixedEquipmentPlacements(stage,saved={},ids=[],dx=0,dy=0) {
+  const moving=new Set(ids),effective=applyFixedEquipmentControls(stage,saved),next={...saved}
+  for(const item of effective.fixedEquipment)if(item.editable===true&&moving.has(item.id))next[item.id]={...saved[item.id],$placement:{xMeters:item.xMeters+dx,yMeters:item.yMeters+dy}}
+  return next
+}

@@ -22,6 +22,10 @@ Welcome to the Stageplot documentation. Use this as a wiki: start with a task, t
 - **[Architecture](APP_FLOW_REVIEW.md)** — data model, permissions, API and migration boundaries.
 - **[Repository home](../README.md)**.
 
+## Current release
+
+- **[0.5.7-alpha.0 release notes](RELEASE_NOTES_0.5.7-alpha.0.md)** — editable installed assets, validation, revision previews and deployment hardening.
+
 ## What Stageplot calls things
 
 | Term | Meaning |
@@ -29,7 +33,7 @@ Welcome to the Stageplot documentation. Use this as a wiki: start with a task, t
 | Stage | A saved venue boundary, stage layers and installed equipment. |
 | Layout / stageplot | An equipment arrangement referencing a particular stage version. |
 | Curtain | A stage line with fixed 10 cm peak-to-trough folds, adjustable length and styling. See [curtains](CANVAS.md#curtains). |
-| Installed equipment | Equipment placed by the stage author; clients cannot move it. |
+| Installed equipment | Equipment placed by the stage author. It stays locked unless the author marks it editable and the layout user enables **Edit stage assets**; it cannot be deleted. |
 | Available equipment | The movable equipment offered to layout users. |
 | Component | A named requirement attached to equipment, with a per-placement checkbox and note. |
 | Organisation | A private team library, its members, branding and stock. |

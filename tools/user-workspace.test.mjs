@@ -315,8 +315,13 @@ test('client layouts reference original stage versions and expose only deliberat
   assert.equal(JSON.stringify(layout).includes('PRIVATE'),false,'private authoring reference images never enter the client palette')
   const forged={...layout.data,assetSnapshots:{...layout.data.assetSnapshots,stage:{...layout.data.assetSnapshots.stage,dimensions:{widthMeters:999,depthMeters:999}}}}
   forged.items=[{id:101,assetId:'available-stand',xMeters:2,yMeters:2,rotation:0,supply:'venue'}]
-  const saved=await call(layoutUrl,'PUT',{data:forged,notes:'Client equipment',revision:1},null)
+  const saved=await call(layoutUrl,'PUT',{data:forged,notes:'Client equipment',revision:1,revisionNote:'Added venue stand'},null)
   assert.equal(saved.status,200,saved.data.error);assert.equal(saved.data.data.assetSnapshots.stage.dimensions.widthMeters,12)
+  const history=(await call('/layouts/'+first.data.id+'/history')).data
+  assert.equal(history[0].revisionNote,'Added venue stand')
+  assert.deepEqual(history[0].changes,['1 equipment item added','Layout notes changed'])
+  assert.deepEqual(history[0].restoreChanges,[])
+  assert.deepEqual(history[1].restoreChanges,['1 equipment item removed','Layout notes changed'])
   const stored=JSON.parse(store.get('SELECT data FROM wf_layouts WHERE id=?',first.data.id).data)
   assert.equal(stored.assetSnapshots.stage,undefined,'stage geometry is materialised on read, not copied into each layout')
   assert.equal((await call('/layouts')).data.length,2)

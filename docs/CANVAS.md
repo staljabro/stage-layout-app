@@ -38,7 +38,7 @@ Stage images participate in layers, groups, folders, eyes and locks. Mark an ima
 
 ## Installed and movable equipment
 
-Equipment placed in stage authoring becomes installed equipment. Clients see it as part of the stage and cannot move it.
+Equipment placed in stage authoring becomes installed equipment. It is locked in layouts by default. Stage authors can enable **Editable in Stageplot**, which also makes it toggleable. Layout users must then enable **Edit stage assets** before selecting or moving it; installed assets still cannot be deleted. Authored equipment groups remain one group in layout mode, and **Reset selected** or **Reset stage assets** restores source-stage positions.
 
 **Available equipment** configures the movable equipment offered to layout users. It is a category-grouped checklist of public and saved equipment with Check all/Uncheck all. No selected items means all public equipment. An explicit list can include deliberately shared private equipment. Create and save the private item, tick it in **Available equipment**, save the stage version, then send the invitation. Clients can place those items without access to the rest of your private library. The Available equipment inspector separates **Public equipment** from **Private and shared equipment**, with categories within each section. Existing layouts use their pinned available-equipment list until you apply a source-stage update.
 
@@ -46,11 +46,11 @@ Optional quantities are blank for untracked, zero for none, or positive whole nu
 
 ## Arrange a layout
 
-Open a saved layout or choose **Create layout** on a stage card. Layout editing locks stage geometry and installed equipment. Locked source layers are omitted from the layout layer list. Layout changes autosave once per minute while dirty and make a best-effort final save when the editor closes. Use **Save with note** to create a named checkpoint; the latest useful note appears in the workspace and saved-history views.
+Open a saved layout or choose **Create layout** on a stage card. Layout editing locks stage geometry and installed equipment unless the stage author explicitly made an installed asset editable. Editable installed assets appear in the Overhead and Stage asset sections of the layout layer list. Layout changes autosave once per minute while dirty and make a best-effort final save when the editor closes. Use **Save version** to create a named checkpoint; the latest useful note appears in the workspace and saved-history views.
 
 Click equipment in the bottom drawer or drag it onto the stage. Drag placed equipment to move it. The inspector provides coordinates, rotation, labels, named parts, components and supply source. Multiple selected items expose compatible shared controls even when their values differ.
 
-Equipment with articulated parts shows a separate **Part rotation** section in the inspector. For installed equipment, click the item on the canvas or its **(installed parts)** entry in the expanded Stage layers list. Its position and overall rotation stay locked. Part choices save with the layout and appear in previews and PDF exports; the source stage stays unchanged.
+Equipment with articulated parts shows a separate **Part rotation** section in the inspector. For locked installed equipment, click the item on the canvas or its installed-parts layer entry. Editable installed equipment is selected while **Edit stage assets** is active. Part choices and permitted position overrides save with the layout and appear in previews and PDF exports; the source stage stays unchanged.
 
 Rotation handles follow the item's orientation. Rotation fields and gestures use whole degrees. Shift gives a coarser 15-degree gesture.
 

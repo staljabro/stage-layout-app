@@ -1,6 +1,7 @@
 import {createStageLibraryRoutes} from './stage-library-routes.mjs'
 import {uid,token,fail,manager} from './account-store.mjs'
 import {isEquipmentItem} from './library-membership.mjs'
+import {layoutRevisionState,summariseLayoutChanges} from '../src/layout-changes.js'
 import {createWorkspaceModel} from './workspace-model.mjs'
 import {validOrganisationLogo} from '../src/organisation-logo.js'
 import {assetSnapshot} from '../src/project-snapshots.js'
@@ -159,7 +160,12 @@ export function createUserWorkspace(store) {
       if(!action&&method==='GET')return reply(200,layoutSummary(row,user,true))
       if(!action&&method==='DELETE'){const input=await body();return reply(200,transaction(()=>{const current=getLayout(id,user);if(current.owner_id!==user.id)fail(403,'Only the layout owner can delete this layout');if(input.revision!==current.revision)fail(409,'Layout changed. Reopen before deleting');run('UPDATE wf_layouts SET deleted=1,guest_token=NULL,registration_key=NULL,revision=revision+1,updated=? WHERE id=?',now(),id);return {deleted:true}}))}
       if(!action&&method==='PUT'){const input=await body();return reply(200,transaction(()=>layoutSummary(saveLayout(getLayout(id,user),input,user),user,true)))}
-      if(action==='history'&&method==='GET')return reply(200,all('SELECT revision,created,snapshot FROM wf_layout_versions WHERE layout_id=? ORDER BY revision DESC',id).map(row=>{let revisionNote='';try{revisionNote=JSON.parse(row.snapshot).revisionNote||''}catch{/* Older broken snapshots remain restorable by revision id. */}return {revision:row.revision,created:row.created,revisionNote}}))
+      if(action==='history'&&method==='GET'){
+        let previous=null
+        const records=all('SELECT revision,created,snapshot FROM wf_layout_versions WHERE layout_id=? ORDER BY revision',id).map(row=>{let snapshot=null;try{snapshot=JSON.parse(row.snapshot)}catch{/* Older broken snapshots remain restorable by revision id. */}return {...row,snapshot}}),latest=records.findLast(row=>row.snapshot)?.snapshot
+        const history=records.map(row=>{const changes=previous&&row.snapshot?summariseLayoutChanges(layoutRevisionState(previous),layoutRevisionState(row.snapshot)).map(change=>change.message):[];if(row.snapshot)previous=row.snapshot;const restoreChanges=latest&&row.snapshot?summariseLayoutChanges(layoutRevisionState(latest),layoutRevisionState(row.snapshot)).map(change=>change.message):[];return {revision:row.revision,created:row.created,revisionNote:row.snapshot?.data?.revisionNote||row.snapshot?.revisionNote||'',changes,restoreChanges}})
+        return reply(200,history.reverse())
+      }
       if(action&&method==='POST'){
         const input=await body();return reply(200,transaction(()=>{const current=getLayout(id,user);if(input.revision!==current.revision)fail(409,'Layout changed. Reopen before continuing')
           if(action==='link'){if(!layoutSummary(current,user).canManageLink)fail(403,'Only the organiser can replace or revoke private links');run('UPDATE wf_layouts SET guest_token=?,registration_key=NULL,allow_graphic_uploads=? WHERE id=?',input.disable?null:token(),input.allowGraphicUploads===true?1:0,id);return layoutSummary(get('SELECT * FROM wf_layouts WHERE id=?',id),user,true)}
