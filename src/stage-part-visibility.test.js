@@ -34,6 +34,15 @@ test('one layout control hides roof artwork and installed roof equipment',()=>{
   assert.equal(effective.fixedEquipment[0].visible,false)
   assert.equal(effective.fixedEquipment[1].visible,true)
 })
+test('editable installed equipment is toggleable per layout without changing the source',()=>{
+  const installed={id:'piano',name:'House piano',toggleable:true,editable:true,xMeters:2,yMeters:2,visible:true}
+  const source={...stage,fixedEquipment:[installed]}
+  const visibility=normaliseStagePartVisibility(source,{piano:false})
+  const effective=applyStagePartVisibility(source,visibility)
+  assert.equal(stagePartGroups(source).some(group=>group.ids.includes('piano')),true)
+  assert.equal(effective.fixedEquipment[0].visible,false)
+  assert.equal(source.fixedEquipment[0].visible,true)
+})
 
 test('clients can hide source dimension lines without changing the stage',()=>{
   const source={...stage,editor:{dimensionLines:[{id:'width',x:0,y:0,length:4}]}}

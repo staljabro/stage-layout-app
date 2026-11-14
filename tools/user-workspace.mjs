@@ -175,6 +175,11 @@ export function createUserWorkspace(store) {
       return reply(201,transaction(()=>{requireOwner(user);return copyEquipment(input.assetId?archived('items',input.assetId,user):input.data,user,input.organisationIds)}))
     }
     if(route==='/legacy-equipment'&&method==='GET'){requireOwner(user);return reply(200,all("SELECT * FROM assets WHERE kind='items' AND deleted=0 AND owner_id IS NULL").filter(row=>!isPublic(row)&&isEquipmentItem(parsed(row))).map(row=>({id:row.id,label:parsed(row).label,dimensions:parsed(row).dimensions,schema:parsed(row).schema})))}
+    const legacyEquipment=route.match(/^\/legacy-equipment\/([a-z0-9-]+)$/)
+    if(legacyEquipment&&method==='DELETE'){
+      requireOwner(user);const id=legacyEquipment[1]
+      return reply(200,transaction(()=>{requireOwner(user);const row=asset('items',id);if(!row||row.deleted||row.owner_id||isPublic(row)||!isEquipmentItem(parsed(row)))fail(404,'Archived equipment not found');run("DELETE FROM revisions WHERE kind='items' AND asset_id=?",id);run("DELETE FROM assets WHERE kind='items' AND id=?",id);return {id,deleted:true}}))
+    }
     const equipmentCopy=route.match(/^\/equipment\/([a-z0-9-]+)\/copy$/)
     if(equipmentCopy&&method==='POST'){
       const input=await body()

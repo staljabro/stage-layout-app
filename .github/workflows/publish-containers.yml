@@ -28,25 +28,29 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            tools/svg-shape-studio/package-lock.json
-      - run: npm ci
-      - run: npm ci --prefix tools/svg-shape-studio
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
       - name: Read release version from src/version.js
         id: version
         run: node tools/release-version.mjs --github
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: npm run lint
-      - run: npm run build
-      - name: Run tests
+      - name: Lint
+        run: npm run lint
+      - name: Build Stageplot
+        run: npm run build
+      - name: Run application and API tests
         timeout-minutes: 5
-        run: node --test --test-isolation=none --test-force-exit --test-reporter=tap src/*.test.js tools/*.test.mjs tools/svg-shape-studio/src/*.test.js
+        shell: bash
+        run: |
+          mapfile -d '' tests < <(find tools -maxdepth 1 -name '*.test.mjs' ! -name '*browser.test.mjs' ! -name 'popup-layout.test.mjs' -print0)
+          node --test --test-isolation=none --test-reporter=tap src/*.test.js "${tests[@]}"
 
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         include:

@@ -90,7 +90,7 @@ export function EquipmentArtwork({item,depth=0}) {
 }
 export function FixedEquipmentArtwork({items=[]}) {
   return items.filter(equipmentVisible).map(item=><g key={item.id} transform={`translate(${item.xMeters} ${item.yMeters}) rotate(${item.rotation||0})`}>
-    <svg style={{width:item.widthMeters,height:item.depthMeters}} x={-item.widthMeters/2} y={-item.depthMeters/2} width={item.widthMeters} height={item.depthMeters} overflow="visible"><EquipmentArtwork item={item}/></svg>
+    <svg x={-item.widthMeters/2} y={-item.depthMeters/2} width={item.widthMeters} height={item.depthMeters} viewBox={`0 0 ${item.widthMeters} ${item.depthMeters}`} overflow="visible"><EquipmentArtwork item={item}/></svg>
     {item.showLabel&&<text x="0" y={(item.labelOffset??1)*(item.depthMeters/2+.2)} textAnchor="middle" fontSize=".15" fill="#25261f" stroke="none">{item.label}</text>}
   </g>);
 }

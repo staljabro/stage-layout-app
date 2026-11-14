@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stageFromLayout, avoidsFixedEquipment, validFixedEquipment } from './stage-equipment.js';
+import { stageFromLayout, avoidsFixedEquipment, validFixedEquipment, editableFixedGroupIds } from './stage-equipment.js';
 import { stageSpace, projectFile, resolveProject } from './project-file.js';
 import { pinProject } from './project-snapshots.js';
 
@@ -65,4 +65,11 @@ test('invalid embedded placements are rejected while old stages remain valid',()
   assert.equal(validFixedEquipment(fixed),true);
   for(const items of [null,{},[...fixed,...fixed],[{...fixed[0],widthMeters:0}],[{...fixed[0],xMeters:NaN}],[{...fixed[0],shapes:null}]])assert.equal(validFixedEquipment(items),false);
   assert.throws(()=>stageFromLayout(space,[{...equipment,profiles:['empire']}],{id:'test',label:'Test'}),/share a library profile/);
+});
+
+test('editable installed equipment groups remain one selection unit in layouts',()=>{
+  const group={id:'backline',name:'Backline'};
+  const items=[{id:'a',editable:true,equipmentGroup:group},{id:'b',editable:true,equipmentGroup:group},{id:'locked',editable:false,equipmentGroup:group},{id:'solo',editable:true}];
+  assert.deepEqual(editableFixedGroupIds(items,items[0]),['a','b']);
+  assert.deepEqual(editableFixedGroupIds(items,items[3]),['solo']);
 });

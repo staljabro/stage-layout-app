@@ -3,7 +3,7 @@ import {stageZone,stageText} from './zone-groups.js'
 import {normaliseCurtain} from './stage-curtain.js'
 
 export function stageParts(stage) {
-  return [...(stage.zones||[]).map(stageZone),...(stage.textItems||[]).map(stageText),...stageImages(stage).map(stageText),...(stage.curtains||[]).map(item=>stageText(normaliseCurtain(item)))]
+  return [...(stage.zones||[]).map(stageZone),...(stage.textItems||[]).map(stageText),...stageImages(stage).map(stageText),...(stage.curtains||[]).map(item=>stageText(normaliseCurtain(item))),...(stage.fixedEquipment||[])]
 }
 
 export function normaliseStagePartVisibility(stage,saved={}) {

@@ -6,7 +6,7 @@ import {equipmentFolders as normaliseEquipmentFolders,syncEquipmentFolders} from
 import {SharedInspector} from './shared-inspector.jsx'
 import {StagePartsInspector} from './stage-parts-inspector.jsx'
 import {PartRotationInspector} from './part-rotation-inspector.jsx'
-import {fixedEquipmentControls as normaliseFixedControls,applyFixedEquipmentControls,equipmentRotationParts} from '../equipment-part-controls.js'
+import {fixedEquipmentControls as normaliseFixedControls,applyFixedEquipmentControls,equipmentRotationParts,resetFixedEquipmentPlacements} from '../equipment-part-controls.js'
 import {normaliseStagePartVisibility,stagePartVisible,applyStagePartVisibility} from '../stage-part-visibility.js'
 import {StageLayerList} from './stage-layer-list.jsx'
 import {LayerLock} from './layer-lock.jsx'
@@ -15,7 +15,7 @@ import {stageAssetVisible} from '../layer-visibility.js'
 import {equipmentSession,normaliseLayerCollision} from './equipment-session.js'
 import {EquipmentSaveDialog} from './equipment-save-dialog.jsx'
 import {useEquipmentPlacement} from './use-equipment-placement.jsx'
-import {fixedEquipmentSnapshot} from '../stage-equipment.js'
+import {editableFixedGroupIds,fixedEquipmentSnapshot} from '../stage-equipment.js'
 import {SaveStatus} from '../workspace-ui.jsx'
 import {StockInspector} from './stock-inspector.jsx'
 import {Shape} from './artwork.jsx'
@@ -56,6 +56,7 @@ import {useStageplotPrint} from './stageplot-print.js'
 import {ColourPicker} from './colour-picker.jsx'
 import {GRAPHIC_ACCEPT,hasGraphicFiles,importGraphic} from '../graphic-import.js'
 import {assetSnapshot} from '../project-snapshots.js'
+import {placementBounds} from '../layout-tools.js'
 
 const LIBRARY_API = `${API_BASE}/items`;
 const STAGES_API = `${API_BASE}/stages`;
@@ -65,6 +66,22 @@ const MeasurementUnit = createContext("cm");
 function ToolbarIcon({name}) {
   const path=name==="undo"?<><path d="M9 7 4 12l5 5"/><path d="M4 12h9a7 7 0 0 1 7 7"/></>:<><path d="m15 7 5 5-5 5"/><path d="M20 12h-9a7 7 0 0 0-7 7"/></>;
   return <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">{path}</svg>;
+}
+
+function EditableStageAssetLayers({items,controls,selection,onSelect}) {
+  const section=(band,title)=>{
+    const matching=items.filter(item=>item.editable&&(item.layerStack==='roof'?'roof':'stage')===band),seen=new Set(),entries=[]
+    for(const item of matching){
+      const groupId=item.equipmentGroup?.id
+      if(groupId&&seen.has(groupId))continue
+      if(groupId)seen.add(groupId)
+      const members=groupId?matching.filter(candidate=>candidate.equipmentGroup?.id===groupId):[item]
+      entries.push({item,members,label:groupId?(item.equipmentGroup.name||'Equipment group'):(item.label||'Installed asset')})
+    }
+    if(!entries.length)return null
+    return <details className="editable-stage-layers" open><summary>{title} <small>{matching.length}</small></summary>{entries.map(entry=>{const selected=entry.members.every(item=>selection.includes(item.id)),moved=entry.members.some(item=>controls[item.id]?.$placement),hidden=entry.members.every(item=>item.visible===false);return <div className="canvas-layer-row" key={entry.item.equipmentGroup?.id||entry.item.id}><button className={`equipment-layer-name${selected?' active':''}`} onClick={event=>onSelect(entry.item,event.shiftKey)}><span>{entry.label}</span><small>{entry.members.length>1?`${entry.members.length} grouped · `:''}{hidden?'Hidden':moved?'Moved':'Default'}</small></button></div>})}</details>
+  }
+  return <>{section('roof','Overhead assets')}{section('stage','Stage assets')}</>
 }
 
 function MultiCollisionControl({ layers, onChange }) {
@@ -410,7 +427,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const readOnlyStage=embeddedStage?.canEditStage===false;
   const [stagePartVisibility,setStagePartVisibility]=useState(()=>embeddedStage?normaliseStagePartVisibility(embeddedStage.data,embeddedStage.partVisibility):{});
   const [layoutFixedControls,setLayoutFixedControls]=useState(()=>embeddedStage?normaliseFixedControls(embeddedStage.data,embeddedStage.fixedEquipmentControls):{});
-  const [selectedFixedId,setSelectedFixedId]=useState(null);
+  const [selectedFixedIds,setSelectedFixedIds]=useState([]);
+  const [stageAssetEditMode,setStageAssetEditMode]=useState(false);
   const [layoutEquipment,setLayoutEquipment]=useState(embeddedStage?.layoutEquipment||[]);
   const [layoutNotes,setLayoutNotes]=useState(embeddedStage?.notes||'');
   const [availableEquipment,setAvailableEquipment]=useState(embeddedStage?.data.availableEquipment||[]);
@@ -932,9 +950,11 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     setSelectedGroupId(null);
   };
   const effectiveLayoutStage=useMemo(()=>readOnlyStage?applyFixedEquipmentControls(applyStagePartVisibility(stageData,stagePartVisibility),layoutFixedControls):stageData,[readOnlyStage,stageData,stagePartVisibility,layoutFixedControls]);
-  const selectedFixed=readOnlyStage?effectiveLayoutStage.fixedEquipment.find(item=>item.id===selectedFixedId):null;
-  const selectFixed=item=>{placement.clear();setSelectedFixedId(item.id)};
-  const placement=useEquipmentPlacement({enabled:Boolean(embeddedStage),value:readOnlyStage?layoutEquipment:fixedEquipment,onChange:readOnlyStage?setLayoutEquipment:setFixedEquipment,library:embeddedStage?.equipment||[],groups:embeddedStage?.groups||[],folders:equipmentFolders,onFoldersChange:setEquipmentFolders,canvasRef,stage:{...effectiveLayoutStage,availableEquipment},checkpoint,onLayerDrag:ids=>{assetDragRef.current={kind:'equipment',ids}},onNotice:flash,onSelect:()=>{setSelectedFixedId(null);setStockMode(false);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([])},visitor:readOnlyStage,onCreateEquipment:embeddedStage?.onCreateEquipment,notes:layoutNotes,onNotesChange:setLayoutNotes,reviewNote:embeddedStage?.reviewNote,status:embeddedStage?.statusLabel,project:embeddedStage?.layoutName||shapeName,snapMode,organisationId:embeddedStage?.organisationId,organisation:embeddedStage?.organisation});
+  const selectedFixedItems=readOnlyStage?effectiveLayoutStage.fixedEquipment.filter(item=>selectedFixedIds.includes(item.id)):[];
+  const selectedFixed=selectedFixedItems.length===1?selectedFixedItems[0]:null;
+  const fixedSelectionIds=item=>editableFixedGroupIds(effectiveLayoutStage.fixedEquipment,item);
+  const selectFixed=(item,additive=false)=>{placement.clear();const ids=fixedSelectionIds(item);setSelectedFixedIds(old=>additive?(ids.every(id=>old.includes(id))?old.filter(id=>!ids.includes(id)):[...new Set([...old,...ids])]):ids)};
+  const placement=useEquipmentPlacement({enabled:Boolean(embeddedStage),value:readOnlyStage?layoutEquipment:fixedEquipment,onChange:readOnlyStage?setLayoutEquipment:setFixedEquipment,library:embeddedStage?.equipment||[],groups:embeddedStage?.groups||[],folders:equipmentFolders,onFoldersChange:setEquipmentFolders,canvasRef,stage:{...effectiveLayoutStage,availableEquipment},checkpoint,onLayerDrag:ids=>{assetDragRef.current={kind:'equipment',ids}},onNotice:flash,onSelect:()=>{setSelectedFixedIds([]);setStockMode(false);setSelectedStageNode(null);setSelectedZoneId(null);setSelectedTextId(null);setSelectedStageLineId(null);setSelectedReferenceId(null);setSelectedStageAssetIds([])},visitor:readOnlyStage,onCreateEquipment:embeddedStage?.onCreateEquipment,notes:layoutNotes,onNotesChange:setLayoutNotes,reviewNote:embeddedStage?.reviewNote,status:embeddedStage?.statusLabel,project:embeddedStage?.layoutName||shapeName,snapMode,organisationId:embeddedStage?.organisationId,organisation:embeddedStage?.organisation});
   const pointerDown = (event, item) => {
     if (event.button !== 0) return;
     if (item.editorLocked || item.editorVisible === false) return;
@@ -1349,6 +1369,12 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   };
   const moveStageNode = (event) => {
     if (!stageDragRef.current || !canvasRef.current) return;
+    if(stageDragRef.current.handle==='installed-move'){
+      const drag=stageDragRef.current,point=stagePointer(event,false)
+      const dx=point.x-drag.start.x,dy=point.y-drag.start.y
+      setLayoutFixedControls(old=>{const next={...old};for(const original of drag.originals)next[original.id]={...old[original.id],$placement:{xMeters:original.xMeters+dx,yMeters:original.yMeters+dy}};return next})
+      return
+    }
     if(stageDragRef.current.handle==="curtain-endpoint") {
       const drag=stageDragRef.current,point=stagePointer(event,false);
       setStageLines(old=>old.map(line=>line.id===drag.original.id?resizeCurtain(drag.original,drag.end,point):line));
@@ -1445,6 +1471,20 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
       }),
     );
   };
+  const startInstalledMove=(event,item)=>{
+    if(event.button!==0)return
+    event.preventDefault();event.stopPropagation()
+    if(event.shiftKey){selectFixed(item,true);return}
+    checkpoint();const ids=selectedFixedIds.includes(item.id)?selectedFixedIds:fixedSelectionIds(item)
+    placement.clear();setSelectedFixedIds(ids)
+    stageDragRef.current={handle:'installed-move',start:stagePointer(event,false),originals:effectiveLayoutStage.fixedEquipment.filter(candidate=>ids.includes(candidate.id)).map(candidate=>({id:candidate.id,xMeters:candidate.xMeters,yMeters:candidate.yMeters}))}
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const renderInstalledEquipment=item=>{const parts=equipmentRotationParts(item),canEdit=stageAssetEditMode&&item.editable,canAdjust=!item.editable&&parts.length>0;return <g key={item.id} className={`${canEdit||canAdjust?'installed-equipment adjustable':'installed-equipment'}${selectedFixedIds.includes(item.id)?' selected':''}`} data-fixed-id={item.id} onPointerDown={canEdit?event=>startInstalledMove(event,item):canAdjust?event=>{event.stopPropagation();selectFixed(item)}:undefined}>
+    <FixedEquipmentArtwork items={[item]}/>
+    {(canEdit||canAdjust)&&<rect aria-label={`Select installed ${item.label||item.id}`} role="button" transform={`translate(${item.xMeters} ${item.yMeters}) rotate(${item.rotation||0})`} x={-item.widthMeters/2} y={-item.depthMeters/2} width={item.widthMeters} height={item.depthMeters} style={{fill:'none',stroke:'none',pointerEvents:'all'}}/>}
+    {selectedFixedIds.includes(item.id)&&<rect transform={`translate(${item.xMeters} ${item.yMeters}) rotate(${item.rotation||0})`} x={-item.widthMeters/2} y={-item.depthMeters/2} width={item.widthMeters} height={item.depthMeters} style={{fill:'none',stroke:'#718c24',strokeWidth:1.5,vectorEffect:'non-scaling-stroke',pointerEvents:'none'}}/>}
+  </g>}
   const addGraphicFiles=async(files,point)=>{let offset=0;for(const file of files)try{
     if(readOnlyStage&&!embeddedStage?.canUploadGraphics)throw new Error('This layout link does not allow graphic uploads.')
     const id=documentMode==='stage'?`image-${Date.now()}-${offset}`:nextId.current++,layer=await importGraphic(file,{canvasWidth:realWidth,canvasHeight:realDepth,point:point&&{x:point.x+offset*.08,y:point.y+offset*.08},id,zOrder:orderedAssets.length+offset})
@@ -2004,6 +2044,11 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
     return () => viewport.removeEventListener("wheel", zoomViewport);
   });
   const startPan = (event) => {
+    if(readOnlyStage&&stageAssetEditMode&&event.button===0&&!event.target.closest?.('.installed-equipment, .placed-equipment, .equipment-controls')){
+      event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId)
+      const rect=viewportRef.current.getBoundingClientRect(),start={x:event.clientX-rect.left,y:event.clientY-rect.top}
+      marqueeRef.current={kind:'installed',start,worldStart:canvasWorldPoint(event),additive:event.shiftKey?selectedFixedIds:[]};setMarquee(selectionBox(start,start));return
+    }
     if(embeddedStage&&(readOnlyStage||placement.selected)&&event.button===0&&!event.target.closest?.('.placed-equipment, .equipment-controls')){placement.beginMarquee(event);return}
     if (vectorDrawing && event.button===0) {drawVectorPoint(event);return;}
     const occupied = documentMode === "item"
@@ -2080,6 +2125,10 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
   const finishViewportDrag = (event) => {
     if (marqueeRef.current) {
       const drag = marqueeRef.current;
+      if(drag.kind==='installed'){
+        const box=selectionBox(drag.worldStart,canvasWorldPoint(event)),ids=effectiveLayoutStage.fixedEquipment.filter(item=>item.editable&&item.visible!==false&&containsBounds(box,placementBounds([item]))).flatMap(fixedSelectionIds)
+        setSelectedFixedIds([...new Set([...drag.additive,...ids])]);marqueeRef.current=null;setMarquee(null);panRef.current=null;return
+      }
       if (documentMode === "stage") {
         const box = selectionBox(drag.worldStart,canvasWorldPoint(event));
         const boundsFor = asset => {
@@ -2375,7 +2424,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               <button className="delete" onClick={()=>{checkpoint();setRotationParts(old=>old.filter(value=>value.id!==part.id));setItems(old=>old.map(item=>item.rotationPartId===part.id?{...item,rotationPartId:undefined}:item));}}>Remove control</button>
             </div>)}
           </section>}
-        </div>{embeddedStage&&readOnlyStage&&placement.layers}</aside>
+        </div>{embeddedStage&&readOnlyStage&&<EditableStageAssetLayers items={effectiveLayoutStage.fixedEquipment} controls={layoutFixedControls} selection={selectedFixedIds} onSelect={(item,additive)=>{setStageAssetEditMode(true);selectFixed(item,additive)}}/>}{embeddedStage&&readOnlyStage&&placement.layers}</aside>
         <div className="panel-resizer" role="separator" aria-label="Resize layers panel" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"left",startX:event.clientX,startWidth:currentUi.leftWidth||238});}}/>
         <section className="workbench">
           <div className="toolbar">
@@ -2399,6 +2448,8 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
               +
             </button>
             <button onClick={resetView}>Fit</button>
+            {readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<button className={stageAssetEditMode?"active-tool":""} aria-pressed={stageAssetEditMode} title="Select and move editable installed stage assets" onClick={()=>{setStageAssetEditMode(value=>{if(value)setSelectedFixedIds([]);return !value})}}>Edit stage assets</button>}
+            {readOnlyStage&&effectiveLayoutStage.fixedEquipment.some(item=>item.editable)&&<button disabled={!effectiveLayoutStage.fixedEquipment.some(item=>item.editable&&layoutFixedControls[item.id]?.$placement)} title="Restore editable installed stage assets to their source-stage positions" onClick={()=>{checkpoint();setLayoutFixedControls(old=>resetFixedEquipmentPlacements(old,effectiveLayoutStage.fixedEquipment.filter(item=>item.editable).map(item=>item.id)))}}>Reset stage assets</button>}
             {documentMode === "stage" && !readOnlyStage && <button className={stageMoveMode?"active-tool":""} aria-pressed={stageMoveMode} title="Move whole stage assets (M)" onClick={()=>{setStageMoveMode(value=>!value);setSelectedStageNode(null);}}>Move (M)</button>}
             {documentMode === "item" && <button disabled={!items.length} onClick={()=>{setPresetName(shapeName);setPresetDialogOpen(true);}}>Save as custom shape</button>}
             <label hidden={readOnlyStage}><input type="checkbox" checked={!canvasResizeEnabled} onChange={(event)=>setCanvasResizeEnabled(!event.target.checked)} /> Lock canvas size</label>
@@ -2876,9 +2927,9 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
                   {drawnVector && vectorPreview && <path className="vector-drawing-preview" d={`M ${drawnVector.x+drawnVector.nodes.at(-1).x} ${drawnVector.y+drawnVector.nodes.at(-1).y} L ${vectorPreview.x} ${vectorPreview.y}`} />}
                   {drawnVector?.nodes.map((node,index)=><circle key={index} cx={drawnVector.x+node.x} cy={drawnVector.y+node.y} r=".012" fill={index===0 ? "#d6ff46" : index===drawnVector.nodes.length-1 ? "#ffbf3f" : "white"} stroke="#35400f" strokeWidth="1.5" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
                 </g>}
-              {embeddedStage&&<>{readOnlyStage&&<g className="installed-equipment-artwork">{effectiveLayoutStage.fixedEquipment.filter(item=>item.layerStack!=='roof').map(item=><g key={item.id} className={equipmentRotationParts(item).length?"installed-equipment adjustable":"installed-equipment"} data-fixed-id={item.id} onPointerDown={equipmentRotationParts(item).length?event=>{event.stopPropagation();selectFixed(item)}:undefined}><FixedEquipmentArtwork items={[item]}/></g>)}</g>}{placement.svg}</>}
+              {embeddedStage&&<>{readOnlyStage&&<g className="installed-equipment-artwork">{effectiveLayoutStage.fixedEquipment.filter(item=>item.layerStack!=='roof').map(renderInstalledEquipment)}</g>}{placement.svg}</>}
               {documentMode==="stage"&&<g className="ordered-roof-assets" pointerEvents={readOnlyStage?"none":undefined}>{[...roofAssets].reverse().filter(asset=>!asset.layoutGraphic&&stageAssetVisible(asset,zoneFolders)&&(!readOnlyStage||stagePartVisible(asset,stagePartVisibility))).map(renderStageAsset)}</g>}
-              {embeddedStage&&<>{readOnlyStage&&<g className="installed-roof-equipment-artwork">{effectiveLayoutStage.fixedEquipment.filter(item=>item.layerStack==='roof'&&item.visible!==false).map(item=><g key={item.id} className={equipmentRotationParts(item).length?"installed-equipment adjustable":"installed-equipment"} data-fixed-id={item.id} onPointerDown={equipmentRotationParts(item).length?event=>{event.stopPropagation();selectFixed(item)}:undefined}><FixedEquipmentArtwork items={[item]}/></g>)}</g>}{!readOnlyStage&&placement.roofSvg}</>}
+              {embeddedStage&&<>{readOnlyStage&&<g className="installed-roof-equipment-artwork">{effectiveLayoutStage.fixedEquipment.filter(item=>item.layerStack==='roof'&&item.visible!==false).map(renderInstalledEquipment)}</g>}{!readOnlyStage&&placement.roofSvg}</>}
               {!readOnlyStage&&stageMultiBounds&&<rect className="group-selection" x={stageMultiBounds.x-.03} y={stageMultiBounds.y-.03} width={stageMultiBounds.right-stageMultiBounds.x+.06} height={stageMultiBounds.bottom-stageMultiBounds.y+.06} pointerEvents="none"/>}
               </svg>
               <div className="axis x">{documentMode === "stage" ? `${realWidth.toFixed(2)} m` : `${Math.round(realWidth * 100)} cm`}</div>
@@ -2892,7 +2943,7 @@ function DesignEditor({embeddedStage=null,embeddedEquipment=null,equipmentOnly=f
           </div>
         </section>
         <div className="panel-resizer" role="separator" aria-label="Resize inspector" onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);setPanelResize({side:"right",startX:event.clientX,startWidth:currentUi.rightWidth||250});}}/>
-        <aside className={`inspector${currentUi.rightOpen===false?" panel-collapsed":""}`}>{readOnlyStage&&!placement.selected&&!selectedFixed&&<StagePartsInspector stage={stageData} visibility={stagePartVisibility} onChange={value=>{checkpoint();setStagePartVisibility(value)}}/>}{selectedFixed&&<section className="installed-equipment-inspector"><PartRotationInspector item={selectedFixed} installed onChange={controls=>{checkpoint();setLayoutFixedControls(old=>({...old,[selectedFixed.id]:controls}))}}/></section>}{embeddedStage&&!placement.selected&&!selectedFixed&&placement.notesPanel}{stockMode&&!readOnlyStage?<StockInspector value={availableEquipment} groups={embeddedStage?.groups||[]} library={embeddedStage?.equipment||[]} onChange={next=>{checkpoint();setAvailableEquipment(next)}}/>:embeddedStage&&placement.selected?placement.inspector:null}<div hidden={Boolean(embeddedStage&&(readOnlyStage||placement.selected||stockMode))}>
+        <aside className={`inspector${currentUi.rightOpen===false?" panel-collapsed":""}`}>{readOnlyStage&&!placement.selected&&!selectedFixedIds.length&&<StagePartsInspector stage={stageData} visibility={stagePartVisibility} onChange={value=>{checkpoint();setStagePartVisibility(value)}}/>}{selectedFixed&&<section className="installed-equipment-inspector"><h3>{selectedFixed.label||'Installed equipment'}</h3>{selectedFixed.editable&&<p className="handle-help">Drag this installed item to move it for this layout. It cannot be deleted.</p>}<PartRotationInspector item={selectedFixed} installed onChange={controls=>{checkpoint();setLayoutFixedControls(old=>({...old,[selectedFixed.id]:{...old[selectedFixed.id],...controls}}))}}/></section>}{selectedFixedItems.length>1&&<section className="installed-equipment-inspector"><h3>{selectedFixedItems.length} installed stage assets</h3><p className="handle-help">Drag any selected item to move this selection together. Installed stage assets cannot be deleted.</p></section>}{embeddedStage&&!placement.selected&&!selectedFixedIds.length&&placement.notesPanel}{stockMode&&!readOnlyStage?<StockInspector value={availableEquipment} groups={embeddedStage?.groups||[]} library={embeddedStage?.equipment||[]} onChange={next=>{checkpoint();setAvailableEquipment(next)}}/>:embeddedStage&&placement.selected?placement.inspector:null}<div hidden={Boolean(embeddedStage&&(readOnlyStage||placement.selected||stockMode))}>
           {documentMode === "stage" ? (
             <>
               {stageMulti&&<SharedInspector items={stageInspectorAssets} context="stage" onChange={changeSharedStage} unit="m"/>}

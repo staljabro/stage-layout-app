@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {equipmentRotationParts,applyFixedEquipmentControls} from './equipment-part-controls.js'
+import {equipmentRotationParts,applyFixedEquipmentControls,resetFixedEquipmentPlacements} from './equipment-part-controls.js'
 import {stageSpace,projectFile,resolveProject} from './project-file.js'
 import {pinProject} from './project-snapshots.js'
 import {customStagingItem,stagingSnapPoints} from './custom-items.js'
@@ -15,6 +15,16 @@ test('decimal deck dimensions round to decimetres and snapping reaches fractiona
   const points=stagingSnapPoints(2.4,1.2)
   assert.ok(points.some(point=>point.x===2.4&&point.y===1.2))
   assert.ok(points.every(point=>point.x<=2.4&&point.y<=1.2))
+})
+test('editable installed equipment accepts layout positions while locked equipment ignores them',()=>{
+  const editableStage={...stage,fixedEquipment:[{...stage.fixedEquipment[0],editable:true},{...stage.fixedEquipment[0],id:'locked'}]}
+  const saved={installed:{$placement:{xMeters:7,yMeters:4}},locked:{$placement:{xMeters:8,yMeters:1}}}
+  const effective=applyFixedEquipmentControls(editableStage,saved)
+  assert.deepEqual(effective.fixedEquipment.map(({xMeters,yMeters})=>({xMeters,yMeters})),[{xMeters:7,yMeters:4},{xMeters:2,yMeters:3}])
+})
+test('resetting installed positions preserves layout part rotations and unrelated overrides',()=>{
+  const saved={installed:{$placement:{xMeters:7,yMeters:4},arm:{rotation:30}},other:{$placement:{xMeters:1,yMeters:1}}}
+  assert.deepEqual(resetFixedEquipmentPlacements(saved,['installed']),{installed:{arm:{rotation:30}},other:{$placement:{xMeters:1,yMeters:1}}})
 })
 test('older snapshots recover missing part definitions from compatible equipment without replacing pinned artwork',()=>{
   const old={...item,rotationParts:undefined,shapes:[{...item.shapes[0],fill:'#123456'}]}

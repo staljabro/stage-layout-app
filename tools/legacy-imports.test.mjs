@@ -85,6 +85,19 @@ test('normal users can copy accessible equipment while raw imports and private a
   assert.equal(imported.status,201,imported.data.error);assert.equal(imported.data.ownerId,users.owner.id)
 })
 
+test('only the app Owner can permanently delete archived equipment',async t=>{
+  const {store,call,users}=await fixture(t)
+  store.saveAsset('items',equipment.id,equipment,null,null)
+  assert.equal((await call('/legacy-equipment/'+equipment.id,'DELETE',{},users.admin)).status,403)
+  assert.ok(store.asset('items',equipment.id))
+  const removed=await call('/legacy-equipment/'+equipment.id,'DELETE')
+  assert.equal(removed.status,200,removed.data.error);assert.deepEqual(removed.data,{id:equipment.id,deleted:true})
+  assert.equal(store.asset('items',equipment.id),undefined)
+  assert.equal(store.get("SELECT COUNT(*) AS count FROM revisions WHERE kind='items' AND asset_id=?",equipment.id).count,0)
+  assert.equal((await call('/legacy-equipment')).data.some(item=>item.id===equipment.id),false)
+  assert.equal((await call('/equipment/import','POST',{assetId:equipment.id})).status,404)
+})
+
 test('legacy seated-person artwork imports and saves as visible equipment without changing its custom-shape original',async t=>{
   const {store,call,users}=await fixture(t)
   const original={...structuredClone(equipment),id:'advanced-person-sitting-legs-apart',label:'Person Sitting - Legs apart',dimensions:{widthMeters:.69,depthMeters:.82},editor:{layers:structuredClone(equipment.shapes),advancedShapeRole:'custom',placementMode:'layers'}}

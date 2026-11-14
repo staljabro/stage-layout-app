@@ -21,6 +21,8 @@ export function fixedEquipmentControls(stage,saved={}) {
       const value=saved?.[item.id]?.[part.id]?.rotation
       if(Number.isFinite(value))controls[part.id]={rotation:wholeDegreesWithin(value,part.minRotation,part.maxRotation)}
     }
+    const placement=saved?.[item.id]?.$placement
+    if(item.editable===true&&Number.isFinite(placement?.xMeters)&&Number.isFinite(placement?.yMeters))controls.$placement={xMeters:placement.xMeters,yMeters:placement.yMeters}
     if(Object.keys(controls).length)entries.push([item.id,controls])
   }
   return Object.fromEntries(entries)
@@ -28,5 +30,18 @@ export function fixedEquipmentControls(stage,saved={}) {
 
 export function applyFixedEquipmentControls(stage,saved={}) {
   const valid=fixedEquipmentControls(stage,saved)
-  return {...stage,fixedEquipment:(stage.fixedEquipment||[]).map(item=>({...structuredClone(item),...(valid[item.id]?{controls:{...item.controls,...valid[item.id]}}:{})}))}
+  return {...stage,fixedEquipment:(stage.fixedEquipment||[]).map(item=>{
+    const overrides=valid[item.id],placement=overrides?.$placement
+    const partControls=overrides&&Object.fromEntries(Object.entries(overrides).filter(([id])=>id!=='$placement'))
+    return {...structuredClone(item),...(placement||{}),...(partControls&&Object.keys(partControls).length?{controls:{...item.controls,...partControls}}:{})}
+  })}
+}
+
+export function resetFixedEquipmentPlacements(saved={},ids=[]) {
+  const reset=new Set(ids),next={}
+  for(const [id,controls] of Object.entries(saved)){
+    const value=reset.has(id)?Object.fromEntries(Object.entries(controls||{}).filter(([key])=>key!=='$placement')):controls
+    if(Object.keys(value||{}).length)next[id]=value
+  }
+  return next
 }
